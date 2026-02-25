@@ -89,7 +89,7 @@
         <repository>
             <id>github</id>
             <name>GitHub Packages</name>
-            <url>https://github.com/jacky917/jacky917-security-starter</url>
+            <url>https://maven.pkg.github.com/jacky917/jacky917-security-starter</url>
         </repository>
     </distributionManagement>
 </project>
