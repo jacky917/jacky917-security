@@ -35,6 +35,16 @@ mvn -U clean install
 mvn clean verify
 ```
 
+### Maven 導入範例（發布版）
+
+```xml
+<dependency>
+    <groupId>com.github.jacky917</groupId>
+    <artifactId>jacky917-security-starter</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
 ### 如何執行測試
 本專案包含高品質的單元測試與整合測試。
 ```bash

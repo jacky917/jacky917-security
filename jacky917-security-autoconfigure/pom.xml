@@ -4,9 +4,9 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>jacky917</groupId>
+        <groupId>com.github.jacky917</groupId>
         <artifactId>jacky917-security-parent</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
+        <version>1.0.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -64,7 +64,7 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>jacky917</groupId>
+            <groupId>com.github.jacky917</groupId>
             <artifactId>jacky917-security-annotations</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>

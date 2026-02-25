@@ -11,7 +11,7 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
-    <groupId>jacky917</groupId>
+    <groupId>com.github.jacky917</groupId>
     <artifactId>jacky917-security-parent</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging>
@@ -36,12 +36,17 @@
         <dependencies>
             <!-- Project Modules -->
             <dependency>
-                <groupId>jacky917</groupId>
+                <groupId>com.github.jacky917</groupId>
+                <artifactId>jacky917-security-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.jacky917</groupId>
                 <artifactId>jacky917-security-autoconfigure</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>jacky917</groupId>
+                <groupId>com.github.jacky917</groupId>
                 <artifactId>jacky917-security-annotations</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -84,7 +89,6 @@
             </releases>
         </pluginRepository>
     </pluginRepositories>
-    <!-- 告訴 Maven 要把編譯好的 jar 檔推送到哪裡 -->
     <distributionManagement>
         <repository>
             <id>github</id>

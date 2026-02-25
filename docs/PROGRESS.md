@@ -268,10 +268,11 @@
   - **Updated**: `docs/PROGRESS.md`
   - **Updated**: `docs/PROJECT_STRUCTURE.md`
 - **Decision Log**:
-  - **DEC-020**: Database 依賴僅放在 `demo-resource-server`，確保 Starter 維持 Stateless 與 DB 無關。
-  - **DEC-021**: ABAC 改為資料庫 owner 比對（`clip.ownerId == JWT sub`），比寫死規則更貼近真實業務。
-  - **DEC-022**: 為避免 CI 依賴外部 MySQL，測試改用 H2（`MODE=MySQL`）並在 test `application.yml` 覆蓋資料源。
-  - **DEC-023**: 補上 OpenAPI 註解與 Swagger 路徑放行，確保兩個 demo 服務可直接透過 UI 驗證 API。
+  - **DEC-020**: 將所有模組的 groupId 統一修改為 com.github.jacky917，並移除子模組的自訂 version 標籤以繼承父版本，確保符合 GitHub Packages 發佈規範。
+  - **DEC-021**: Database 依賴僅放在 `demo-resource-server`，確保 Starter 維持 Stateless 與 DB 無關。
+  - **DEC-022**: ABAC 改為資料庫 owner 比對（`clip.ownerId == JWT sub`），比寫死規則更貼近真實業務。
+  - **DEC-023**: 為避免 CI 依賴外部 MySQL，測試改用 H2（`MODE=MySQL`）並在 test `application.yml` 覆蓋資料源。
+  - **DEC-024**: 補上 OpenAPI 註解與 Swagger 路徑放行，確保兩個 demo 服務可直接透過 UI 驗證 API。
 - **Expected Artifacts**:
   - `Clip.java`
   - `ClipRepository.java`
