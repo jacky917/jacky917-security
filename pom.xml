@@ -13,7 +13,7 @@
 
     <groupId>jacky917</groupId>
     <artifactId>jacky917-security-parent</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0</version>
     <packaging>pom</packaging>
     <name>jacky917-security-parent</name>
     <description>Parent POM for jacky917-security projects</description>
