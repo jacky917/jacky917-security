@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:demo_resource_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+
+jacky917:
+  security:
+    permit-all-patterns:
+      - /public/**
+      - /actuator/health
+      - /v3/api-docs
+      - /v3/api-docs/**
+      - /swagger-ui/**
+      - /swagger-ui.html
+      - /swagger-ui/index.html
+

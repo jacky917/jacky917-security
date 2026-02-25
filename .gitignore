@@ -1,0 +1,20 @@
+# Maven 編譯輸出的目錄
+target/
+*/target/
+*/*/target/
+
+# IntelliJ IDEA 設定檔
+.idea/
+*.iml
+*.iws
+
+.cursor/
+
+# VS Code / Cursor 設定檔 (保留 .cursor/rules 是可以的，但忽略暫存檔)
+.vscode/
+
+# macOS 系統檔案
+.DS_Store
+
+# Java 錯誤日誌
+hs_err_pid*

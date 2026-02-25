@@ -1,0 +1,8 @@
+{
+  "kty": "oct",
+  "kid": "demo-hs256-key",
+  "alg": "HS256",
+  "use": "sig",
+  "k": "hJtXIZ2uSN5kbQfbtTNWbgqG7w4k8cM5fN2nAizI0xY"
+}
+

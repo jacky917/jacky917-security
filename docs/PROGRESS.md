@@ -1,0 +1,281 @@
+# 專案進度追蹤 (PROGRESS)
+
+本文件用於追蹤 `jacky917-security-starter` 的開發進度、決策與變更歷史。
+**每一次執行操作後，都必須更新此文件。**
+
+---
+## 總體進度
+- [🟢] Step 0: 專案初始化與文件奠基
+- [🟢] Step 1: 建立 Maven Multi-Module 骨架
+- [🟢] Step 2: 引入 Spring Boot & Security 依賴並實作基礎 AutoConfiguration
+- [🟢] Step 3: JWT claims -> authorities 完整合併與單元測試
+- [🟢] Step 4: 自訂註解（裝飾器）+ 方法級授權測試
+- [🟢] Step 5: demo-resource-server（可跑、可 curl、可測）
+- [🟢] Step 6: 實作 Demo Auth Server 與 E2E 測試流程
+- [🟢] Step 7: 補齊 Refresh Token Rotation 設計與資料表 Schema
+- [🟢] Step 8: 引入 Swagger UI 與 MySQL 資料庫情境
+
+---
+
+## Step 1: 建立 Maven Multi-Module 骨架
+- **Status**: 🟢 Completed
+- **Decision Log**:
+  - **DEC-002**: 採納了更精細的模組劃分，將 `starter`, `autoconfigure`, `annotations` 分離，以提高模組的內聚性與清晰度。
+  - **DEC-003**: 將根 POM artifactId 直接命名為 `jacky917-security-parent`，使其職責更明確。
+
+---
+
+## Step 2: 引入 Spring Boot & Security 依賴並實作基礎 AutoConfiguration
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `jacky917-security-autoconfigure` 模組引入 `spring-boot-starter-security`, `spring-boot-starter-oauth2-resource-server`, `spring-boot-starter-web` (optional)。
+  - [x] `demo-resource-server` 模組引入 `spring-boot-starter-web` 與 `jacky917-security-starter`。
+  - [x] 建立 `Jacky917SecurityProperties` 屬性類。
+  - [x] 建立 `Jacky917SecurityAutoConfiguration`，包含預設的 `SecurityFilterChain`。
+  - [x] 透過 `AutoConfiguration.imports` 註冊自動配置。
+  - [x] 實作統一的 401/403 JSON 錯誤回應。
+  - [x] 執行 `mvn -U -q -DskipTests package` 命令成功。
+  - [x] 更新 `docs/PROJECT_STRUCTURE.md` 檔案。
+- **Commands Run & Results**:
+  - `mvn -U -q -DskipTests package`: **SUCCESS** (第二次，第一次因缺少依賴而失敗)
+- **Files Changed**:
+  - **Updated**: `jacky917-security-autoconfigure/pom.xml`
+  - **Updated**: `demo-resource-server/pom.xml`
+  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/properties/Jacky917SecurityProperties.java`
+  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
+  - **New**: `jacky917-security-autoconfigure/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
+  - **Updated**: `docs/PROGRESS.md`
+  - **Updated**: `docs/PROJECT_STRUCTURE.md`
+- **Decision Log**:
+  - **DEC-004**: 在 `autoconfigure` 模組中將 `spring-boot-starter-web` 依賴設定為 `<optional>true</optional>`，因為統一錯誤處理需要用到 `HttpServletResponse` 等類，但又不希望強制非 Web 環境的使用者引入 Web 依賴。
+- **Next TODO**:
+  - 執行 Step 3，實作 JWT Claims 到 Spring Security `GrantedAuthority` 的複雜映射邏輯。
+
+---
+
+## Step 3: 實作 JWT Claims 權限映射
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] 完成 `JwtAuthoritiesExtractor`，支援 `roles` / `permissions` / `scope` / `scp` 合併映射。
+  - [x] 支援 claim 名稱與前綴覆寫（`jacky917.security.jwt.claims.*`、`jacky917.security.jwt.prefix.*`）。
+  - [x] 支援多種輸入型態（List、逗號字串、空白分隔字串）。
+  - [x] Authorities 合併後去重且穩定排序。
+  - [x] `debugLog=true` 僅輸出 authorities，不輸出 token 全文。
+  - [x] 已接入 `JwtAuthenticationConverter` 流程，`@PreAuthorize` 可直接使用。
+  - [x] 單元測試覆蓋輸入型態、覆寫、空值/缺欄位/格式錯誤。
+  - [x] `mvn -U clean verify` 成功。
+  - [x] 更新 `docs/jwt-claims.md` 與 `docs/starter-design.md`。
+  - [x] 更新 `docs/PROJECT_STRUCTURE.md`。
+- **Commands Run & Results**:
+  - `mvn -U clean verify`: **SUCCESS**
+- **Files Changed**:
+  - **Updated**: `jacky917-security-autoconfigure/pom.xml`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/properties/Jacky917SecurityProperties.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/authentication/JwtAuthoritiesExtractor.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/autoconfigure/authentication/JwtAuthoritiesExtractorTest.java`
+  - **Deleted**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/jwt/JwtAuthoritiesExtractor.java`
+  - **Deleted**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/autoconfigure/jwt/JwtAuthoritiesExtractorTest.java`
+  - **Updated**: `docs/jwt-claims.md`
+  - **Updated**: `docs/starter-design.md`
+  - **Updated**: `docs/PROGRESS.md`
+  - **Updated**: `docs/PROJECT_STRUCTURE.md`
+- **Decision Log**:
+  - **DEC-005**: `permissions` 預設前綴改為 `PERM_`，與 `ROLE_`、`SCOPE_` 形成一致命名規範，降低授權規則混淆風險。
+  - **DEC-006**: `JwtAuthoritiesExtractor` 對非預期 claim 型態採忽略策略，避免因異常 token 格式導致整體驗證流程中斷。
+  - **DEC-007**: 移除重複的 extractor 與重複測試來源，統一單一路徑，確保建置與測試可重現。
+- **Expected Artifacts**:
+  - `JwtAuthoritiesExtractor.java`
+  - 更新後的 `Jacky917SecurityAutoConfiguration.java`
+- **Next TODO**:
+  - 執行 Step 4：建立自訂授權註解（`@RequireRole/@RequirePerm/@RequireAny/@RequireAll`）並補整合測試。
+
+---
+## Step 4: 自訂註解（裝飾器）+ 方法級授權測試
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] 在 `jacky917-security-annotations` 提供 `@RequireRole`、`@RequirePerm`、`@RequireAny`、`@RequireAll`、`@RequireScope`。
+  - [x] 註解使用 `@PreAuthorize` meta-annotation。
+  - [x] 方法級安全可由 `jacky917.security.method-security.enabled` 控制。
+  - [x] 以 `Spring Boot Test + MockMvc` 驗證 AND/OR 的 200/403 行為。
+  - [x] 更新 `docs/authorization-model.md`，補齊 A/B/C/D 註解示例。
+  - [x] 執行 `mvn -U clean verify` 成功。
+  - [x] 更新 `docs/PROJECT_STRUCTURE.md`。
+- **Commands Run & Results**:
+  - `mvn -U clean verify`: **SUCCESS**
+- **Files Changed**:
+  - **Updated**: `jacky917-security-annotations/pom.xml`
+  - **New**: `jacky917-security-annotations/src/main/java/jacky917/security/annotations/RequireRole.java`
+  - **New**: `jacky917-security-annotations/src/main/java/jacky917/security/annotations/RequirePerm.java`
+  - **New**: `jacky917-security-annotations/src/main/java/jacky917/security/annotations/RequireAny.java`
+  - **New**: `jacky917-security-annotations/src/main/java/jacky917/security/annotations/RequireAll.java`
+  - **New**: `jacky917-security-annotations/src/main/java/jacky917/security/annotations/RequireScope.java`
+  - **Updated**: `jacky917-security-autoconfigure/pom.xml`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
+  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/methodsecurity/Jacky917AuthorityEvaluator.java`
+  - **New**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/autoconfigure/integration/MethodSecurityAnnotationsIntegrationTest.java`
+  - **Updated**: `docs/authorization-model.md`
+  - **Updated**: `docs/PROGRESS.md`
+  - **Updated**: `docs/PROJECT_STRUCTURE.md`
+- **Decision Log**:
+  - **DEC-008**: `@RequireAny/@RequireAll` 採用 `|` 分隔單一字串格式（例如 `ROLE_ADMIN|PERM_order:read`），避免 SpEL 模板對陣列參數展開造成解析錯誤。
+  - **DEC-009**: 新增 `jacky917AuthorityEvaluator` Bean 專責處理 OR/AND 判斷，讓註解保持精簡且可測試。
+  - **DEC-010**: 將 `@EnableMethodSecurity` 移至條件化內部配置，確保可透過 `jacky917.security.method-security.enabled` 關閉。
+- **Expected Artifacts**:
+  - `RequireRole.java`
+  - `RequirePerm.java`
+  - `RequireAny.java`
+  - `RequireAll.java`
+  - `MethodSecurityAnnotationsIntegrationTest.java`
+- **Next TODO**:
+  - 執行 Step 5：補齊更多安全情境整合測試（含 401/403 JSON body 驗證），並開始 `demo-resource-server` 的實際端點示範。
+
+---
+## Step 5: demo-resource-server（可跑、可 curl、可測）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `demo-resource-server` 提供完整端點：`/public/ping`、`/secure/me`、`/secure/role-a`、`/secure/perm-bb`、`/secure/and`、`/secure/or`、`/secure/abac/{clipId}`。
+  - [x] 提供本地測試 JWT 工具（JWK + Java CLI）。
+  - [x] 提供 ABAC hook 介面與預設拒絕實作，並在 demo 加上可通過規則。
+  - [x] MockMvc 整合測試覆蓋 401/403/200、AND/OR、JSON 錯誤欄位。
+  - [x] `mvn -U clean verify` 成功。
+  - [x] `mvn -pl demo-resource-server -U spring-boot:run` 可啟動（啟動前需先 `mvn -U -DskipTests install` 讓本地 SNAPSHOT 可被解析）。
+  - [x] 更新 `README.md` 與 `docs/PROJECT_STRUCTURE.md`。
+- **Commands Run & Results**:
+  - `mvn -U clean verify`: **SUCCESS**
+  - `mvn -pl demo-resource-server -U spring-boot:run`: **SUCCESS**（確認啟動成功）
+  - `mvn -U -DskipTests install`: **SUCCESS**（支援單模組 `spring-boot:run` 解析本地 SNAPSHOT）
+- **Files Changed**:
+  - **Updated**: `demo-resource-server/pom.xml`
+  - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/DemoResourceServerApplication.java`
+  - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/config/DemoJwtDecoderConfiguration.java`
+  - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/controller/DemoSecureController.java`
+  - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/authz/AuthzService.java`
+  - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/authz/DenyAllAuthzService.java`
+  - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/authz/DemoAuthzConfiguration.java`
+  - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/tools/GenerateTestJwtMain.java`
+  - **New**: `demo-resource-server/src/main/resources/application.yml`
+  - **New**: `demo-resource-server/src/main/resources/demo/jwk/demo-hs256.jwk.json`
+  - **New**: `demo-resource-server/src/test/java/jacky917/demo/resourceserver/DemoResourceServerIntegrationTest.java`
+  - **Updated**: `README.md`
+  - **Updated**: `docs/PROGRESS.md`
+  - **Updated**: `docs/PROJECT_STRUCTURE.md`
+- **Decision Log**:
+  - **DEC-011**: Demo JWT 採用對稱式 JWK（HS256）以降低本地測試門檻，並由 CLI 與 Resource Server 共用同一測試金鑰。
+  - **DEC-012**: ABAC 端點使用單一 `@PreAuthorize` 組合 RBAC+ABAC 條件，避免與 meta-annotation 產生雙 `@PreAuthorize` 衝突。
+  - **DEC-013**: 為符合使用者指定啟動命令，先加入 `mvn -U -DskipTests install` 流程，確保單模組啟動可解析本地 SNAPSHOT 依賴。
+- **Expected Artifacts**:
+  - `DemoSecureController.java`
+  - `GenerateTestJwtMain.java`
+  - `DemoResourceServerIntegrationTest.java`
+- **Next TODO**:
+  - 執行 Step 6：補齊 `demo-authorization-server`（簽發 JWT）與完整手動 E2E 測試文件。
+
+---
+## Step 6: 實作 Demo Auth Server 與 E2E 測試流程
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] 建立 `demo-authorization-server` 模組，並引入 `spring-boot-starter-web` 等必要依賴。
+  - [x] 實作 `/oauth2/token` 端點，能讀取共用的 JWK 金鑰並簽發包含 `sub`, `roles`, `permissions`, `scp`, `sid` 的 JWT。
+  - [x] 新增 `docs/e2e-testing.md`，提供完整的手動 E2E 測試指南（包含啟動兩個 demo 服務與 curl 指令）。
+  - [x] 更新 `README.md`，加入 E2E 執行範例。
+  - [x] 執行 `mvn -U clean verify` 成功。
+- **Commands Run & Results**:
+  - `mvn -U clean verify`: **SUCCESS**
+  - `mvn -pl demo-authorization-server -U spring-boot:run`: **SUCCESS**（服務可於 `8081` 啟動）
+  - `curl -X POST http://localhost:8081/oauth2/token ...`: **SUCCESS**（成功取得 `Bearer` JWT）
+- **Files Changed**:
+  - **Updated**: `demo-authorization-server/pom.xml`
+  - **New**: `demo-authorization-server/src/main/java/jacky917/demo/authorizationserver/DemoAuthorizationServerApplication.java`
+  - **New**: `demo-authorization-server/src/main/java/jacky917/demo/authorizationserver/controller/AuthController.java`
+  - **New**: `demo-authorization-server/src/main/java/jacky917/demo/authorizationserver/controller/TokenRequest.java`
+  - **New**: `demo-authorization-server/src/main/java/jacky917/demo/authorizationserver/controller/TokenResponse.java`
+  - **New**: `demo-authorization-server/src/main/java/jacky917/demo/authorizationserver/service/JwtIssuerService.java`
+  - **New**: `demo-authorization-server/src/main/resources/application.yml`
+  - **New**: `demo-authorization-server/src/main/resources/demo/jwk/demo-hs256.jwk.json`
+  - **New**: `demo-authorization-server/src/test/java/jacky917/demo/authorizationserver/AuthControllerIntegrationTest.java`
+  - **New**: `docs/e2e-testing.md`
+  - **Updated**: `README.md`
+  - **Updated**: `docs/PROGRESS.md`
+  - **Updated**: `docs/PROJECT_STRUCTURE.md`
+- **Decision Log**:
+  - **DEC-014**: Auth Server 採用最小化 mock 登入流程（固定密碼 `password`）以降低 E2E 測試啟動成本，避免引入非必要認證複雜度。
+  - **DEC-015**: 為避免跨模組檔案依賴耦合，`demo-authorization-server` 複製同一份測試 JWK 到本模組 resources，確保可獨立啟動。
+  - **DEC-016**: Token claim 以 `roles/permissions/scp/sid` 為主，維持與 resource-server 權限抽取器契約一致，確保 E2E 可重現。
+- **Expected Artifacts**:
+  - `AuthController.java`
+  - `JwtIssuerService.java`
+  - `AuthControllerIntegrationTest.java`
+  - `docs/e2e-testing.md`
+- **Next TODO**:
+  - 執行 Step 7：補齊 Refresh Token Rotation 設計與資料表 Schema（`docs/database-schema.md`、`docs/refresh-rotation.md` 最終校準）。
+
+---
+## Step 7: 補齊 Refresh Token Rotation 設計與資料表 Schema
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] 更新 `docs/database-schema.md`，包含 `auth_session`, `refresh_token` 等表結構的 DDL 與索引建議。
+  - [x] 更新 `docs/refresh-rotation.md`，說明 10 分鐘短效 Access Token 搭配 Rotation、Reuse Detection (重用偵測) 與 sid 裝置踢除邏輯。
+  - [x] 執行 `mvn -U clean verify` 成功。
+- **Commands Run & Results**:
+  - `mvn -U clean verify`: **SUCCESS**
+  - `tree -a -I 'target|.git'`: **SUCCESS**（結構掃描完成）
+- **Files Changed**:
+  - **Updated**: `docs/database-schema.md`
+  - **Updated**: `docs/refresh-rotation.md`
+  - **Updated**: `docs/PROGRESS.md`
+  - **Updated**: `docs/PROJECT_STRUCTURE.md`
+- **Decision Log**:
+  - **DEC-017**: 資料表命名統一為 `auth_session` / `refresh_token`，明確表達 Authorization Server 責任邊界，避免與 Resource Server 邏輯混淆。
+  - **DEC-018**: Refresh Token 設計採 `family_id` 家族撤銷策略，於重用偵測時可快速封鎖整條輪換鏈。
+  - **DEC-019**: 單裝置踢除以 `sid`（session 維度）處理，避免傳統全域版本號策略造成多裝置互踢。
+- **Expected Artifacts**:
+  - `docs/database-schema.md`
+  - `docs/refresh-rotation.md`
+  - 更新後的 `docs/PROGRESS.md`（宣告完成）
+  - 更新後的 `docs/PROJECT_STRUCTURE.md`
+- **Next TODO**:
+  - 執行 Step 8：引入 Swagger UI 與 MySQL 資料庫，改為資料庫導向 ABAC 示範。
+
+---
+## Step 8: 引入 Swagger UI 與 MySQL 資料庫情境
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] 在 `demo-resource-server` 與 `demo-authorization-server` 引入 Swagger UI（OpenAPI 3）。
+  - [x] Starter 預設放行 Swagger 相關路徑（`/swagger-ui/**`, `/v3/api-docs/**` 等）。
+  - [x] `demo-resource-server` 僅在 demo 模組加入 JPA + MySQL，Starter 保持無狀態且不依賴資料庫。
+  - [x] 建立 `Clip` 實體與 `ClipRepository`，ABAC 改為查 DB 比對 `ownerId` 與 JWT `sub`。
+  - [x] 測試環境以 H2 驗證，`mvn -U clean verify` 成功。
+  - [x] 更新 `README.md`、`docs/PROJECT_STRUCTURE.md`。
+- **Commands Run & Results**:
+  - `mvn -U clean verify`: **SUCCESS**（第二次，第一次修正測試設定後通過）
+  - `tree -a -I 'target|.git'`: **SUCCESS**
+- **Files Changed**:
+  - **Updated**: `demo-resource-server/pom.xml`
+  - **Updated**: `demo-authorization-server/pom.xml`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/properties/Jacky917SecurityProperties.java`
+  - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/clip/Clip.java`
+  - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/clip/ClipDemoDataInitializer.java`
+  - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/clip/ClipRepository.java`
+  - **Updated**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/authz/DemoAuthzConfiguration.java`
+  - **Updated**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/controller/DemoSecureController.java`
+  - **Updated**: `demo-authorization-server/src/main/java/jacky917/demo/authorizationserver/controller/AuthController.java`
+  - **Updated**: `demo-resource-server/src/main/resources/application.yml`
+  - **New**: `demo-resource-server/src/test/resources/application.yml`
+  - **Updated**: `demo-resource-server/src/test/java/jacky917/demo/resourceserver/DemoResourceServerIntegrationTest.java`
+  - **Updated**: `README.md`
+  - **Updated**: `docs/PROGRESS.md`
+  - **Updated**: `docs/PROJECT_STRUCTURE.md`
+- **Decision Log**:
+  - **DEC-020**: Database 依賴僅放在 `demo-resource-server`，確保 Starter 維持 Stateless 與 DB 無關。
+  - **DEC-021**: ABAC 改為資料庫 owner 比對（`clip.ownerId == JWT sub`），比寫死規則更貼近真實業務。
+  - **DEC-022**: 為避免 CI 依賴外部 MySQL，測試改用 H2（`MODE=MySQL`）並在 test `application.yml` 覆蓋資料源。
+  - **DEC-023**: 補上 OpenAPI 註解與 Swagger 路徑放行，確保兩個 demo 服務可直接透過 UI 驗證 API。
+- **Expected Artifacts**:
+  - `Clip.java`
+  - `ClipRepository.java`
+  - 更新後的 `DemoAuthzConfiguration.java`
+  - 更新後的 `README.md`
+- **Next TODO**:
+  - 依實際需求擴充 Step 9（若需要：導入 Flyway、正式 migration 與 MySQL docker compose）。
