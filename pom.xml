@@ -55,6 +55,7 @@
     </properties>
 
     <modules>
+        <module>core/jacky917-security-core</module>
         <module>resource-server/jacky917-security-annotations</module>
         <module>resource-server/jacky917-security-resource-server-autoconfigure</module>
         <module>resource-server/jacky917-security-resource-server-starter</module>
@@ -65,6 +66,11 @@
     <dependencyManagement>
         <dependencies>
             <!-- Project Modules -->
+            <dependency>
+                <groupId>io.github.jacky917</groupId>
+                <artifactId>jacky917-security-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>io.github.jacky917</groupId>
                 <artifactId>jacky917-security-resource-server-starter</artifactId>

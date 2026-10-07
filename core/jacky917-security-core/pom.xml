@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.jacky917</groupId>
+        <artifactId>jacky917-security-parent</artifactId>
+        <version>${revision}</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>jacky917-security-core</artifactId>
+    <name>jacky917-security-core</name>
+    <description>Shared claim contract for the jacky917-security resource server and authorization server (plain Java, no dependencies)</description>
+
+    <!-- 刻意不依賴任何函式庫，讓簽發端與驗證端都能引入，也不受 Spring 版本影響 -->
+</project>

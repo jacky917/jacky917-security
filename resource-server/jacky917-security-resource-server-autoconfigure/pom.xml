@@ -15,6 +15,12 @@
     <description>Resource Server auto-configuration for jacky917-security</description>
 
     <dependencies>
+        <!-- 與 Authorization Server 共用的 claim 契約 -->
+        <dependency>
+            <groupId>io.github.jacky917</groupId>
+            <artifactId>jacky917-security-core</artifactId>
+        </dependency>
+
         <!-- Spring Boot -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
