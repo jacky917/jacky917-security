@@ -14,6 +14,10 @@
     <name>jacky917-security-resource-server-starter</name>
     <description>Resource Server starter for jacky917-security: JWT validation and authorization for APIs</description>
 
+    <properties>
+        <jacky917.enforce.resource-server-boundary.skip>false</jacky917.enforce.resource-server-boundary.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>io.github.jacky917</groupId>

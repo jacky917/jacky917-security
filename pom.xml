@@ -52,6 +52,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <flatten-maven-plugin.version>1.8.0</flatten-maven-plugin.version>
+        <!-- 依賴方向規則（見 docs/repo-structure-design.md §3）：預設關閉，由各模組開啟 -->
+        <jacky917.enforce.resource-server-boundary.skip>true</jacky917.enforce.resource-server-boundary.skip>
+        <jacky917.enforce.no-dependencies.skip>true</jacky917.enforce.no-dependencies.skip>
     </properties>
 
     <modules>
@@ -123,6 +126,48 @@
         </pluginManagement>
 
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <!-- 業務 API 用的模組不得依賴 Authorization Server：登入與簽發能力不可出現在 API 的 classpath 上 -->
+                    <execution>
+                        <id>resource-server-boundary</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${jacky917.enforce.resource-server-boundary.skip}</skip>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>io.github.jacky917:jacky917-security-authorization-server*</exclude>
+                                    </excludes>
+                                    <message>Resource Server modules must not depend on Authorization Server modules (docs/repo-structure-design.md §3).</message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                    <!-- core 只依賴 JDK，讓簽發端與驗證端都能引入，也不受 Spring 版本影響 -->
+                    <execution>
+                        <id>no-dependencies</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${jacky917.enforce.no-dependencies.skip}</skip>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>*</exclude>
+                                    </excludes>
+                                    <message>jacky917-security-core must not have any dependency (docs/repo-structure-design.md §3).</message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <!--
               產生 .flattened-pom.xml 並以它作為發佈的 POM：
               - 代換 ${revision}

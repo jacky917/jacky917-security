@@ -79,6 +79,7 @@
     </build>
 
     <properties>
+        <jacky917.enforce.resource-server-boundary.skip>false</jacky917.enforce.resource-server-boundary.skip>
         <java.version>21</java.version>
         <!-- 告訴 Maven 這個模組不要發佈到 GitHub Packages -->
         <maven.deploy.skip>true</maven.deploy.skip>
