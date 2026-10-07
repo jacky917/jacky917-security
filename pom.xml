@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
+         child.project.url.inherit.append.path="false">
     <modelVersion>4.0.0</modelVersion>
 
+    <!--
+      建置時繼承 spring-boot-starter-parent（取得外掛版本、編譯設定）。
+      發佈時由 flatten-maven-plugin 產生不含 parent 的獨立 POM，
+      使用者解析依賴時不需要本 parent，也不需要 Spring Boot 的 parent。
+    -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
@@ -11,17 +17,41 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
-    <groupId>com.github.jacky917</groupId>
+    <groupId>io.github.jacky917</groupId>
     <artifactId>jacky917-security-parent</artifactId>
-    <version>2.0.0-SNAPSHOT</version>
+    <version>${revision}</version>
     <packaging>pom</packaging>
     <name>jacky917-security-parent</name>
     <description>Parent POM for jacky917-security projects</description>
+    <url>https://github.com/jacky917/jacky917-security-starter</url>
+
+    <!--
+      覆寫自 spring-boot-starter-parent 繼承的 Spring 專案資訊。
+      TODO: 尚未決定授權條款。在宣告 <licenses> 之前，發佈的 POM 會帶有繼承來的 Apache License 2.0，
+            正式發佈 2.0.0 前必須決定。
+    -->
+    <developers>
+        <developer>
+            <id>jacky917</id>
+            <name>jacky917</name>
+            <url>https://github.com/jacky917</url>
+        </developer>
+    </developers>
+    <scm child.scm.url.inherit.append.path="false"
+         child.scm.connection.inherit.append.path="false"
+         child.scm.developerConnection.inherit.append.path="false">
+        <url>https://github.com/jacky917/jacky917-security-starter</url>
+        <connection>scm:git:https://github.com/jacky917/jacky917-security-starter.git</connection>
+        <developerConnection>scm:git:git@github.com:jacky917/jacky917-security-starter.git</developerConnection>
+    </scm>
 
     <properties>
+        <!-- 整個 repo 唯一需要修改版本號的地方 -->
+        <revision>2.0.0-SNAPSHOT</revision>
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <flatten-maven-plugin.version>1.8.0</flatten-maven-plugin.version>
     </properties>
 
     <modules>
@@ -36,17 +66,17 @@
         <dependencies>
             <!-- Project Modules -->
             <dependency>
-                <groupId>com.github.jacky917</groupId>
+                <groupId>io.github.jacky917</groupId>
                 <artifactId>jacky917-security-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.github.jacky917</groupId>
+                <groupId>io.github.jacky917</groupId>
                 <artifactId>jacky917-security-autoconfigure</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.github.jacky917</groupId>
+                <groupId>io.github.jacky917</groupId>
                 <artifactId>jacky917-security-annotations</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -60,28 +90,65 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <configuration>
-                        <source>${java.version}</source>
-                        <target>${java.version}</target>
                         <encoding>${project.build.sourceEncoding}</encoding>
-                        <!-- JDK 23+ 不再自動探索 annotation processor，需明確宣告（否則 Lombok 不會執行） -->
+                        <!-- JDK 23+ 不再自動探索 annotation processor，需明確宣告（否則 Lombok 不會執行）。
+                             版本取自 Spring Boot 的 dependencyManagement，不另外寫死。 -->
+                        <annotationProcessorPathsUseDepMgmt>true</annotationProcessorPathsUseDepMgmt>
                         <annotationProcessorPaths>
                             <path>
                                 <groupId>org.projectlombok</groupId>
                                 <artifactId>lombok</artifactId>
-                                <version>${lombok.version}</version>
                             </path>
                             <path>
                                 <groupId>org.springframework.boot</groupId>
                                 <artifactId>spring-boot-configuration-processor</artifactId>
-                                <version>${spring-boot.version}</version>
                             </path>
                         </annotationProcessorPaths>
                     </configuration>
                 </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>flatten-maven-plugin</artifactId>
+                    <version>${flatten-maven-plugin.version}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
+
+        <plugins>
+            <!--
+              產生 .flattened-pom.xml 並以它作為發佈的 POM：
+              - 代換 ${revision}
+              - 移除 parent，依賴版本直接寫入
+              BOM 模組另以 flattenMode=bom 覆寫，保留 dependencyManagement。
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <configuration>
+                    <flattenMode>ossrh</flattenMode>
+                    <updatePomFile>true</updatePomFile>
+
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten-clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
     </build>
-    
+
     <distributionManagement>
         <repository>
             <id>github</id>

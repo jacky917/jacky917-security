@@ -18,3 +18,6 @@ target/
 
 # Java 錯誤日誌
 hs_err_pid*
+
+# flatten-maven-plugin 產生的發佈用 POM
+.flattened-pom.xml
