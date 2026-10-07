@@ -154,7 +154,7 @@ class JwtDecoderConfig {
 > [!CAUTION]
 > HS256 的金鑰同時可以「驗證」與「簽發」Token。任何拿到這把金鑰的服務都能偽造任意身分的 Token。多服務架構建議改用 RS256 / ES256 等非對稱演算法。HS256 金鑰長度至少需 256 bits（32 bytes）。
 
-`example-resource-server` 的 [`DemoJwtDecoderConfiguration`](../../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/config/DemoJwtDecoderConfiguration.java) 是一個從 JWK 檔載入 HS256 金鑰的實際範例（僅驗證 issuer，未驗證 audience，僅供示範）。
+`example-resource-server` 不使用自訂 Bean：它以 `issuer-uri`、`jwk-set-uri` 與 `audiences` 屬性驗證 [`example-authorization-server`](../../examples/example-authorization-server) 以 RS256 簽發的 Token，見其 [`application.yml`](../../examples/example-resource-server/src/main/resources/application.yml)。
 
 ---
 

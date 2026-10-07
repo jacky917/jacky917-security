@@ -7,6 +7,16 @@ spring:
     username: root
     password: root
     driver-class-name: com.mysql.cj.jdbc.Driver
+  # 驗證 example-authorization-server 簽發的 Access Token：
+  # 以 JWKS 驗證簽章，並檢查 iss 與 aud（另一個服務的 audience 會被拒絕）
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:9000
+          # 同時設定 jwk-set-uri：啟動時不需要連到登入服務（只有 issuer-uri 時會在啟動時查詢 discovery）
+          jwk-set-uri: http://localhost:9000/oauth2/jwks
+          audiences: jacky917-api
   jpa:
     hibernate:
       ddl-auto: update

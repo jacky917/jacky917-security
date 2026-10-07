@@ -1,6 +1,6 @@
 # 專案結構 (PROJECT STRUCTURE)
 
-本文件使用 `tree -a -I 'target|.git|.idea|.cursor|.flattened-pom.xml'` 的輸出來展示目前專案真實結構（`.idea`、`.cursor` 為本機 IDE／工具設定，未納入版本控制；`.flattened-pom.xml` 為建置產物）。
+本文件使用 `tree -a -I 'target|.git|.idea|.cursor|.flattened-pom.xml|data'` 的輸出來展示目前專案真實結構（`.idea`、`.cursor` 為本機 IDE／工具設定，未納入版本控制；`.flattened-pom.xml` 為建置產物；`data/` 為範例登入服務在本機執行時建立的 SQLite 資料庫）。
 **每次執行後都必須更新，以反映最新狀態。**
 
 ---
@@ -23,9 +23,22 @@
 |   |       |   |   `-- jacky917
 |   |       |   |       `-- security
 |   |       |   |           `-- authorizationserver
+|   |       |   |               |-- authentication
+|   |       |   |               |   |-- LoginSuccessHandler.java
+|   |       |   |               |   `-- PrincipalNormalizer.java
 |   |       |   |               |-- autoconfigure
 |   |       |   |               |   |-- AuthorizationServerAutoConfiguration.java
-|   |       |   |               |   `-- AuthorizationServerDatabaseConfiguration.java
+|   |       |   |               |   |-- AuthorizationServerClientsConfiguration.java
+|   |       |   |               |   |-- AuthorizationServerDatabaseConfiguration.java
+|   |       |   |               |   |-- AuthorizationServerKeysConfiguration.java
+|   |       |   |               |   |-- AuthorizationServerSecurityConfiguration.java
+|   |       |   |               |   `-- AuthorizationServerUsersConfiguration.java
+|   |       |   |               |-- client
+|   |       |   |               |   |-- ActiveClientRegisteredClientRepository.java
+|   |       |   |               |   |-- ClientProfile.java
+|   |       |   |               |   |-- ClientProfileRepository.java
+|   |       |   |               |   |-- ClientRegistrationSynchronizer.java
+|   |       |   |               |   `-- ClientStatus.java
 |   |       |   |               |-- database
 |   |       |   |               |   |-- AuthorizationServerDialect.java
 |   |       |   |               |   |-- AuthorizationServerDialects.java
@@ -34,47 +47,118 @@
 |   |       |   |               |   |-- SqliteDialect.java
 |   |       |   |               |   |-- SqliteExceptionTranslator.java
 |   |       |   |               |   `-- SqliteExceptionTranslatorPostProcessor.java
-|   |       |   |               `-- properties
-|   |       |   |                   `-- AuthorizationServerProperties.java
+|   |       |   |               |-- federation
+|   |       |   |               |   |-- FederatedIdentityService.java
+|   |       |   |               |   |-- FederatedLoginRejectedException.java
+|   |       |   |               |   |-- FederatedLoginSuccessHandler.java
+|   |       |   |               |   |-- FederatedUserInfo.java
+|   |       |   |               |   |-- FederatedUserInfoMapper.java
+|   |       |   |               |   `-- OidcFederatedUserInfoMapper.java
+|   |       |   |               |-- keys
+|   |       |   |               |   |-- JdbcSigningKeyStore.java
+|   |       |   |               |   |-- KeyEncryptor.java
+|   |       |   |               |   |-- RotatingJwkSource.java
+|   |       |   |               |   |-- SigningKey.java
+|   |       |   |               |   |-- SigningKeyService.java
+|   |       |   |               |   |-- SigningKeyStatus.java
+|   |       |   |               |   `-- SigningKeyStore.java
+|   |       |   |               |-- properties
+|   |       |   |               |   `-- AuthorizationServerProperties.java
+|   |       |   |               |-- session
+|   |       |   |               |   |-- AuthSession.java
+|   |       |   |               |   |-- AuthSessionService.java
+|   |       |   |               |   |-- AuthSessionStatus.java
+|   |       |   |               |   |-- LoginMethod.java
+|   |       |   |               |   |-- SessionAuthorizationRepository.java
+|   |       |   |               |   `-- SessionLinkingAuthorizationService.java
+|   |       |   |               |-- support
+|   |       |   |               |   `-- UuidV7.java
+|   |       |   |               |-- token
+|   |       |   |               |   |-- AudienceResolver.java
+|   |       |   |               |   |-- AuthorityResolver.java
+|   |       |   |               |   |-- ConfiguredAudienceResolver.java
+|   |       |   |               |   |-- DefaultAuthorityResolver.java
+|   |       |   |               |   |-- Jacky917TokenCustomizer.java
+|   |       |   |               |   |-- ResolvedAuthorities.java
+|   |       |   |               |   `-- TokenClaimsContributor.java
+|   |       |   |               |-- user
+|   |       |   |               |   |-- BootstrapAdminInitializer.java
+|   |       |   |               |   |-- Jacky917UserDetailsService.java
+|   |       |   |               |   |-- JdbcUserAccountService.java
+|   |       |   |               |   |-- NewUser.java
+|   |       |   |               |   |-- PasswordPolicy.java
+|   |       |   |               |   |-- UserAccount.java
+|   |       |   |               |   |-- UserAccountService.java
+|   |       |   |               |   |-- UserAuthorities.java
+|   |       |   |               |   `-- UserStatus.java
+|   |       |   |               `-- web
+|   |       |   |                   `-- LoginController.java
 |   |       |   `-- resources
 |   |       |       |-- META-INF
 |   |       |       |   |-- spring
 |   |       |       |   |   `-- org.springframework.boot.autoconfigure.AutoConfiguration.imports
 |   |       |       |   `-- spring.factories
-|   |       |       `-- db
-|   |       |           `-- migration
-|   |       |               `-- jacky917-as
-|   |       |                   |-- postgresql
-|   |       |                   |   |-- V1_0_0__identity.sql
-|   |       |                   |   |-- V1_0_1__authorization_model.sql
-|   |       |                   |   |-- V1_0_2__oauth2_official.sql
-|   |       |                   |   |-- V1_0_3__oauth2_extensions.sql
-|   |       |                   |   |-- V1_0_4__sessions.sql
-|   |       |                   |   |-- V1_0_5__security.sql
-|   |       |                   |   `-- V1_0_6__seed.sql
-|   |       |                   `-- sqlite
-|   |       |                       |-- V1_0_0__identity.sql
-|   |       |                       |-- V1_0_1__authorization_model.sql
-|   |       |                       |-- V1_0_2__oauth2_official.sql
-|   |       |                       |-- V1_0_3__oauth2_extensions.sql
-|   |       |                       |-- V1_0_4__sessions.sql
-|   |       |                       |-- V1_0_5__security.sql
-|   |       |                       `-- V1_0_6__seed.sql
+|   |       |       |-- db
+|   |       |       |   `-- migration
+|   |       |       |       `-- jacky917-as
+|   |       |       |           |-- postgresql
+|   |       |       |           |   |-- V1_0_0__identity.sql
+|   |       |       |           |   |-- V1_0_1__authorization_model.sql
+|   |       |       |           |   |-- V1_0_2__oauth2_official.sql
+|   |       |       |           |   |-- V1_0_3__oauth2_extensions.sql
+|   |       |       |           |   |-- V1_0_4__sessions.sql
+|   |       |       |           |   |-- V1_0_5__security.sql
+|   |       |       |           |   `-- V1_0_6__seed.sql
+|   |       |       |           `-- sqlite
+|   |       |       |               |-- V1_0_0__identity.sql
+|   |       |       |               |-- V1_0_1__authorization_model.sql
+|   |       |       |               |-- V1_0_2__oauth2_official.sql
+|   |       |       |               |-- V1_0_3__oauth2_extensions.sql
+|   |       |       |               |-- V1_0_4__sessions.sql
+|   |       |       |               |-- V1_0_5__security.sql
+|   |       |       |               `-- V1_0_6__seed.sql
+|   |       |       |-- jacky917
+|   |       |       |   |-- authorization-server-messages.properties
+|   |       |       |   `-- authorization-server-messages_zh_TW.properties
+|   |       |       |-- static
+|   |       |       |   `-- jacky917
+|   |       |       |       `-- authorization-server.css
+|   |       |       `-- templates
+|   |       |           `-- jacky917
+|   |       |               |-- login.html
+|   |       |               `-- signed-in.html
 |   |       `-- test
 |   |           `-- java
 |   |               `-- jacky917
 |   |                   `-- security
 |   |                       `-- authorizationserver
+|   |                           |-- autoconfigure
+|   |                           |   `-- AutoConfigurationOrderingTest.java
+|   |                           |-- client
+|   |                           |   `-- ClientRegistrationIntegrationTest.java
 |   |                           |-- database
 |   |                           |   |-- DatabaseMigrationIntegrationTest.java
 |   |                           |   |-- DefaultSqliteIntegrationTest.java
 |   |                           |   |-- SchemaConsistencyIntegrationTest.java
 |   |                           |   |-- SchemaIntrospection.java
 |   |                           |   `-- SqliteValidationIntegrationTest.java
+|   |                           |-- flow
+|   |                           |   |-- AbstractAuthorizationFlowIntegrationTest.java
+|   |                           |   |-- AbstractGoogleLoginIntegrationTest.java
+|   |                           |   |-- PostgresqlAuthorizationFlowIntegrationTest.java
+|   |                           |   |-- PostgresqlGoogleLoginIntegrationTest.java
+|   |                           |   |-- SqliteAuthorizationFlowIntegrationTest.java
+|   |                           |   `-- SqliteGoogleLoginIntegrationTest.java
+|   |                           |-- keys
+|   |                           |   |-- KeyEncryptorTest.java
+|   |                           |   `-- SigningKeyIntegrationTest.java
 |   |                           |-- properties
 |   |                           |   `-- AuthorizationServerPropertiesTest.java
-|   |                           `-- support
-|   |                               `-- TestDatabases.java
+|   |                           |-- support
+|   |                           |   |-- FakeOidcProvider.java
+|   |                           |   `-- TestDatabases.java
+|   |                           `-- user
+|   |                               `-- UserAccountIntegrationTest.java
 |   `-- jacky917-security-authorization-server-starter
 |       `-- pom.xml
 |-- core
@@ -92,6 +176,8 @@
 |-- docs
 |   |-- PROGRESS.md
 |   |-- PROJECT_STRUCTURE.md
+|   |-- authorization-server
+|   |   `-- getting-started.md
 |   |-- design
 |   |   |-- auth-server-data-model.md
 |   |   |-- auth-server-design.md
@@ -113,6 +199,15 @@
 |       |-- jwt-claims.md
 |       |-- limitations.md
 |       `-- troubleshooting.md
+|-- e2e-tests
+|   |-- pom.xml
+|   `-- src
+|       `-- test
+|           `-- java
+|               `-- jacky917
+|                   `-- e2e
+|                       |-- Browser.java
+|                       `-- EndToEndTest.java
 |-- examples
 |   |-- example-authorization-server
 |   |   |-- pom.xml
@@ -123,23 +218,42 @@
 |   |       |   |       `-- demo
 |   |       |   |           `-- authorizationserver
 |   |       |   |               |-- DemoAuthorizationServerApplication.java
-|   |       |   |               |-- controller
-|   |       |   |               |   |-- AuthController.java
-|   |       |   |               |   |-- TokenRequest.java
-|   |       |   |               |   `-- TokenResponse.java
-|   |       |   |               `-- service
-|   |       |   |                   `-- JwtIssuerService.java
+|   |       |   |               `-- DemoDataInitializer.java
+|   |       |   `-- resources
+|   |       |       `-- application.yml
+|   |       `-- test
+|   |           |-- java
+|   |           |   `-- jacky917
+|   |           |       `-- demo
+|   |           |           `-- authorizationserver
+|   |           |               `-- DemoAuthorizationServerIntegrationTest.java
+|   |           `-- resources
+|   |               `-- config
+|   |                   `-- application.yml
+|   |-- example-bff
+|   |   |-- pom.xml
+|   |   `-- src
+|   |       |-- main
+|   |       |   |-- java
+|   |       |   |   `-- jacky917
+|   |       |   |       `-- demo
+|   |       |   |           `-- bff
+|   |       |   |               |-- BffApplication.java
+|   |       |   |               |-- BffController.java
+|   |       |   |               |-- BffProperties.java
+|   |       |   |               |-- BffSecurityConfiguration.java
+|   |       |   |               `-- SerializedAuthorizedClientManager.java
 |   |       |   `-- resources
 |   |       |       |-- application.yml
-|   |       |       `-- demo
-|   |       |           `-- jwk
-|   |       |               `-- demo-hs256.jwk.json
+|   |       |       `-- static
+|   |       |           |-- bff.js
+|   |       |           `-- index.html
 |   |       `-- test
 |   |           `-- java
 |   |               `-- jacky917
 |   |                   `-- demo
-|   |                       `-- authorizationserver
-|   |                           `-- AuthControllerIntegrationTest.java
+|   |                       `-- bff
+|   |                           `-- BffApplicationTest.java
 |   `-- example-resource-server
 |       |-- pom.xml
 |       `-- src
@@ -158,17 +272,11 @@
 |           |   |               |   |-- ClipDemoDataInitializer.java
 |           |   |               |   `-- ClipRepository.java
 |           |   |               |-- config
-|           |   |               |   |-- DemoJwtDecoderConfiguration.java
 |           |   |               |   `-- DemoSwaggerConfiguration.java
-|           |   |               |-- controller
-|           |   |               |   `-- DemoSecureController.java
-|           |   |               `-- tools
-|           |   |                   `-- GenerateTestJwtMain.java
+|           |   |               `-- controller
+|           |   |                   `-- DemoSecureController.java
 |           |   `-- resources
-|           |       |-- application.yml
-|           |       `-- demo
-|           |           `-- jwk
-|           |               `-- demo-hs256.jwk.json
+|           |       `-- application.yml
 |           `-- test
 |               |-- java
 |               |   `-- jacky917
@@ -249,7 +357,7 @@
 `-- scripts
     `-- check-doc-links.py
 
-126 directories, 115 files
+161 directories, 188 files
 ```
 
 ---
@@ -354,13 +462,15 @@
 
 | 路徑 (Path) | 模組 (Module) | 用途 (Purpose) | 關鍵說明 (Key Notes) |
 |---|---|---|---|
-| `examples/example-resource-server/` | `example-rs` | Resource Server 範例 | Web、JPA、MySQL（測試用 H2）、Swagger；port 8080。Java 套件仍為 `jacky917.demo.resourceserver`。 |
+| `examples/example-resource-server/` | `example-rs` | Resource Server 範例 | Web、JPA、MySQL（測試用 H2）、Swagger；port 8080；以登入服務的 JWKS 驗證 Token，並檢查 `iss` 與 `aud`。 |
 | `.../controller/DemoSecureController.java` | `example-rs` | 安全端點 | permitAll、authenticated、RBAC、AND/OR、ABAC。 |
 | `.../authz/DemoAuthzConfiguration.java` | `example-rs` | ABAC 規則 | `clip.ownerId == JWT sub`，找不到資料時拒絕。 |
-| `.../config/DemoJwtDecoderConfiguration.java` | `example-rs` | JwtDecoder 範例 | HS256 JWK，驗證簽章與 issuer。 |
-| `.../tools/GenerateTestJwtMain.java` | `example-rs` | 測試 JWT CLI | 以 demo 金鑰產生 Token。 |
-| `examples/example-authorization-server/` | `example-as` | 測試用 Token 簽發服務 | `POST /oauth2/token`，固定密碼 `password`，僅供本地測試；port 8081。 |
-| `*/src/main/resources/demo/jwk/demo-hs256.jwk.json` | `examples` | 測試金鑰 | 兩個範例共用的 HS256 JWK。 |
+| `examples/example-authorization-server/` | `example-as` | 登入服務範例 | 以 AS starter 建立；port 9000；預設 SQLite（`data/`）；Cookie 名稱 `JACKY917_AS_SESSION`。 |
+| `.../DemoDataInitializer.java` | `example-as` | 示範資料 | 角色 `A`（權限 `bb`、`clip:read`）、使用者 alice（角色 A）與 bob。 |
+| `examples/example-bff/` | `example-bff` | BFF 範例 | port 8082；oauth2Login、`/me`、`/api/**` 代理到 Resource Server（自動附帶並刷新 Access Token）、RP-Initiated Logout。 |
+| `.../SerializedAuthorizedClientManager.java` | `example-bff` | 刷新依序執行 | 同一位使用者同時只有一個請求刷新 Token（D19 的 BFF 端）。 |
+| `.../src/main/resources/static/` | `example-bff` | 示範頁面 | 登入、呼叫 API、登出（CSRF token 以標頭送出）。 |
+| `e2e-tests/` | `e2e-tests` | 端對端測試 | 同一個 JVM 啟動登入服務、兩個 Resource Server、BFF；模擬瀏覽器走完登入、呼叫 API、audience 檢查、登出。 |
 
 ### 文件
 
@@ -373,7 +483,8 @@
 | `docs/resource-server/troubleshooting.md` | 疑難排解 | 依症狀排查。 |
 | `docs/resource-server/jwt-claims.md`、`authorization-model.md` | Token 契約與授權模型 | |
 | `docs/guides/upgrade-to-2.0.md` | 升級指南 | 1.x → 2.0 的座標、套件、設定、行為變更與檢查清單。 |
-| `docs/guides/e2e-testing.md`、`github-packages.md` | 操作指南 | 端對端驗證；發佈與引用。 |
+| `docs/authorization-server/getting-started.md` | Authorization Server 使用指南 | 建立登入服務、設定參考、資料庫、client、Google 登入、Token 內容、限制、上線清單。 |
+| `docs/guides/e2e-testing.md`、`github-packages.md` | 操作指南 | 端對端驗證（自動與手動）；發佈與引用。 |
 | `docs/design/v2-overview.md` | 2.0 總設計 | 里程碑、破壞性變更、決策索引。 |
 | `docs/design/boot4-migration-design.md`、`repo-structure-design.md` | 2.0 設計 | Boot 4.1 升級與 repo 重構（含實施紀錄）。 |
 | `docs/design/auth-server-design.md`、`auth-server-data-model.md`、`auth-server-detailed-design.md` | Authorization Server 設計 | 架構與決策、表設計（PostgreSQL／SQLite 實測）、元件與流程。 |

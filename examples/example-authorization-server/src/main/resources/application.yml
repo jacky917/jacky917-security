@@ -1,3 +1,48 @@
 server:
-  port: 8081
+  port: 9000
+  servlet:
+    session:
+      # 與同一台主機上的 BFF（localhost:8082）區分：瀏覽器的 Cookie 只看主機、不看埠號，
+      # 兩者都用 JSESSIONID 時會互相覆蓋，登入流程因此失敗
+      cookie:
+        name: JACKY917_AS_SESSION
 
+jacky917:
+  security:
+    authorization-server:
+      issuer: http://localhost:9000
+      keys:
+        # 僅供本機示範：正式環境必須以環境變數注入（openssl rand -base64 32），不可寫在設定檔中
+        encryption-key: ${JACKY917_AS_ENCRYPTION_KEY:ZXhhbXBsZS1vbmx5LWRvLW5vdC11c2UtaW4tcHJvZCE=}
+      # 資料庫：未設定 spring.datasource.url，預設使用 ./data/jacky917-auth.db（SQLite）
+      bootstrap-admin:
+        username: admin
+        password: ${JACKY917_AS_ADMIN_PASSWORD:admin-password-123}
+      clients:
+        web-bff:
+          display-name: Example BFF
+          secret: ${WEB_BFF_SECRET:bff-secret-for-local-demo}
+          redirect-uris: http://localhost:8082/login/oauth2/code/jacky917
+          post-logout-redirect-uris: http://localhost:8082/
+          scopes: openid,profile,email
+        report-batch:
+          secret: ${REPORT_BATCH_SECRET:batch-secret-for-local-demo}
+          grant-types: client_credentials
+          scopes: report.generate
+
+# 示範使用者 alice、bob 的密碼（DemoDataInitializer）
+demo:
+  users:
+    password: ${DEMO_USER_PASSWORD:demo-password-123}
+
+# 啟用 Google 登入：到 Google Cloud Console 建立 OAuth 用戶端，redirect URI 設為
+# http://localhost:9000/login/oauth2/code/google，再取消以下註解
+#spring:
+#  security:
+#    oauth2:
+#      client:
+#        registration:
+#          google:
+#            client-id: ${GOOGLE_CLIENT_ID}
+#            client-secret: ${GOOGLE_CLIENT_SECRET}
+#            scope: openid,profile,email

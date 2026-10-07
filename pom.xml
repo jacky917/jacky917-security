@@ -68,6 +68,8 @@
         <module>relocation/jacky917-security-starter</module>
         <module>examples/example-resource-server</module>
         <module>examples/example-authorization-server</module>
+        <module>examples/example-bff</module>
+        <module>e2e-tests</module>
     </modules>
 
     <dependencyManagement>

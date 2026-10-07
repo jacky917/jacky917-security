@@ -21,3 +21,6 @@ hs_err_pid*
 
 # flatten-maven-plugin 產生的發佈用 POM
 .flattened-pom.xml
+
+# 範例登入服務的預設 SQLite 資料庫
+data/

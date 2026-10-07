@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 🚧 實作中（第 1 階段）：工作 1～9 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
+| 狀態 | ✅ 第 1 階段已實作（2.1.0 preview），見 [§13 實施紀錄](#13-實施紀錄)；第 2 階段（工作 11～17）尚未開始 |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -991,7 +991,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 7 | `SessionLinkingAuthorizationService`：授權與登入 Session 的連結 | ✅ |
 | 8 | Token：`Jacky917TokenCustomizer`、`AuthorityResolver`（第一方與第三方）、`AudienceResolver`、`TokenClaimsContributor` | ✅ |
 | 9 | 第三方登入（Google）：通用 OIDC mapper、`FederatedIdentityService`、自動建立使用者、`PrincipalNormalizer` | ✅ |
-| 10 | 範例與 E2E | ⏳ |
+| 10 | `example-authorization-server`（改用 AS starter）、`example-bff`、`e2e-tests` | ✅ |
+| 11～17 | 第 2 階段 | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1034,6 +1035,9 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 第三方的 token | 不儲存 | 登入成功處理後立即從 `OAuth2AuthorizedClientRepository` 移除 | Spring 預設把它留在記憶體中 |
 | 第三方登入的設定 | — | 使用 Spring Boot 標準的 `spring.security.oauth2.client.registration.*`；有設定時才啟用 `oauth2Login`，登入頁自動顯示按鈕 | 不另外發明設定格式 |
 | 測試中的 Google | WireMock | 以 JDK 內建 `HttpServer` 實作的假 OIDC 提供者（token、JWKS、userinfo，以自己的金鑰簽 ID Token） | 不需要額外依賴；Spring 的 oauth2Login 仍實際換 code、驗證簽章、nonce 與 aud |
+| E2E 測試 | — | 四個應用程式（登入服務、兩個 Resource Server、BFF）在同一個 JVM 以隨機埠號啟動；以 `spring.config.name` 指定不存在的名稱，所有設定由參數提供 | 三個範例的 `application.yml` 同名，同一個 classpath 上只會載入其中一個；不需要 Docker |
+| T-E2E-02（Google 的端對端） | E2E | 由 AS 模組的整合測試涵蓋（假的 OIDC 提供者，Spring 實際換 code 與驗證 ID Token） | E2E 已涵蓋 BFF → AS → RS 的串接；第三方登入只影響 AS 內部 |
+| 同主機的 Session Cookie | — | 範例登入服務設定 `server.servlet.session.cookie.name: JACKY917_AS_SESSION`，並寫入使用指南 | 瀏覽器的 Cookie 不區分埠號，與同主機的 BFF 都用 `JSESSIONID` 時互相覆蓋（E2E 實作時確認） |
 | `/userinfo` | — | SAS 端點的 filter chain 以 `oauth2ResourceServer().jwt()` 驗證 Access Token，`JwtDecoder` 由公開的金鑰建立 | OIDC userinfo 需要 Bearer Token |
 | 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
 

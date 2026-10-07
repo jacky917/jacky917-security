@@ -10,9 +10,9 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>example-resource-server</artifactId>
-    <name>example-resource-server</name>
-    <description>Demo Resource Server for jacky917-security</description>
+    <artifactId>example-bff</artifactId>
+    <name>example-bff</name>
+    <description>Example backend-for-frontend: logs users in through example-authorization-server and calls example-resource-server</description>
 
     <dependencies>
         <dependency>
@@ -21,30 +21,7 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.mysql</groupId>
-            <artifactId>mysql-connector-j</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springdoc</groupId>
-            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>3.1.1</version>
-        </dependency>
-        <!--
-          Note: 這裡刻意使用本地 Maven Reactor 依賴，而不從 GitHub Packages 下載。
-          這樣做是為了讓其他開發者 clone 專案後能「開箱即用」，
-          避免因為 GitHub Packages 強制要求配置 PAT 而導致本地編譯失敗 (401 Unauthorized)。
-        -->
-        <dependency>
-            <groupId>io.github.jacky917</groupId>
-            <artifactId>jacky917-security-resource-server-starter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.github.jacky917</groupId>
-            <artifactId>jacky917-security-annotations</artifactId>
+            <artifactId>spring-boot-starter-security-oauth2-client</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -54,11 +31,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -77,10 +49,7 @@
     </build>
 
     <properties>
-        <jacky917.enforce.resource-server-boundary.skip>false</jacky917.enforce.resource-server-boundary.skip>
-        <java.version>21</java.version>
         <!-- 告訴 Maven 這個模組不要發佈到 GitHub Packages -->
         <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
-
 </project>

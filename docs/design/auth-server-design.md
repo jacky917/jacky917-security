@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 📝 設計草案，等待決策（見 [§12 待確認事項](#12-待確認事項)） |
+| 狀態 | ✅ 第 1 階段已實作（見 [詳細設計 §13](auth-server-detailed-design.md#13-實施紀錄)）；使用說明見 [使用指南](../authorization-server/getting-started.md) |
 | 日期 | 2026-10-07 |
 | 範圍 | 新增 `jacky917-security-authorization-server-starter`：以 Spring Security 7 的 Authorization Server 為基礎，支援帳號密碼登入與第三方登入（Google 等） |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（D01 已決定） |

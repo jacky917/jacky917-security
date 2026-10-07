@@ -695,3 +695,24 @@
   - **DEC-082**: `PrincipalNormalizer` 在沒有 factor authority 時加入 `FACTOR_AUTHORIZATION_CODE`。
 - **Next TODO**:
   - 工作 10：`example-authorization-server` 改用 AS starter、`example-bff`、E2E 測試。
+
+---
+## Step 28: Authorization Server 第 1 階段——工作 10（範例與 E2E），第 1 階段完成
+- **Status**: 🟢 Completed（M4 已實作，尚未發佈）
+- **Acceptance Criteria**:
+  - [x] `example-authorization-server` 改用 AS starter（port 9000、預設 SQLite、示範使用者 alice／bob、角色 A），移除舊的 HS256 示範簽發端點。
+  - [x] `example-resource-server` 改以登入服務的 JWKS 驗證 RS256 Token，檢查 `iss` 與 `aud`；移除 HS256 金鑰與測試 JWT CLI。
+  - [x] 新增 `example-bff`：oauth2Login、`/me`、`/api/**` 代理（自動附帶並刷新 Access Token，同一位使用者的刷新依序執行）、RP-Initiated Logout、示範頁面。
+  - [x] 新增 `e2e-tests`：同一個 JVM 啟動四個應用程式，模擬瀏覽器（T-E2E-01、T-E2E-03、登出）。
+  - [x] 新增 [Authorization Server 使用指南](authorization-server/getting-started.md)；改寫 E2E 測試指南與 README 的範例說明。
+- **Commands Run & Results**:
+  - E2E 4 個測試第一次執行即全數通過：alice 登入後呼叫 API 200、bob 403、audience 不同的服務拒絕同一個 Token、登出後兩邊都需要重新登入。
+  - `mvn -B -o clean verify`：**SUCCESS**，161 個測試（Resource Server 47、Authorization Server 99、範例 11、E2E 4）。
+  - 文件連結檢查發現 Resource Server 使用指南仍連到已刪除的 `DemoJwtDecoderConfiguration`，已修正。
+- **Decision Log**:
+  - **DEC-083**: 範例 jar 以 `exec` classifier 產生可執行檔，主要 artifact 維持一般 jar，供 `e2e-tests` 引用。
+  - **DEC-084**: E2E 在同一個 JVM 執行，以 `spring.config.name` 避免載入同名的 `application.yml`；不需要 Docker。
+  - **DEC-085**: 範例登入服務使用自己的 Session Cookie 名稱，避免與同主機的 BFF 互相覆蓋。
+- **Next TODO**:
+  - 待使用者決定：授權條款（發佈 2.0.0 的前提）、合併 PR #3 與本分支的 PR、1.1.0 發佈時間。
+  - 第 2 階段（工作 11～17）：重用偵測、登出撤銷 Session、登入保護與稽核、帳號連結、排程（金鑰輪換、清理）、Spring Session JDBC、metrics。
