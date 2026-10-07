@@ -36,8 +36,22 @@ jobs:
             exit 1
           fi
 
-      # 部署整個 reactor（包含測試）：examples 以 maven.deploy.skip 排除，新增模組時不必修改此處
-      - name: Build, test and publish to GitHub Packages
-        run: mvn --batch-mode deploy
+      # 尚未決定授權條款前禁止發佈：沒有自行宣告時，發佈的 POM 會帶有繼承自 spring-boot-starter-parent 的 Apache License 2.0
+      - name: Verify license is declared
+        run: |
+          if [ ! -f LICENSE ] || ! grep -q '<licenses>' pom.xml; then
+            echo "::error::LICENSE file and <licenses> in pom.xml are required before publishing (see the TODO in pom.xml)"
+            exit 1
+          fi
+
+      # 先完成整個 reactor 的建置與測試，全部通過才部署。
+      # 若直接 mvn deploy，Maven 會逐模組「測試後立即部署」，examples 的測試在函式庫部署之後才執行；
+      # 一旦失敗就會留下發佈一半的版本，而 GitHub Packages 不允許覆蓋正式版本。
+      - name: Build and test
+        run: mvn --batch-mode verify
+
+      # 部署整個 reactor：examples 以 maven.deploy.skip 排除，新增模組時不必修改此處
+      - name: Publish to GitHub Packages
+        run: mvn --batch-mode deploy -DskipTests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -25,10 +25,12 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 /**
  * 驗證自動配置的執行順序：Starter 的設定必須優先於 Spring Boot 的安全性自動配置。
  * <p>
- * Spring Boot 排序自動配置時，先依類別名稱的字母順序，再套用 {@code before}／{@code after}。
- * {@code jacky917.…} 本來就排在 {@code org.springframework.…} 前面，因此即使 {@code beforeName}
- * 寫錯，目前的行為也不會出錯；{@code beforeName} 是避免日後套件名稱改變時失去優先順序的保險。
- * 以字串指定的類別名稱打錯時不會有任何錯誤，所以由 {@link #beforeNameClassesExist()} 確認每個類別都存在。
+ * Spring Boot 排序自動配置時，先依類別名稱的字母順序，再套用
+ * {@code before}／{@code after}。{@code jacky917.…} 本來就排在
+ * {@code org.springframework.…} 前面，因此即使 {@code beforeName} 寫錯，
+ * 目前的行為也不會出錯；{@code beforeName} 是避免日後套件名稱改變時失去
+ * 優先順序的保險。以字串指定的類別名稱打錯時不會有任何錯誤，所以由
+ * {@link #beforeNameClassesExist()} 確認每個類別都存在。
  * <p>
  * 測試應用程式只使用 {@code @EnableAutoConfiguration}（不直接 {@code @Import}），
  * 讓 Starter 經由 {@code AutoConfiguration.imports} 載入，與實際使用者的情況相同。

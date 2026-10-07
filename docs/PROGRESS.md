@@ -48,8 +48,8 @@
 - **Files Changed**:
   - **Updated**: `jacky917-security-autoconfigure/pom.xml`
   - **Updated**: `demo-resource-server/pom.xml`
-  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/properties/Jacky917SecurityProperties.java`
-  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
+  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/properties/Jacky917SecurityProperties.java`
+  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
   - **New**: `jacky917-security-autoconfigure/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
   - **Updated**: `docs/PROGRESS.md`
   - **Updated**: `docs/PROJECT_STRUCTURE.md`
@@ -77,12 +77,12 @@
   - `mvn -U clean verify`: **SUCCESS**
 - **Files Changed**:
   - **Updated**: `jacky917-security-autoconfigure/pom.xml`
-  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
-  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/properties/Jacky917SecurityProperties.java`
-  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/authentication/JwtAuthoritiesExtractor.java`
-  - **Updated**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/resourceserver/autoconfigure/authentication/JwtAuthoritiesExtractorTest.java`
-  - **Deleted**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/jwt/JwtAuthoritiesExtractor.java`
-  - **Deleted**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/resourceserver/autoconfigure/jwt/JwtAuthoritiesExtractorTest.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/properties/Jacky917SecurityProperties.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/authentication/JwtAuthoritiesExtractor.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/autoconfigure/authentication/JwtAuthoritiesExtractorTest.java`
+  - **Deleted**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/jwt/JwtAuthoritiesExtractor.java`
+  - **Deleted**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/autoconfigure/jwt/JwtAuthoritiesExtractorTest.java`
   - **Updated**: `docs/jwt-claims.md`
   - **Updated**: `docs/starter-design.md`
   - **Updated**: `docs/PROGRESS.md`
@@ -119,9 +119,9 @@
   - **New**: `jacky917-security-annotations/src/main/java/jacky917/security/annotations/RequireScope.java`
   - **Updated**: `jacky917-security-autoconfigure/pom.xml`
   - **Updated**: `jacky917-security-autoconfigure/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
-  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
-  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/methodsecurity/Jacky917AuthorityEvaluator.java`
-  - **New**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/resourceserver/autoconfigure/integration/MethodSecurityAnnotationsIntegrationTest.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
+  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/methodsecurity/Jacky917AuthorityEvaluator.java`
+  - **New**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/autoconfigure/integration/MethodSecurityAnnotationsIntegrationTest.java`
   - **Updated**: `docs/authorization-model.md`
   - **Updated**: `docs/PROGRESS.md`
   - **Updated**: `docs/PROJECT_STRUCTURE.md`
@@ -262,7 +262,7 @@
 - **Files Changed**:
   - **Updated**: `demo-resource-server/pom.xml`
   - **Updated**: `demo-authorization-server/pom.xml`
-  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/properties/Jacky917SecurityProperties.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/properties/Jacky917SecurityProperties.java`
   - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/clip/Clip.java`
   - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/clip/ClipDemoDataInitializer.java`
   - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/clip/ClipRepository.java`
@@ -518,3 +518,33 @@
   - 以舊的 GitHub Packages URL 實際下載 `1.0.0`（需要有 `read:packages` 的 token）。
   - 待使用者決定：授權條款、1.1.0 發佈時間、`.cursor/rules` 是否更新為 Spring Boot 4.1。
   - 依 `docs/design/auth-server-detailed-design.md` §11 開始 AS 第 1 階段。
+
+---
+## Step 19: PR #3 review 修正
+- **Status**: 🟢 Completed
+- **Review 結果**：10 項中 8 項修正、2 項記錄為已知限制（使用者決定全部採用推薦方案）。
+- **修正內容**:
+  - 發佈流程：改為先 `mvn verify` 再 `mvn deploy -DskipTests`。原本直接 `mvn deploy` 會逐模組「測試後立即部署」，範例模組的測試失敗時，函式庫已經發佈出去。
+  - 發佈流程：沒有 `LICENSE` 檔或 `<licenses>` 時拒絕發佈（授權條款尚未決定）。
+  - `@Require*` 所需的 Bean 移到新的 `Jacky917AuthorityEvaluatorAutoConfiguration`，沒有任何條件。`enabled=false` 或非 Servlet 應用程式自行啟用方法級授權時，註解照常運作；原本會因找不到 `jacky917AuthorityEvaluator` 而回傳 500。
+  - 文件連結檢查：重複標題依 GitHub 規則加 `-1`、`-2`；支援帶標題與 `<...>` 的連結。
+  - `PROGRESS.md` Step 2～9 中 12 行被批次替換改錯的歷史路徑還原。
+  - 自訂前綴的負向測試補上 `@RequireScope`。
+  - 超過 80 欄的 Javadoc 換行（`AuthzService` 的 `{@code @PreAuthorize(...)}` 與 `GenerateTestJwtMain` 的命令列範例無法斷行，保留）。
+  - 限制文件新增 §17（新舊座標同時存在）、§18（無法只關閉 Starter 的方法級授權）；升級指南加入對應提醒與檢查項目。
+- **Commands Run & Results**:
+  - 新測試的破壞實驗：從 `AutoConfiguration.imports` 移除新的自動配置後，2 個註解測試失敗；還原後通過。
+  - 實驗：移除 `AnnotationTemplateExpressionDefaults` Bean 後註解仍正常。查證 Spring Security 7.1.1 的 `SecurityAnnotationScanners.requireUnique(Class)` 預設即帶入 `AnnotationTemplateExpressionDefaults`，因此修正 Javadoc 與設計文件的描述（此 Bean 改為「明確宣告並可替換」）。
+  - 連結檢查的實驗：`#欄位說明-1` 通過、`#欄位說明-2` 回報缺少；帶標題與 `<...>` 的失效連結都會回報。
+  - 授權條款檢查：目前沒有 `LICENSE`，檢查會中止發佈（符合預期）。
+  - `mvn -B -o clean verify`：**SUCCESS**，56 個測試全數通過（Resource Server 47、example-resource-server 7、example-authorization-server 2）。
+  - 文件連結、錨點、YAML 檢查：無錯誤。
+- **Decision Log**:
+  - **DEC-059**: `@Require*` 所需的 Bean 一律註冊，不受 `jacky917.security.enabled` 與應用程式類型影響（只負責判斷，不改變安全設定）。
+  - **DEC-060**: 發佈前必須完成整個 reactor 的測試，並已宣告授權條款。
+  - **DEC-061**: 不為 annotations／autoconfigure 的舊座標提供 relocation，也不恢復關閉方法級授權的開關；兩者記錄為已知限制（limitations §17、§18）。
+- **Files Changed**:
+  - **New**: `Jacky917AuthorityEvaluatorAutoConfiguration.java`、`StarterDisabledIntegrationTest.java`
+  - **Updated**: `Jacky917SecurityAutoConfiguration.java`、`AutoConfiguration.imports`、`PrefixAndDefaultsIntegrationTest.java`、`AutoConfigurationOrderingIntegrationTest.java`、`Jacky917SecurityProperties.java`、`.github/workflows/publish.yml`、`scripts/check-doc-links.py`、`pom.xml`、`docs/resource-server/{getting-started,configuration,limitations}.md`、`docs/guides/{upgrade-to-2.0,github-packages}.md`、`docs/design/starter-design.md`、`docs/PROGRESS.md`、`docs/PROJECT_STRUCTURE.md`
+- **Next TODO**:
+  - 決定授權條款（新增 `LICENSE` 與 `<licenses>`）後才能發佈 2.0.0。

@@ -81,7 +81,11 @@ PAT 至少需包含：
 流程：
 
 1. **檢查版本**：tag（去掉開頭的 `v`）必須等於根 `pom.xml` 的 `<revision>`，否則中止發佈。
-2. **建置、測試並發佈**：`mvn --batch-mode deploy`，部署整個 reactor（含測試）。範例模組以 `maven.deploy.skip` 排除；新增模組時不必修改 workflow。
+2. **檢查授權條款**：根目錄必須有 `LICENSE` 檔，且根 `pom.xml` 宣告了 `<licenses>`，否則中止發佈（避免發佈的 POM 帶著繼承自 Spring Boot parent、未經決定的 Apache License 2.0）。
+3. **建置與測試**：`mvn --batch-mode verify`，整個 reactor（包含範例模組）全部通過才繼續。
+4. **發佈**：`mvn --batch-mode deploy -DskipTests`。範例模組以 `maven.deploy.skip` 排除；新增模組時不必修改 workflow。
+
+> 測試與發佈分成兩步，是因為直接 `mvn deploy` 會逐模組「測試後立即部署」：函式庫模組會在範例模組的測試執行前就發佈出去，一旦後面的測試失敗，就會留下發佈一半的版本。GitHub Packages 不允許覆蓋正式版本，只能手動刪除後重來。
 
 發佈新版本的步驟：
 

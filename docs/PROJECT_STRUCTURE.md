@@ -146,6 +146,7 @@
 |   |       |   |                   |-- authentication
 |   |       |   |                   |   `-- JwtAuthoritiesExtractor.java
 |   |       |   |                   |-- config
+|   |       |   |                   |   |-- Jacky917AuthorityEvaluatorAutoConfiguration.java
 |   |       |   |                   |   `-- Jacky917SecurityAutoConfiguration.java
 |   |       |   |                   |-- methodsecurity
 |   |       |   |                   |   `-- Jacky917AuthorityEvaluator.java
@@ -168,7 +169,8 @@
 |   |                               |   |-- ErrorResponseJsonMapperIntegrationTest.java
 |   |                               |   |-- MethodSecurityAnnotationsIntegrationTest.java
 |   |                               |   |-- PrefixAndDefaultsIntegrationTest.java
-|   |                               |   `-- SecurityBehaviorIntegrationTest.java
+|   |                               |   |-- SecurityBehaviorIntegrationTest.java
+|   |                               |   `-- StarterDisabledIntegrationTest.java
 |   |                               |-- methodsecurity
 |   |                               |   `-- Jacky917AuthorityEvaluatorTest.java
 |   |                               `-- properties
@@ -184,7 +186,7 @@
 `-- scripts
     `-- check-doc-links.py
 
-98 directories, 78 files
+98 directories, 80 files
 ```
 
 ---
@@ -198,8 +200,8 @@
 | `jacky917-security-bom/pom.xml` | `bom` | BOM | 列出所有發佈模組的版本；flatten 以 bom 模式發佈。 |
 | `relocation/jacky917-security-starter/pom.xml` | `relocation` | 舊座標 relocation | `com.github.jacky917:jacky917-security-starter` → 新的 resource server starter；只在 2.0.x 發佈。 |
 | `.github/workflows/ci.yml` | `ci` | 持續整合 | push 到 `main`／`1.x` 與所有 PR：Java 21、25 建置與測試；文件連結檢查。 |
-| `.github/workflows/publish.yml` | `ci` | 發佈流程 | Release 時檢查 tag 等於 `revision`，測試後部署整個 reactor 到 GitHub Packages。 |
-| `scripts/check-doc-links.py` | `tooling` | 文件檢查 | README 與 docs 的相對連結、錨點、YAML 範例；有問題即非 0 結束。 |
+| `.github/workflows/publish.yml` | `ci` | 發佈流程 | Release 時檢查 tag 等於 `revision`、已宣告授權條款；整個 reactor 測試通過後才部署到 GitHub Packages。 |
+| `scripts/check-doc-links.py` | `tooling` | 文件檢查 | README 與 docs 的相對連結（含標題與 `<...>` 寫法）、錨點（重複標題依 GitHub 規則加 `-1`）、YAML 範例；有問題即非 0 結束。 |
 
 ### core
 
@@ -216,7 +218,8 @@
 |---|---|---|---|
 | `resource-server/jacky917-security-resource-server-starter/` | `rs-starter` | 業務 API 引入的 starter | 聚合 autoconfigure 與 annotations。 |
 | `resource-server/jacky917-security-annotations/` | `annotations` | 授權註解 | `@RequireRole/@RequirePerm/@RequireScope/@RequireAny/@RequireAll`，皆呼叫 `jacky917AuthorityEvaluator`。 |
-| `resource-server/jacky917-security-resource-server-autoconfigure/.../config/Jacky917SecurityAutoConfiguration.java` | `rs-autoconfigure` | 自動配置入口 | filter chain、JWT converter、evaluator、401/403 JSON；`beforeName` 排在 Boot 安全性自動配置之前；方法級授權一律啟用。 |
+| `resource-server/jacky917-security-resource-server-autoconfigure/.../config/Jacky917SecurityAutoConfiguration.java` | `rs-autoconfigure` | 自動配置入口 | filter chain、JWT converter、401/403 JSON；`beforeName` 排在 Boot 安全性自動配置之前；方法級授權一律啟用。 |
+| `resource-server/jacky917-security-resource-server-autoconfigure/.../config/Jacky917AuthorityEvaluatorAutoConfiguration.java` | `rs-autoconfigure` | `@Require*` 所需的 Bean | `jacky917AuthorityEvaluator` 與佔位符設定；沒有任何條件，停用 Starter 或非 Servlet 應用程式也會註冊。 |
 | `resource-server/jacky917-security-resource-server-autoconfigure/.../authentication/JwtAuthoritiesExtractor.java` | `rs-autoconfigure` | claims → authorities | 讀取 `roles/permissions/scope/scp`，加前綴、去重、排序。 |
 | `resource-server/jacky917-security-resource-server-autoconfigure/.../methodsecurity/Jacky917AuthorityEvaluator.java` | `rs-autoconfigure` | 註解的判斷邏輯 | `hasRole/hasPerm/hasScope` 使用設定的前綴；`hasAnyAuthority/hasAllAuthorities`；一律 fail-closed。 |
 | `resource-server/jacky917-security-resource-server-autoconfigure/.../properties/Jacky917SecurityProperties.java` | `rs-autoconfigure` | Starter 屬性 | `jacky917.security.*`；`permit-all-patterns` 預設只有 `/actuator/health`。 |
@@ -229,6 +232,7 @@
 | `resource-server/jacky917-security-resource-server-autoconfigure/src/test/.../AutoConfigurationOrderingIntegrationTest.java` | `rs-test` | 整合測試 | `beforeName` 的類別都存在；只有 Starter 的 filter chain 與 JWT converter。 |
 | `resource-server/jacky917-security-resource-server-autoconfigure/src/test/.../ErrorResponseJsonMapperIntegrationTest.java` | `rs-test` | 整合測試 | 錯誤回應使用應用程式的 Jackson 3 `JsonMapper`。 |
 | `resource-server/jacky917-security-resource-server-autoconfigure/src/test/.../PrefixAndDefaultsIntegrationTest.java` | `rs-test` | 整合測試 | 2.0 行為：註解跟隨前綴、預設不放行 Swagger、`@Secured` 仍生效。 |
+| `resource-server/jacky917-security-resource-server-autoconfigure/src/test/.../StarterDisabledIntegrationTest.java` | `rs-test` | 整合測試 | `enabled=false` 且自行啟用方法級授權時註解照常判斷（不是 500）；非 Web 應用程式仍有 evaluator。 |
 
 ### Examples（不發佈）
 

@@ -2,7 +2,6 @@ package jacky917.security.resourceserver.autoconfigure.config;
 
 import jakarta.servlet.http.HttpServletResponse;
 import jacky917.security.resourceserver.autoconfigure.authentication.JwtAuthoritiesExtractor;
-import jacky917.security.resourceserver.autoconfigure.methodsecurity.Jacky917AuthorityEvaluator;
 import jacky917.security.resourceserver.autoconfigure.properties.Jacky917SecurityProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +19,6 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.annotation.AnnotationTemplateExpressionDefaults;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
@@ -41,15 +39,18 @@ import java.util.Map;
  * public patterns, requires authentication for every other request, maps
  * JWT claims to authorities, and writes JSON bodies for 401 and 403
  * responses. A 401 response also carries the RFC 6750
- * {@code WWW-Authenticate} header. It also enables method security and the beans used by the
- * {@code @Require*} annotations. Every bean backs off when the application
- * defines its own bean of the same type (or name, for the evaluator).
+ * {@code WWW-Authenticate} header. It also enables method security. Every
+ * bean backs off when the application defines its own bean of the same type.
+ * The beans used by the {@code @Require*} annotations are registered by
+ * {@link Jacky917AuthorityEvaluatorAutoConfiguration}, which stays active
+ * when this configuration is disabled.
  * <p>
  * 會註冊一個 {@code SecurityFilterChain}：放行設定的公開路徑、其他請求一律
  * 需要驗證、將 JWT claims 轉換為 authority，並在 401 與 403 時回傳 JSON；
- * 401 回應另外帶有 RFC 6750 的 {@code WWW-Authenticate} 標頭。
- * 同時啟用方法級授權，以及 {@code @Require*} 註解所需的 bean。應用程式若自行
- * 定義相同型別（判斷工具則為相同名稱）的 bean，對應的預設 bean 便不會建立。
+ * 401 回應另外帶有 RFC 6750 的 {@code WWW-Authenticate} 標頭。同時啟用方法級
+ * 授權。應用程式若自行定義相同型別的 bean，對應的預設 bean 便不會建立。
+ * {@code @Require*} 註解所需的 bean 由
+ * {@code Jacky917AuthorityEvaluatorAutoConfiguration} 註冊，本配置停用時仍然有效。
  * <p>
  * The whole configuration is disabled when
  * {@code jacky917.security.enabled=false}. It runs before Spring Boot's own
@@ -181,43 +182,6 @@ public class Jacky917SecurityAutoConfiguration {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(jwtAuthoritiesExtractor);
         return converter;
-    }
-
-    /**
-     * Creates the evaluator referenced by the {@code @Require*}
-     * annotations as {@code @jacky917AuthorityEvaluator}.
-     * <p>
-     * 建立供 {@code @Require*} 註解以 {@code @jacky917AuthorityEvaluator}
-     * 參照的判斷工具。
-     *
-     * @return an authority evaluator that uses the configured prefixes
-     *         <br>使用設定前綴的 authority 判斷工具
-     */
-    @Bean("jacky917AuthorityEvaluator")
-    @ConditionalOnMissingBean(name = "jacky917AuthorityEvaluator")
-    public Jacky917AuthorityEvaluator jacky917AuthorityEvaluator() {
-        return new Jacky917AuthorityEvaluator(properties);
-    }
-
-    /**
-     * Enables {@code {value}} placeholders in meta-annotations such as
-     * {@code @RequireRole}.
-     * <p>
-     * 啟用 {@code @RequireRole} 等組合註解中的 {@code {value}} 佔位符。
-     * <p>
-     * The method is static so that the bean is available before Spring
-     * Security creates its method security interceptors.
-     * <p>
-     * 此方法宣告為 static，確保 bean 在 Spring Security 建立方法級授權攔截器
-     * 之前即可使用。
-     *
-     * @return the default template expression settings
-     *         <br>預設的樣板運算式設定
-     */
-    @Bean
-    @ConditionalOnMissingBean
-    public static AnnotationTemplateExpressionDefaults annotationTemplateExpressionDefaults() {
-        return new AnnotationTemplateExpressionDefaults();
     }
 
     private org.springframework.security.web.AuthenticationEntryPoint jsonAuthenticationEntryPoint() {

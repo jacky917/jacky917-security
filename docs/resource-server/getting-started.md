@@ -515,7 +515,8 @@ jacky917:
     enabled: false               # 停用整個自動配置
 ```
 
-- `enabled: false` 時，Starter 的 filter chain、converter、evaluator 都不會建立，應用回到 Spring Boot 原生行為（若有設定 `spring.security.oauth2.resourceserver.jwt.*`，Boot 會建立它自己的 Resource Server 設定）。
+- `enabled: false` 時，Starter 的 filter chain、converter、401／403 JSON 回應與方法級授權都不會建立，應用回到 Spring Boot 原生行為（若有設定 `spring.security.oauth2.resourceserver.jwt.*`，Boot 會建立它自己的 Resource Server 設定）。
+- `@Require*` 註解所需的 `jacky917AuthorityEvaluator` 與 `{value}` 佔位符支援**仍會註冊**（它們只負責判斷，不改變安全設定）。應用程式自行加上 `@EnableMethodSecurity` 後，註解照常運作並使用 `jwt.prefix.*` 的前綴。非 Servlet 應用程式（例如 WebFlux、批次程式）也一樣。
 - 2.0 起**沒有**「只停用方法級授權」的設定（1.x 的 `method-security.enabled` 已移除）：關閉後所有授權註解都會靜默失效，風險遠大於用途。
 
 ---

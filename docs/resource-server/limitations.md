@@ -26,6 +26,8 @@
 | 14 | [停用方法級授權時註解靜默失效](#14-停用方法級授權時註解靜默失效20-已解決) | ✅ 2.0 已解決 | — |
 | 15 | [支援範圍](#15-支援範圍) | — | — |
 | 16 | [發佈與依賴](#16-發佈與依賴) | 🟠 中 | 引入依賴時 |
+| 17 | [新舊座標同時存在](#17-新舊座標同時存在) | 🟠 中 | 不會發現（授權結果取決於 classpath 順序） |
+| 18 | [無法只關閉 Starter 的方法級授權](#18-無法只關閉-starter-的方法級授權) | 🟡 低 | 啟動時或請求進來時 |
 
 ---
 
@@ -299,7 +301,7 @@ Token 的驗證規則完全由你提供的 `JwtDecoder` 決定。Starter 不會�
 | 項目 | 支援 |
 |---|---|
 | Servlet（Spring MVC） | ✅ |
-| WebFlux（Reactive） | ❌ 自動配置會略過，所有 Starter 規則都不套用 |
+| WebFlux（Reactive） | ❌ 自動配置會略過，所有 Starter 規則都不套用（`@Require*` 所需的 Bean 仍會註冊，自行啟用方法級授權即可使用註解） |
 | JWT（JWS 簽章） | ✅ |
 | JWE（加密 JWT） | ❌ 需自訂 `JwtDecoder` |
 | Opaque Token / Introspection | ❌ |
@@ -322,3 +324,40 @@ Token 的驗證規則完全由你提供的 `JwtDecoder` 決定。Starter 不會�
 **該怎麼做**
 
 見 [GitHub Packages](../guides/github-packages.md) 與 [疑難排解](troubleshooting.md#could-not-find-artifact--jacky917-security-parent)。
+
+---
+
+## 17. 新舊座標同時存在
+
+**會發生什麼事**
+
+2.0 只為 starter 提供 relocation（`com.github.jacky917:jacky917-security-starter` → 新座標）。`jacky917-security-annotations` 與 `jacky917-security-autoconfigure` 的舊座標**沒有** relocation。
+
+若專案中某個模組（例如共用的 domain 函式庫）仍直接依賴 `com.github.jacky917:jacky917-security-annotations:1.x`，而應用程式改用 2.0 的 starter，classpath 上會同時出現新舊兩份 `jacky917.security.annotations.*`。Maven 只會在**相同 groupId:artifactId** 之間選版本，不同 groupId 不會互相取代，所以不會有任何警告。
+
+實際使用哪一份由 classpath 順序決定。若用到舊版，`@RequireRole` 等註解會使用 1.x 寫死的 `ROLE_`／`PERM_`／`SCOPE_` 前綴；有修改 `jwt.prefix.*` 時，授權結果會與預期不同。
+
+**該怎麼做**
+
+- 所有模組一起改用 `io.github.jacky917` 的座標，建議以 BOM 管理版本。
+- 檢查是否還有舊座標：
+
+```bash
+mvn dependency:tree -Dincludes=com.github.jacky917
+```
+
+  除了 relocation 本身（`jacky917-security-starter`）以外，不應該出現任何結果。
+
+---
+
+## 18. 無法只關閉 Starter 的方法級授權
+
+**會發生什麼事**
+
+2.0 移除了 `jacky917.security.method-security.enabled`：Starter 啟用時一律以 `@EnableMethodSecurity(securedEnabled = true)` 開啟方法級授權（原因見 [§14](#14-停用方法級授權時註解靜默失效20-已解決)）。
+
+應用程式若自行設定了不同的方法級授權（例如 `@EnableMethodSecurity(mode = AdviceMode.ASPECTJ)`），會與 Starter 的設定同時存在，授權檢查可能重複執行或設定不一致。
+
+**該怎麼做**
+
+改為停用整個 Starter（`jacky917.security.enabled=false`），自行設定 filter chain 與方法級授權。`@Require*` 註解所需的 Bean 在停用後仍會註冊，註解可以照常使用，見 [使用指南 §10](getting-started.md#10-停用-starter)。

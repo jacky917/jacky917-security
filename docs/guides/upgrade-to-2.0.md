@@ -61,6 +61,8 @@
 ```
 
 > **過渡期**：2.0.x 仍會發佈舊座標 `com.github.jacky917:jacky917-security-starter`，它只是一個 relocation，Maven 會自動導向新座標並顯示改名提示。所以只把版本號改成 2.0.x 也能運作，但請盡快改用新座標；3.0 會移除這個 relocation。
+>
+> **只有 starter 有 relocation**。若有任何模組（例如共用的 domain 函式庫）直接依賴舊的 `com.github.jacky917:jacky917-security-annotations` 或 `jacky917-security-autoconfigure`，必須一起改成新座標，否則新舊兩份同名類別會同時出現在 classpath，見 [限制 §17](../resource-server/limitations.md#17-新舊座標同時存在)。
 
 ### 2.2 Java 套件（只影響有直接使用自動配置類別的專案）
 
@@ -91,7 +93,7 @@ public boolean hasScope(Authentication authentication, String scope) { ... }
 |---|---|---|
 | `jacky917.security.permit-all-patterns` | **預設只有 `/actuator/health`**（1.x 預設還包含 Swagger／OpenAPI） | 需要公開 Swagger 時自行加入 `/v3/api-docs`、`/v3/api-docs/**`、`/swagger-ui/**`、`/swagger-ui.html` |
 | `jacky917.security.debug-log` | **已移除** | 改用 `logging.level.jacky917.security: DEBUG` |
-| `jacky917.security.method-security.enabled` | **已移除**（方法級授權一律開啟） | 刪除此設定。若原本設為 `false`，升級後註解會開始生效 |
+| `jacky917.security.method-security.enabled` | **已移除**（方法級授權一律開啟） | 刪除此設定。若原本設為 `false`，升級後註解會開始生效。若當初關閉是因為自行設定了方法級授權（例如 AspectJ 模式），請改為停用整個 Starter，見 [限制 §18](../resource-server/limitations.md#18-無法只關閉-starter-的方法級授權) |
 | 其他（`enabled`、`jwt.*`） | 不變 | — |
 
 Spring Boot 會忽略已移除的屬性，留在設定檔中不會報錯，但也不再有作用，建議刪除以免誤會。
@@ -113,6 +115,8 @@ Spring Boot 會忽略已移除的屬性，留在設定檔中不會報錯，但�
 
 `@Secured` **仍然支援**，不需要修改。
 
+`jacky917.security.enabled=false` 時，`@Require*` 註解所需的 Bean 仍會註冊：自行啟用方法級授權的應用程式可以繼續使用這些註解。
+
 ---
 
 ## 5. 測試
@@ -130,6 +134,7 @@ Spring Boot 會忽略已移除的屬性，留在設定檔中不會報錯，但�
 
 - [ ] 應用程式已升級到 Spring Boot 4.1，並改用 `spring-boot-starter-webmvc`
 - [ ] 依賴改為 `io.github.jacky917:jacky917-security-resource-server-starter`（或匯入 `jacky917-security-bom`）
+- [ ] `mvn dependency:tree -Dincludes=com.github.jacky917` 除了 relocation 以外沒有任何結果（所有模組都已改用新座標）
 - [ ] 有 import `jacky917.security.autoconfigure.*` 的程式已改為 `jacky917.security.resourceserver.autoconfigure.*`
 - [ ] 自訂的 `jacky917AuthorityEvaluator` 已補上 `hasRole`、`hasPerm`、`hasScope`
 - [ ] 需要公開的 Swagger／OpenAPI 路徑已加入 `permit-all-patterns`

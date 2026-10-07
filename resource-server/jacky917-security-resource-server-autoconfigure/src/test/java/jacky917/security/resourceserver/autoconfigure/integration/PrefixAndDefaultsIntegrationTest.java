@@ -60,6 +60,7 @@ class PrefixAndDefaultsIntegrationTest {
         void defaultPrefixNoLongerMatches() throws Exception {
             mockMvc.perform(get("/role").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))).andExpect(status().isForbidden());
             mockMvc.perform(get("/perm").with(jwt().authorities(new SimpleGrantedAuthority("PERM_order:read")))).andExpect(status().isForbidden());
+            mockMvc.perform(get("/scope").with(jwt().authorities(new SimpleGrantedAuthority("SCOPE_profile")))).andExpect(status().isForbidden());
         }
     }
 

@@ -22,6 +22,7 @@ resource-server/
 ├── jacky917-security-resource-server-autoconfigure
 │   └── jacky917.security.resourceserver.autoconfigure
 │       ├── config/Jacky917SecurityAutoConfiguration       自動配置入口
+│       ├── config/Jacky917AuthorityEvaluatorAutoConfiguration  @Require* 所需的 Bean（無條件註冊）
 │       ├── authentication/JwtAuthoritiesExtractor         claims → authorities
 │       ├── methodsecurity/Jacky917AuthorityEvaluator      @Require* 的判斷邏輯
 │       └── properties/Jacky917SecurityProperties          jacky917.security.* 屬性
@@ -110,11 +111,16 @@ sequenceDiagram
 | `jacky917SecurityFilterChain` | `SecurityFilterChain` | 沒有任何 `SecurityFilterChain` Bean | HTTP 安全規則 |
 | `jwtAuthoritiesExtractor` | `JwtAuthoritiesExtractor` | 沒有同型別 Bean | claims → authorities |
 | `jwtAuthenticationConverter` | `JwtAuthenticationConverter` | 沒有同型別 Bean | 把 `Jwt` 轉成 `JwtAuthenticationToken` |
-| `jacky917AuthorityEvaluator` | `Jacky917AuthorityEvaluator` | 沒有**同名稱** Bean | 供所有 `@Require*` 註解的 SpEL 呼叫；使用 `jwt.prefix.*` 設定的前綴 |
-| `annotationTemplateExpressionDefaults` | `AnnotationTemplateExpressionDefaults` | 沒有同型別 Bean | 讓 `@Require*` 中的 `{value}` 佔位符生效；宣告為 `static` |
 | （內部設定類別） | `MethodSecurityConfiguration` | 無（Starter 啟用即生效；2.0 移除了關閉開關） | `@EnableMethodSecurity(securedEnabled = true)` |
 
 Starter 另外在自動配置類別上標註了 `@EnableWebSecurity`，並以 `@EnableConfigurationProperties` 註冊 `Jacky917SecurityProperties`。
+
+`@Require*` 註解所需的 Bean 由 `Jacky917AuthorityEvaluatorAutoConfiguration` 註冊。它**沒有任何條件**：`jacky917.security.enabled=false` 或非 Servlet 應用程式也會建立，讓自行啟用方法級授權的應用程式仍能使用註解；少了這些 Bean，註解的 SpEL 會在呼叫時失敗（HTTP 500）。這些 Bean 只負責判斷，不改變任何安全設定。
+
+| Bean 名稱 | 型別 | 條件 | 用途 |
+|---|---|---|---|
+| `jacky917AuthorityEvaluator` | `Jacky917AuthorityEvaluator` | 沒有**同名稱** Bean | 供所有 `@Require*` 註解的 SpEL 呼叫；使用 `jwt.prefix.*` 設定的前綴 |
+| `annotationTemplateExpressionDefaults` | `AnnotationTemplateExpressionDefaults` | 沒有同型別 Bean | `@Require*` 中 `{value}` 佔位符的設定（Spring Security 7 預設已展開，此 Bean 明確宣告並可替換）；宣告為 `static` |
 
 ### `jacky917SecurityFilterChain` 的內容
 

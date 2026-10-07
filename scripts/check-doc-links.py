@@ -23,6 +23,22 @@ def slug(heading):
     return out.replace(' ', '-')
 
 
+# 連結目標：<...> 或不含空白的字串，後面可接標題 "..."、'...'、(...)
+LINK = re.compile(r"""\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)""")
+
+
+def heading_anchors(headings):
+    """與 GitHub 相同：重複的標題依序加上 -1、-2 …"""
+    anchors = set()
+    counts = {}
+    for heading in headings:
+        base = slug(heading)
+        n = counts.get(base, 0)
+        counts[base] = n + 1
+        anchors.add(base if n == 0 else f'{base}-{n}')
+    return anchors
+
+
 def strip_code(text):
     return re.sub(r'```.*?```', '', text, flags=re.S)
 
@@ -39,14 +55,14 @@ def main():
     anchors = {}
     for f in files:
         text = strip_code(open(f, encoding='utf-8').read())
-        anchors[f] = {slug(h) for h in re.findall(r'^#{1,6}\s+(.*)$', text, re.M)}
+        anchors[f] = heading_anchors(re.findall(r'^#{1,6}\s+(.*)$', text, re.M))
 
     problems = []
     for f in files:
         rel = os.path.relpath(f, ROOT)
         raw = open(f, encoding='utf-8').read()
-        for match in re.finditer(r'\]\(([^)\s]+)\)', strip_code(raw)):
-            link = match.group(1)
+        for match in LINK.finditer(strip_code(raw)):
+            link = match.group(1) or match.group(2)
             if link.startswith(('http://', 'https://', 'mailto:')):
                 continue
             path, _, anchor = link.partition('#')

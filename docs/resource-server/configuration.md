@@ -32,7 +32,7 @@ jacky917:
 
 | 屬性 | 型別 | 預設值 | 說明 |
 |---|---|---|---|
-| `jacky917.security.enabled` | `boolean` | `true` | 是否啟用整個自動配置。設為 `false` 時，Starter 不建立任何 Bean。 |
+| `jacky917.security.enabled` | `boolean` | `true` | 是否啟用 Starter 的安全設定（filter chain、JWT converter、401／403 JSON、方法級授權）。設為 `false` 時這些都不會建立，但 `@Require*` 註解所需的 Bean 仍會註冊，見 [使用指南 §10](getting-started.md#10-停用-starter)。 |
 | `jacky917.security.permit-all-patterns` | `List<String>` | `[/actuator/health]` | 不需驗證即可存取的路徑樣式。**設定後會取代預設清單，而不是附加。** |
 
 方法級授權（`@PreAuthorize`、`@PostAuthorize`、`@Secured`、`@Require*`）在 Starter 啟用時**一律開啟**，沒有關閉的設定。
@@ -177,3 +177,5 @@ Starter 提供自己的 `JwtAuthenticationConverter`，因此 Spring Boot 依下
 | `jacky917.security.enabled` 不為 `false` | 預設啟用 |
 
 各個 Bean 另有自己的條件，見 [Starter 設計 — Bean 清單](../design/starter-design.md#自動配置建立的-bean)。
+
+`@Require*` 註解所需的 Bean 由另一個沒有任何條件的自動配置 `Jacky917AuthorityEvaluatorAutoConfiguration` 註冊，上表的條件不成立時仍然存在。
