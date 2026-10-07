@@ -29,7 +29,7 @@
     <repository>
         <id>github</id>
         <name>GitHub Packages</name>
-        <url>https://maven.pkg.github.com/jacky917/jacky917-security-starter</url>
+        <url>https://maven.pkg.github.com/jacky917/jacky917-security</url>
     </repository>
 </distributionManagement>
 ```
@@ -114,7 +114,7 @@ PAT 至少需包含：
 <repositories>
     <repository>
         <id>github</id>
-        <url>https://maven.pkg.github.com/jacky917/jacky917-security-starter</url>
+        <url>https://maven.pkg.github.com/jacky917/jacky917-security</url>
     </repository>
 </repositories>
 ```

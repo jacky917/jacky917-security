@@ -62,7 +62,7 @@ jacky917-security-starter（repo）
 ## 3. 目標結構
 
 ```
-jacky917-security（repo，是否改名見 R-D2）
+jacky917-security（repo，原名 jacky917-security-starter，見 R-D2）
 ├── pom.xml                                          建置用的 parent + aggregator
 ├── jacky917-security-bom/                           ✅ BOM
 ├── core/
@@ -366,7 +366,7 @@ AS 用小版本號推進，因為它是**新增**的 artifact，不會破壞既�
 | # | 決策 | 推薦 | 狀態 |
 |---|---|---|---|
 | R-D1 | Repo 數量 | 單一 repo、多模組 | ✅ 已實施 |
-| R-D2 | Repo 名稱 | 依 R-D6 決定 | ✅ 決定改為 `jacky917-security`（M2 最後一步執行） |
+| R-D2 | Repo 名稱 | 依 R-D6 決定 | ✅ 已改為 `jacky917-security`（GitHub 自動轉址舊的網頁與 git URL） |
 | R-D3 | artifactId | 依角色命名 + relocation | ✅ 已實施 |
 | R-D4 | Java 套件 | annotations 不變；RS autoconfigure 搬到 `resourceserver` | ✅ 已實施 |
 | R-D5 | 設定屬性前綴 | RS 不變；AS 用 `jacky917.security.authorization-server` | ✅ 已決定 |
@@ -405,4 +405,4 @@ M2 於分支 `claude/m2-restructure` 依 §9 的步驟實施，每一步都以 `
 | enforcer：core 依賴 Spring | 對 core 加入 `spring-core` | ✅ 建置失敗並顯示規則訊息 |
 | 文件連結 | `scripts/check-doc-links.py`（CI 也會執行） | ✅ |
 | CI 的版本檢查 | 本機執行 `mvn help:evaluate -Dexpression=revision` | ✅ 回傳 `2.0.0-SNAPSHOT` |
-
+| Repo 改名 | `gh repo view`、`git ls-remote`；GitHub Packages API 查詢套件所屬 repo | ✅ 新名稱可存取；已發佈的 `1.0.0` 自動跟著改名後的 repo。以舊 URL 實際下載尚未驗證（本機 token 沒有 `read:packages`），發佈 2.0.0 前以 CI 驗證 |

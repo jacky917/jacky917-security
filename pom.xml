@@ -23,7 +23,7 @@
     <packaging>pom</packaging>
     <name>jacky917-security-parent</name>
     <description>Parent POM for jacky917-security projects</description>
-    <url>https://github.com/jacky917/jacky917-security-starter</url>
+    <url>https://github.com/jacky917/jacky917-security</url>
 
     <!--
       覆寫自 spring-boot-starter-parent 繼承的 Spring 專案資訊。
@@ -40,9 +40,9 @@
     <scm child.scm.url.inherit.append.path="false"
          child.scm.connection.inherit.append.path="false"
          child.scm.developerConnection.inherit.append.path="false">
-        <url>https://github.com/jacky917/jacky917-security-starter</url>
-        <connection>scm:git:https://github.com/jacky917/jacky917-security-starter.git</connection>
-        <developerConnection>scm:git:git@github.com:jacky917/jacky917-security-starter.git</developerConnection>
+        <url>https://github.com/jacky917/jacky917-security</url>
+        <connection>scm:git:https://github.com/jacky917/jacky917-security.git</connection>
+        <developerConnection>scm:git:git@github.com:jacky917/jacky917-security.git</developerConnection>
     </scm>
 
     <properties>
@@ -206,7 +206,7 @@
         <repository>
             <id>github</id>
             <name>GitHub Packages</name>
-            <url>https://maven.pkg.github.com/jacky917/jacky917-security-starter</url>
+            <url>https://maven.pkg.github.com/jacky917/jacky917-security</url>
         </repository>
     </distributionManagement>
 </project>

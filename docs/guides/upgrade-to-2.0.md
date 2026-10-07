@@ -2,7 +2,7 @@
 
 2.0 是破壞性升級：底層從 Spring Boot 3.5 換成 **Spring Boot 4.1**，Maven 座標與部分設定也一併調整。本文件依「必須做」與「需要確認」列出所有變更。
 
-> 不打算升級 Spring Boot 的專案，可以繼續使用 `1.x`（只提供安全修補，見 [`1.x` 分支](https://github.com/jacky917/jacky917-security-starter/tree/1.x)）。
+> 不打算升級 Spring Boot 的專案，可以繼續使用 `1.x`（只提供安全修補，見 [`1.x` 分支](https://github.com/jacky917/jacky917-security/tree/1.x)）。
 
 ---
 

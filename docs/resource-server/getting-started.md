@@ -28,7 +28,7 @@
 前置設定（GitHub Packages 認證、repository）見 [README — 快速開始](../../README.md#快速開始業務專案)。
 
 > [!IMPORTANT]
-> **2.x（Spring Boot 4.1）尚未發佈。** GitHub Packages 上目前只有 `1.0.0`（Spring Boot 3.5），使用方式見 [`1.x` 分支](https://github.com/jacky917/jacky917-security-starter/tree/1.x)。
+> **2.x（Spring Boot 4.1）尚未發佈。** GitHub Packages 上目前只有 `1.0.0`（Spring Boot 3.5），使用方式見 [`1.x` 分支](https://github.com/jacky917/jacky917-security/tree/1.x)。
 > 要先試用 2.x，請 clone 本 repo 後執行 `mvn -DskipTests install`，即可在本機使用 `2.0.0-SNAPSHOT`。
 
 建議以 BOM 管理版本：

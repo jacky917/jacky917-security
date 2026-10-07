@@ -8,7 +8,7 @@
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（D01 已決定） |
 | 上層文件 | [2.0 總設計](v2-overview.md)；模組命名與 repo 結構以 [Repo 拆分設計](repo-structure-design.md) 為準 |
 | 詳細設計 | [資料模型（表設計）](auth-server-data-model.md)、[詳細設計（元件、流程、Token、維運）](auth-server-detailed-design.md)。兩份文件與本文件衝突時，以詳細設計為準 |
-| 不在範圍 | 業務 API 端的授權（由現有的 `jacky917-security-starter` 負責，本設計不改變其定位） |
+| 不在範圍 | 業務 API 端的授權（由 `jacky917-security-resource-server-starter` 負責，本設計不改變其定位） |
 
 > **名詞約定**
 > - **第三方登入（Federated Login）**：使用者以 Google、GitHub、LINE、Apple 等外部帳號登入**我們的** Auth Server。這是本設計的主要需求。
@@ -46,8 +46,8 @@ flowchart LR
     subgraph Edge[我們的後端]
         BFF[BFF<br/>OAuth2 confidential client<br/>持有 Token，只給瀏覽器 Session Cookie]
         AS[Auth Server<br/>authorization-server-starter<br/>登入頁、簽發 Token、JWKS]
-        RS1[訂單 API<br/>jacky917-security-starter]
-        RS2[會員 API<br/>jacky917-security-starter]
+        RS1[訂單 API<br/>jacky917-security-resource-server-starter]
+        RS2[會員 API<br/>jacky917-security-resource-server-starter]
         DB[(PostgreSQL<br/>使用者、授權、Session)]
     end
 
@@ -79,7 +79,7 @@ flowchart LR
 |---|---|---|
 | **Auth Server** | 登入頁、帳號密碼驗證、第三方登入、帳號連結、簽發 Token、Refresh Token Rotation、登出、JWKS、同意畫面 | `jacky917-security-authorization-server-starter`（新） |
 | **BFF** | 代替瀏覽器走 OAuth 流程、保存 Token、把 API 請求轉發給 RS 並附上 Token | Spring Boot + `oauth2Login`（範例），或 Spring Cloud Gateway（`TokenRelay`），見 D03 |
-| **業務 API（RS）** | 驗證 Token、授權 | `jacky917-security-starter`（現有，不改） |
+| **業務 API（RS）** | 驗證 Token、授權 | `jacky917-security-resource-server-starter` |
 | **前端 SPA** | 只持有 BFF 的 Session Cookie，**完全碰不到 Token** | — |
 
 ---
@@ -462,7 +462,7 @@ claim 名稱定義在 `jacky917-security-core` 的 `Jacky917ClaimNames`，簽發
 | `permissions` | `["order:read","order:write"]` | 第一方：全部權限；第三方：scope 對應權限 ∩ 使用者權限 |
 | `idp` | `google` | 本次登入方式，`local` 代表帳號密碼 |
 
-現有 `jacky917-security-starter` 不需要修改即可解析以上 claim。
+`jacky917-security-resource-server-starter` 不需要修改即可解析以上 claim。
 
 ### 6.2 ID Token（給 client）
 

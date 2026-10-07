@@ -8,10 +8,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Configuration properties for jacky917-security-starter, bound from
+ * Configuration properties for the jacky917-security resource server starter, bound from
  * {@code jacky917.security.*}.
  * <p>
- * jacky917-security-starter 的設定屬性，綁定自 {@code jacky917.security.*}。
+ * jacky917-security Resource Server starter 的設定屬性，綁定自 {@code jacky917.security.*}。
  *
  * @author Jacky
  * @since 0.0.1

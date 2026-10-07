@@ -110,7 +110,7 @@ GitHub Packages **即使是公開套件也需要認證**。在 `~/.m2/settings.x
 <repositories>
     <repository>
         <id>github</id>
-        <url>https://maven.pkg.github.com/jacky917/jacky917-security-starter</url>
+        <url>https://maven.pkg.github.com/jacky917/jacky917-security</url>
     </repository>
 </repositories>
 ```
@@ -118,7 +118,7 @@ GitHub Packages **即使是公開套件也需要認證**。在 `~/.m2/settings.x
 ### 2. 引入依賴
 
 > [!IMPORTANT]
-> **2.x（Spring Boot 4.1）尚未發佈。** GitHub Packages 上目前只有 `1.0.0`（Spring Boot 3.5），使用方式見 [`1.x` 分支](https://github.com/jacky917/jacky917-security-starter/tree/1.x)。
+> **2.x（Spring Boot 4.1）尚未發佈。** GitHub Packages 上目前只有 `1.0.0`（Spring Boot 3.5），使用方式見 [`1.x` 分支](https://github.com/jacky917/jacky917-security/tree/1.x)。
 > 要先試用 2.x，請 clone 本 repo 後執行 `mvn -DskipTests install`，即可在本機使用 `2.0.0-SNAPSHOT`。
 
 ```xml

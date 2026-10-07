@@ -491,7 +491,7 @@
 
 ---
 ## Step 18: Repo 重構與 2.0 行為清理（M2）
-- **Status**: 🟢 Completed（只剩 GitHub repo 改名，需使用者最後確認）
+- **Status**: 🟢 Completed
 - **使用者決定**：先做 M2 再實作 AS；groupId 改為 `io.github.jacky917`；artifactId 與 repo 名稱都改（repo → `jacky917-security`）；AS 第 1 階段採推薦範圍（只做 Google、不開放註冊、不支援行動 App、不匯入使用者）。
 - **Acceptance Criteria**:
   - [x] 目錄改為 `core/`、`resource-server/`、`examples/`、`relocation/`，新增 `jacky917-security-core`（無依賴的 claim 契約）與 `jacky917-security-bom`。
@@ -502,6 +502,7 @@
   - [x] 2.0 行為清理：單一條件註解跟隨 `jwt.prefix.*`；`permit-all-patterns` 預設只放行 `/actuator/health`；移除 `debug-log`、`method-security.enabled`；401／403 日誌改為 DEBUG。
   - [x] CI（Java 21／25 + 文件連結檢查）；發佈流程改為部署整個 reactor 並檢查 tag 與 `revision` 一致。
   - [x] 文件改為 `docs/resource-server/`、`docs/design/`、`docs/guides/`，新增升級指南 `docs/guides/upgrade-to-2.0.md`。
+  - [x] GitHub repo 改名為 `jacky917-security`（使用者確認後執行），POM 的 `url`／`scm`／`distributionManagement` 與文件連結已更新。
 - **Commands Run & Results**:
   - `mvn -B -o clean verify`：**SUCCESS**，51 個測試全數通過（Resource Server 42、example-resource-server 7、example-authorization-server 2）。
   - enforcer 兩條規則的破壞實驗：都會失敗並顯示訊息；還原後通過。
@@ -514,6 +515,6 @@
   - **DEC-057**: BOM 內以 `${project.version}` 表示版本，flatten 後由使用端解析，已以外部專案驗證。
   - **DEC-058**: 授權條款尚未決定。發佈的 POM 目前帶有繼承自 Spring Boot parent 的 Apache License 2.0，**正式發佈 2.0.0 前必須決定**（根 POM 有 TODO）。
 - **Next TODO**:
-  - GitHub repo 改名為 `jacky917-security`（執行前再確認一次），之後更新 POM 的 `url`／`scm`／`distributionManagement` 與文件中的 repo 連結。
+  - 以舊的 GitHub Packages URL 實際下載 `1.0.0`（需要有 `read:packages` 的 token）。
   - 待使用者決定：授權條款、1.1.0 發佈時間、`.cursor/rules` 是否更新為 Spring Boot 4.1。
   - 依 `docs/design/auth-server-detailed-design.md` §11 開始 AS 第 1 階段。
