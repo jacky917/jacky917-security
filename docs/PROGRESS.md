@@ -677,3 +677,21 @@
   - **DEC-079**: 沒有 `client_profile` 的 client 視為第三方。
 - **Next TODO**:
   - 工作 9：Google 登入（通用 OIDC mapper、`FederatedIdentityService`、自動建立使用者）。
+
+---
+## Step 27: Authorization Server 第 1 階段——工作 9（Google 登入）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] 以 Spring Boot 標準的 `spring.security.oauth2.client.registration.*` 設定提供者；有設定時才啟用 `oauth2Login`，登入頁自動顯示「使用 Google 登入」。
+  - [x] `OidcFederatedUserInfoMapper`（通用 OIDC）、`FederatedIdentityService`：已連結 → 登入（停用者拒絕）；已驗證的 Email 屬於既有帳號 → 拒絕；其餘建立新使用者（只儲存已驗證的 Email）。
+  - [x] `FederatedLoginSuccessHandler`：建立 `auth_session`（`FEDERATED`／提供者／`fed`）、`PrincipalNormalizer`（D16）、移除提供者的 token。
+- **Commands Run & Results**:
+  - 以 JDK `HttpServer` 實作假的 Google（token、JWKS、userinfo），Spring 的 oauth2Login 實際換 code 並驗證 ID Token；SQLite 與 PostgreSQL 各 6 個測試全數通過（T-FED-01／02／04／06、Email 屬於既有帳號、登入頁按鈕）。
+  - 測試發現：Spring Security 7.1.1 的 `oauth2Login` 不會加入 factor authority，`JwtGenerator` 因而無法決定 `auth_time` 而拒絕簽發 ID Token；`PrincipalNormalizer` 補上 `FACTOR_AUTHORIZATION_CODE`。
+  - `mvn -B -o clean verify`：**SUCCESS**，155 個測試（Resource Server 47、Authorization Server 99、範例 9）。
+- **Decision Log**:
+  - **DEC-080**: 第 1 階段第三方登入的 Email 屬於既有帳號時直接拒絕，帳號連結確認於工作 14 加入。
+  - **DEC-081**: 第三方登入使用 Spring Boot 標準的 OAuth2 Client 設定。
+  - **DEC-082**: `PrincipalNormalizer` 在沒有 factor authority 時加入 `FACTOR_AUTHORIZATION_CODE`。
+- **Next TODO**:
+  - 工作 10：`example-authorization-server` 改用 AS starter、`example-bff`、E2E 測試。

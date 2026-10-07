@@ -2,11 +2,14 @@ package jacky917.security.authorizationserver.web;
 
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jakarta.servlet.http.HttpServletRequest;
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.MessageSource;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,7 +17,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.support.RequestContextUtils;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -40,21 +45,34 @@ import java.util.Map;
 public class LoginController {
 
     private static final String[] PAGE_KEYS = {"login.title", "login.username", "login.password", "login.submit",
-            "signed-in.title", "signed-in.message"};
+            "login.or", "signed-in.title", "signed-in.message"};
 
     private final AuthorizationServerProperties.Branding branding;
     private final MessageSource messages;
+    private final List<Provider> providers;
 
     /**
      * Creates the controller.
      * <p>
      * 建立 controller。
      *
-     * @param properties  the authorization server properties
-     *                    <br>Authorization Server 設定屬性
+     * @param properties           the authorization server properties
+     *                             <br>Authorization Server 設定屬性
+     * @param clientRegistrations  the identity providers shown as buttons,
+     *                             or {@code null} without any
+     *                             <br>顯示為按鈕的身分提供者；沒有時為 {@code null}
      */
-    public LoginController(AuthorizationServerProperties properties) {
+    public LoginController(AuthorizationServerProperties properties,
+                           @Nullable ClientRegistrationRepository clientRegistrations) {
         this.branding = properties.getBranding();
+        List<Provider> found = new ArrayList<>();
+        if (clientRegistrations instanceof Iterable<?> registrations) {
+            for (Object registration : registrations) {
+                ClientRegistration client = (ClientRegistration) registration;
+                found.add(new Provider(client.getRegistrationId(), client.getClientName()));
+            }
+        }
+        this.providers = List.copyOf(found);
         ResourceBundleMessageSource source = new ResourceBundleMessageSource();
         source.setBasename("jacky917/authorization-server-messages");
         source.setDefaultEncoding("UTF-8");
@@ -86,6 +104,7 @@ public class LoginController {
             String key = switch (error == null ? "" : error) {
                 case "rate_limited" -> "login.error.rate-limited";
                 case "federation" -> "login.error.federation";
+                case "account_exists" -> "login.error.account-exists";
                 default -> "login.error.bad-credentials";
             };
             model.addAttribute("error", messages.getMessage(key, null, locale));
@@ -138,5 +157,14 @@ public class LoginController {
         model.addAttribute("lang", locale.toLanguageTag());
         model.addAttribute("productName", branding.getProductName());
         model.addAttribute("logoUrl", branding.getLogoUrl());
+        List<Map<String, String>> buttons = new ArrayList<>();
+        for (Provider provider : providers) {
+            buttons.add(Map.of("url", "/oauth2/authorization/" + provider.registrationId(),
+                    "label", messages.getMessage("login.with", new Object[]{provider.name()}, locale)));
+        }
+        model.addAttribute("providers", buttons);
+    }
+
+    private record Provider(String registrationId, String name) {
     }
 }

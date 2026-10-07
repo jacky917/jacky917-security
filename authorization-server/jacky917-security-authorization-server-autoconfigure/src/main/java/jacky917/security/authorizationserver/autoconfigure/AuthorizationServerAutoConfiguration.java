@@ -31,6 +31,7 @@ import org.springframework.context.annotation.Import;
         "org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration",
         "org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration",
         "org.springframework.boot.security.autoconfigure.web.servlet.ServletWebSecurityAutoConfiguration",
+        "org.springframework.boot.security.oauth2.client.autoconfigure.servlet.OAuth2ClientWebSecurityAutoConfiguration",
         "org.springframework.boot.security.oauth2.server.authorization.autoconfigure.servlet.OAuth2AuthorizationServerAutoConfiguration",
         "org.springframework.boot.security.oauth2.server.authorization.autoconfigure.servlet.OAuth2AuthorizationServerJwtAutoConfiguration"
 })

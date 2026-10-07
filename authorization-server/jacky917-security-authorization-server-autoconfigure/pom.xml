@@ -34,6 +34,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
+        <!-- 第三方登入（Google 等）：使用者以 spring.security.oauth2.client.registration.* 設定 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-oauth2-client</artifactId>
+        </dependency>
         <!-- 登入頁 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

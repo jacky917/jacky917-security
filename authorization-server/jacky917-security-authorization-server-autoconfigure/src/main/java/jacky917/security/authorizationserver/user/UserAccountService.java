@@ -1,5 +1,7 @@
 package jacky917.security.authorizationserver.user;
 
+import jacky917.security.authorizationserver.federation.FederatedUserInfo;
+
 import java.time.Instant;
 import java.util.Optional;
 
@@ -68,6 +70,24 @@ public interface UserAccountService {
      *         <br>帳號或 Email 已被使用時
      */
     UserAccount createUser(NewUser user);
+
+    /**
+     * Creates a user for a first login through an identity provider, with
+     * the {@code USER} role. The email is stored only when the provider
+     * verified it.
+     * <p>
+     * 為第一次透過身分提供者登入的使用者建立帳號，並指派 {@code USER} 角色。
+     * 只有提供者已驗證的 Email 才會儲存。
+     *
+     * @param info  the provider's user
+     *              <br>提供者回報的使用者
+     * @return the created user
+     *         <br>建立完成的使用者
+     * @throws org.springframework.dao.DuplicateKeyException if the email is
+     *         already used
+     *         <br>Email 已被使用時
+     */
+    UserAccount createFederatedUser(FederatedUserInfo info);
 
     /**
      * Records a successful login: resets the failure count and sets the

@@ -3,6 +3,11 @@ package jacky917.security.authorizationserver.autoconfigure;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import jacky917.security.authorizationserver.authentication.LoginSuccessHandler;
+import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
+import jacky917.security.authorizationserver.federation.FederatedIdentityService;
+import jacky917.security.authorizationserver.federation.FederatedLoginSuccessHandler;
+import jacky917.security.authorizationserver.federation.FederatedUserInfoMapper;
+import jacky917.security.authorizationserver.federation.OidcFederatedUserInfoMapper;
 import jacky917.security.authorizationserver.client.ClientProfileRepository;
 import jacky917.security.authorizationserver.token.AudienceResolver;
 import jacky917.security.authorizationserver.token.AuthorityResolver;
@@ -22,6 +27,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcOperations;
@@ -31,6 +37,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
@@ -102,8 +110,17 @@ class AuthorizationServerSecurityConfiguration {
     @Bean
     @Order(3)
     @ConditionalOnMissingBean(name = "loginSecurityFilterChain")
-    SecurityFilterChain loginSecurityFilterChain(HttpSecurity http, LoginSuccessHandler loginSuccessHandler)
+    SecurityFilterChain loginSecurityFilterChain(HttpSecurity http, LoginSuccessHandler loginSuccessHandler,
+                                                 ObjectProvider<ClientRegistrationRepository> clientRegistrations,
+                                                 ObjectProvider<FederatedLoginSuccessHandler> federatedLoginSuccessHandler)
             throws Exception {
+        // 有設定第三方登入（spring.security.oauth2.client.registration.*）時才啟用
+        if (clientRegistrations.getIfAvailable() != null) {
+            http.oauth2Login(oauth2 -> oauth2
+                    .loginPage("/login")
+                    .successHandler(federatedLoginSuccessHandler.getObject())
+                    .failureUrl("/login?error=federation"));
+        }
         http.authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/login", "/error", "/jacky917/**").permitAll()
                         .anyRequest().authenticated())
@@ -231,7 +248,47 @@ class AuthorizationServerSecurityConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    LoginController jacky917LoginController(AuthorizationServerProperties properties) {
-        return new LoginController(properties);
+    LoginController jacky917LoginController(AuthorizationServerProperties properties,
+                                            ObjectProvider<ClientRegistrationRepository> clientRegistrations) {
+        return new LoginController(properties, clientRegistrations.getIfAvailable());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    PrincipalNormalizer principalNormalizer(UserAccountService users, Clock clock) {
+        return new PrincipalNormalizer(users, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    FederatedIdentityService federatedIdentityService(JdbcClient jdbcClient, UserAccountService users,
+                                                      PlatformTransactionManager transactionManager, Clock clock) {
+        return new FederatedIdentityService(jdbcClient, users, new TransactionTemplate(transactionManager), clock);
+    }
+
+    /**
+     * The fallback mapper for OpenID Connect providers such as Google.
+     * Application mappers come first.
+     * <p>
+     * OpenID Connect 提供者（例如 Google）的預設 mapper；應用程式的 mapper 優先。
+     *
+     * @return the mapper
+     *         <br>mapper
+     */
+    @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE)
+    OidcFederatedUserInfoMapper oidcFederatedUserInfoMapper() {
+        return new OidcFederatedUserInfoMapper();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    FederatedLoginSuccessHandler federatedLoginSuccessHandler(
+            ObjectProvider<FederatedUserInfoMapper> mappers, FederatedIdentityService identities, UserAccountService users,
+            AuthSessionService sessions, PrincipalNormalizer normalizer,
+            ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClients, Clock clock) {
+        return new FederatedLoginSuccessHandler(mappers.orderedStream().toList(), identities, users, sessions, normalizer,
+                authorizedClients.getIfAvailable(), clock);
     }
 }

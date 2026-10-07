@@ -1,5 +1,6 @@
 package jacky917.security.authorizationserver.user;
 
+import jacky917.security.authorizationserver.federation.FederatedUserInfo;
 import jacky917.security.authorizationserver.support.UuidV7;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -141,6 +142,27 @@ public class JdbcUserAccountService implements UserAccountService {
     }
 
     @Override
+    @Transactional
+    public UserAccount createFederatedUser(FederatedUserInfo info) {
+        Timestamp at = Timestamp.from(clock.instant());
+        String id = UuidV7.next(clock);
+        boolean storeEmail = info.emailVerified() && StringUtils.hasText(info.email());
+        jdbc.sql("INSERT INTO app_user (id, email, email_verified, display_name, avatar_url, locale, status, created_at, "
+                        + "updated_at) VALUES (:id, :email, :verified, :name, :avatar, :locale, 'ACTIVE', :at, :at)")
+                .param("id", id)
+                .param("email", storeEmail ? info.email() : null)
+                .param("verified", storeEmail)
+                .param("name", truncate(info.displayName(), 128))
+                .param("avatar", truncate(info.avatarUrl(), 1024))
+                .param("locale", truncate(info.locale(), 16))
+                .param("at", at)
+                .update();
+        jdbc.sql("INSERT INTO app_user_role (user_id, role_id, granted_at) SELECT :user, id, :at FROM app_role "
+                + "WHERE code = 'USER'").param("user", id).param("at", at).update();
+        return findById(id).orElseThrow();
+    }
+
+    @Override
     public void recordLoginSuccess(String userId, Instant at) {
         Timestamp time = Timestamp.from(at);
         jdbc.sql("UPDATE app_user SET failed_login_count = 0, last_login_at = :at, updated_at = :at, "
@@ -182,6 +204,10 @@ public class JdbcUserAccountService implements UserAccountService {
         if (length < 3 || length > 64 || username.contains("@") || !username.equals(username.strip())) {
             throw new IllegalArgumentException("A username must have 3-64 characters, no '@', and no surrounding spaces");
         }
+    }
+
+    private static String truncate(String value, int maxLength) {
+        return value == null || value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     private static Instant toInstant(Timestamp timestamp) {

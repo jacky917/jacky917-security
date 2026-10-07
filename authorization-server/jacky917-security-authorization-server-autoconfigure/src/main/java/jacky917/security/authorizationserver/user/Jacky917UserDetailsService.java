@@ -1,8 +1,5 @@
 package jacky917.security.authorizationserver.user;
 
-import jacky917.security.core.Jacky917AuthorityPrefix;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsPasswordService;
@@ -11,8 +8,6 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Loads users for password login. The login name can be the username or
@@ -76,14 +71,9 @@ public class Jacky917UserDetailsService implements UserDetailsService, UserDetai
 
     private UserDetails toUserDetails(UserAccount user, String passwordHash) {
         Instant now = clock.instant();
-        UserAuthorities authorities = users.loadAuthorities(user.id());
-        List<GrantedAuthority> granted = new ArrayList<>();
-        authorities.roles().forEach(role -> granted.add(new SimpleGrantedAuthority(Jacky917AuthorityPrefix.ROLE + role)));
-        authorities.permissions().forEach(permission ->
-                granted.add(new SimpleGrantedAuthority(Jacky917AuthorityPrefix.PERMISSION + permission)));
         return User.withUsername(user.id())
                 .password(passwordHash)
-                .authorities(granted)
+                .authorities(users.loadAuthorities(user.id()).toGrantedAuthorities())
                 .disabled(user.status() == UserStatus.DISABLED)
                 .accountLocked(user.status() == UserStatus.LOCKED || user.isTemporarilyLocked(now))
                 .build();

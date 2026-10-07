@@ -70,3 +70,15 @@ button {
     border: 1px solid var(--jacky917-error);
     color: var(--jacky917-error);
 }
+.providers { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.divider { margin: 0; text-align: center; color: var(--jacky917-muted); font-size: 14px; }
+.provider {
+    padding: 10px 12px;
+    border: 1px solid var(--jacky917-border);
+    border-radius: 8px;
+    color: inherit;
+    text-align: center;
+    text-decoration: none;
+    font-weight: 600;
+}
+.provider:hover { border-color: var(--jacky917-primary); }
