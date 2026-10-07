@@ -1,7 +1,5 @@
 package jacky917.demo.resourceserver.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -12,6 +10,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Date;
@@ -124,15 +123,13 @@ public class GenerateTestJwtMain {
     }
 
     private static OctetSequenceKey loadJwk() throws Exception {
-        ObjectMapper mapper = new ObjectMapper();
         try (InputStream inputStream = GenerateTestJwtMain.class
                 .getClassLoader()
                 .getResourceAsStream("demo/jwk/demo-hs256.jwk.json")) {
             if (inputStream == null) {
                 throw new IllegalStateException("找不到 JWK 檔案：demo/jwk/demo-hs256.jwk.json");
             }
-            JsonNode node = mapper.readTree(inputStream);
-            return OctetSequenceKey.parse(node.toString());
+            return OctetSequenceKey.parse(new String(inputStream.readAllBytes(), StandardCharsets.UTF_8));
         }
     }
 
