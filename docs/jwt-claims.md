@@ -4,6 +4,18 @@
 
 ## 標準 Claims
 
+> [!IMPORTANT]
+> 下表的「強制性」是**建議的 Token 契約**。實際驗證哪些標準 claim，完全取決於業務專案提供的 `JwtDecoder`，Starter 本身不會檢查：
+>
+> | Claim | Spring Boot 預設是否驗證 |
+> |---|---|
+> | `exp`、`nbf` | ✅ 一律驗證（允許 60 秒時鐘誤差） |
+> | `iss` | 只有設定 `issuer-uri`，或自訂 decoder 使用 `JwtValidators.createDefaultWithIssuer(...)` 時才驗證 |
+> | `aud` | 只有設定 `audiences`，或自訂 decoder 加入 audience validator 時才驗證 |
+> | `iat`、`jti`、`sid` | ❌ 不驗證 |
+>
+> 設定方式見 [使用指南 §2](getting-started.md#2-提供-jwtdecoder必要)，風險說明見 [限制 §6、§7](limitations.md#6-token-無法撤銷)。
+
 | Claim | 名稱 (Full Name) | 說明 | 格式 | 強制性 |
 |-------|--------------------|------|------|----------|
 | `iss` | Issuer | 簽發者。必須與 Resource Server 設定的信任簽發者匹配。 | String (URI) | **必要** |
@@ -24,12 +36,22 @@
 | `permissions`| `Array<String>` 或 `String`（逗號分隔） | 每個權限字串會被加上 `PERM_` 前綴。 | `["product:read", "product:write"]` -> `PERM_product:read`, `PERM_product:write` |
 | `scope` | `String`（空白分隔）或 `Array<String>` | 解析後每個元素加上 `SCOPE_` 前綴。 | `"openid profile"` 或 `["openid","profile"]` -> `SCOPE_openid`, `SCOPE_profile` |
 | `scp` | `Array<String>` 或 `String`（逗號分隔） | `scope` 的另一種常見形式，每個元素加上 `SCOPE_` 前綴。 | `["read:data", "write:data"]` -> `SCOPE_read:data`, `SCOPE_write:data` |
-| `sid` | `String` | Session ID。用於關聯 Refresh Token，實現多設備登入與登出管理。 | `"d8a4f0c5-9b2f-4a3d-9f8a-2c1e0b5d4f3c"` |
+| `sid` | `String` | Session ID。由 Authorization Server 用於關聯 Refresh Token、管理多裝置登入與登出。**Starter 不讀取也不驗證此 claim**，業務程式可透過 `jwt.getClaimAsString("sid")` 取得。 | `"d8a4f0c5-9b2f-4a3d-9f8a-2c1e0b5d4f3c"` |
 
 **注意**：
 - 所有從 claims 提取的權限/角色字串，在轉換為 `GrantedAuthority` 後會進行**合併、去重、排序**，確保輸出穩定。
-- 當 claim 值型態不是 `String` 或 `Collection`（例如 `Object`/`Map`）時，會**忽略該 claim**；若 `debugLog=true` 會輸出警告，但不會中斷驗證流程。
-- 預設前綴：`ROLE_` / `PERM_` / `SCOPE_`，可透過 `jacky917.security.jwt.prefix.*` 覆寫。
+- 每個值會先去除前後空白，空字串與陣列中的 `null` 元素會被略過；陣列中的非字串元素（例如數字）會以 `toString()` 轉換。
+- 當 claim 值型態不是 `String` 或 `Collection`（例如物件／`Map`）時，會**忽略該 claim** 並輸出一行 WARN 日誌（與 `debug-log` 設定無關），不會中斷驗證流程。
+- 只讀取**頂層** claim，不支援 `realm_access.roles` 這類巢狀路徑。
+- `principal`（`authentication.getName()`）固定取自 `sub`。
+- 預設前綴：`ROLE_` / `PERM_` / `SCOPE_`，可透過 `jacky917.security.jwt.prefix.*` 覆寫；claim 名稱可透過 `jacky917.security.jwt.claims.*` 覆寫。見 [設定參考](configuration.md#jwt-claim-與前綴)。
+- 修改前綴後，`@RequireRole` / `@RequirePerm` / `@RequireScope` 會失效，見 [限制 §3](limitations.md#3-單一條件註解的前綴固定)。
+
+### 給 Authorization Server 的建議
+
+- Token 中的值**不要自帶前綴**（寫 `"ADMIN"`，不要寫 `"ROLE_ADMIN"`），否則會變成 `ROLE_ROLE_ADMIN`。
+- 優先使用 JSON 陣列，避免值本身含有逗號或空白時被錯誤切割。
+- 權限數量很多時，Token 會變大並出現在每個請求的標頭中。若超過數 KB，考慮改以角色傳遞，或在 Resource Server 端依角色查詢權限。
 
 ---
 
