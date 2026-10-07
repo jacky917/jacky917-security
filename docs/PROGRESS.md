@@ -460,3 +460,14 @@
   - **DEC-050**: SQLite 以 `transaction_mode=IMMEDIATE` 取代 `FOR UPDATE`，並強制檢查必要連線參數。
   - **DEC-051**: 允許以已驗證的 Email 登入（使用者決定）。
 
+---
+## Step 16: 記錄使用者決策（BFF、client_credentials）
+- **Status**: 🟢 Completed
+- **Decision Log**:
+  - **DEC-052**: 網頁前端採用 BFF（AS D03）。
+  - **DEC-053**: 第 1 階段即支援 `client_credentials`（AS D15），工作分解第 8 項納入。
+- **Files Changed**: `docs/auth-server-design.md`、`docs/auth-server-detailed-design.md`、`docs/v2-overview.md`、`docs/PROGRESS.md`
+- **Next TODO**:
+  - AS 剩餘待確認：第三方登入提供者（推薦第 1 階段只做 Google）、行動 App、第一版是否開放註冊、既有使用者匯入、網域規劃。
+  - M2 前需決定：groupId、artifactId 改名、repo 改名、2.0 破壞性清理範圍。
+

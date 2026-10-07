@@ -92,7 +92,7 @@ flowchart LR
 |---|---|---|---|
 | ✅ D01 | 平台版本 | A. 全部維持 Boot 3.5／B. AS 用 Boot 4，starter 留 3.5／C. 先整個 repo 升 Boot 4 | **C：已決定，Boot 4.1.1** |
 | D02 | 交付形式 | A. 只做一個應用／B. starter + 一個參考應用 | **B** |
-| ⚠️ D03 | 網頁前端接入方式 | A. SPA public client + PKCE／B. **BFF**／C. 同網域 Cookie 直連 | **B** |
+| ✅ D03 | 網頁前端接入方式 | A. SPA public client + PKCE／B. **BFF**／C. 同網域 Cookie 直連 | **已決定：B（BFF）** |
 | D04 | 登入頁實作 | A. AS 內建 Thymeleaf 模板（可覆寫）／B. 獨立 SPA 部署在 AS 網域／C. 只提供 API | **A** |
 | ⚠️ D05 | 第三方登入提供者 | Google、GitHub、LINE、Apple、Facebook | 第一版 **Google**，第二版 GitHub、LINE |
 | D06 | 帳號連結策略 | A. 一律新建／B. Email 相同自動連結／C. Email 相同時要求登入原帳號確認／D. 只能手動連結 | **C + D** |
@@ -139,7 +139,9 @@ flowchart LR
 
 **推薦 B**，符合你「多個獨立專案、拿來就用」的需求。但要強調：**starter 是用來建置「一個」獨立部署的 AS，業務 API 絕不能引入它**。
 
-### D03 網頁前端接入方式 ⚠️
+### D03 網頁前端接入方式 ✅ 已決定
+
+> **決定（2026-10-07）**：採用 **BFF**。瀏覽器只持有 BFF 的 `HttpOnly` Session Cookie，Token 由 BFF 保管並自動續期。以下保留決策時的比較。
 
 這是對前端影響最大的決策。
 
@@ -729,8 +731,8 @@ jacky917:
 |---|---|---|
 | ~~1~~ | ~~是否先將整個 repo 升級到 Spring Boot 4（D01）？~~ ✅ 已決定：Spring Boot 4.1.1 | — |
 | 2 | **第一版要支援哪些第三方登入提供者？**（推薦只做 Google） | 第 1、2 階段的範圍 |
-| 3 | **資料庫使用 PostgreSQL 嗎？**（現有 demo 是 MySQL） | Flyway migration 與 demo 環境 |
-| 4 | **網頁前端是否接受 BFF 架構（D03）？** 前端將改為呼叫 BFF，不再直接持有 Token | 前端整合方式 |
+| ~~3~~ | ~~資料庫？~~ ✅ 已決定：預設 SQLite，YAML 切換 PostgreSQL（D14） | — |
+| ~~4~~ | ~~網頁前端是否接受 BFF 架構？~~ ✅ 已決定：採用 BFF（D03） | — |
 | 5 | **是否有行動 App？** SAS 不發 Refresh Token 給 public client，App 需另外設計 | 是否需要額外的決策 |
 | 6 | 帳號密碼註冊是否必須在第一版就提供？或是初期只開放第三方登入與管理員建立帳號？ | 第 1 階段的範圍 |
 | 7 | 是否有既有的使用者資料需要匯入？ | `UserAccountService` 與 migration 設計 |

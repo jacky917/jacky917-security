@@ -35,7 +35,7 @@
 
 | # | 決策 | 推薦 |
 |---|---|---|
-| D15 | 支援的 grant type | `authorization_code`（強制 PKCE）、`refresh_token`、`client_credentials` |
+| ✅ D15 | 支援的 grant type | `authorization_code`（強制 PKCE）、`refresh_token`、`client_credentials`（第 1 階段即包含，2026-10-07 使用者決定） |
 | D16 | Principal 標準化 | 所有登入方式都轉成 `UsernamePasswordAuthenticationToken`，principal name = `app_user.id` |
 | D17 | 資料庫與表名 | AS 使用專屬資料庫，取消表名前綴 |
 | D18 | 權限計算時機 | 每次簽發 Token（含刷新）都從資料庫重新計算 |
@@ -44,7 +44,7 @@
 | D21 | 密碼雜湊與政策 | BCrypt（強度 12）+ 長度與外洩密碼檢查 |
 | ✅ D22 | 資料庫抽象 | **預設 SQLite**，YAML 切換 PostgreSQL；程式碼與資料庫無關（2026-10-07 使用者決定） |
 
-### D15 支援的 grant type
+### D15 支援的 grant type ✅ 已決定
 
 | Grant type | 支援 | 用途／理由 |
 |---|---|---|
@@ -941,7 +941,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 5 | 使用者：`UserAccountService`、`UserDetailsService`、密碼政策 | 2 | D21 |
 | 6 | 登入：filter chain、登入頁、成功／失敗處理、`auth_session`、Principal 標準化 | 5 | §3、§5.1、D16 |
 | 7 | 授權：`SessionLinkingAuthorizationService` | 6 | §5.2 |
-| 8 | Token：`Jacky917TokenCustomizer`、`AuthorityResolver`、`AudienceResolver` | 7 | §4 |
+| 8 | Token：`Jacky917TokenCustomizer`、`AuthorityResolver`、`AudienceResolver`；`client_credentials` 的 Token（只帶 `scope`，T-TOKEN-03） | 7 | §4、D15 |
 | 9 | 第三方登入（Google）：通用 OIDC mapper、`FederatedIdentityService`、自動建立使用者 | 6 | §5.3（不含連結確認） |
 | 10 | `example-authorization-server`、`example-bff`、E2E 測試 | 8、9 | T-E2E-01～03 |
 | — | **第 1 階段完成（2.1.0 preview）** | | |
@@ -962,10 +962,10 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 
 | # | 問題 | 影響 | 目前假設 |
 |---|---|---|---|
-| 1 | 網頁前端是否採用 BFF？（D03） | 若不採用，SPA 無法取得 Refresh Token，需另外設計 | 採用（待確認） |
+| ~~1~~ | ~~網頁前端是否採用 BFF？~~ ✅ **已決定**：採用 BFF（D03） | — | — |
 | 2 | 第一版第三方登入提供者？（D05） | 工作 9、14 | 第 1 階段 Google；第 2 階段 GitHub、LINE |
 | ~~3~~ | ~~資料庫？~~ ✅ **已決定**：預設 SQLite，可在 YAML 切換為 PostgreSQL（D22） | — | — |
-| 4 | 是否需要 `client_credentials`？（D15） | 第 1 階段範圍 | 需要（待確認） |
+| ~~4~~ | ~~是否需要 `client_credentials`？~~ ✅ **已決定**：第 1 階段即包含（D15） | — | — |
 | ~~5~~ | ~~是否允許以 Email 作為登入帳號？~~ ✅ **已決定**：允許（只限已驗證的 Email） | — | — |
 | 6 | 稽核紀錄保留期（`login_audit` 180 天、`admin_audit_log` 2 年）是否符合法規？ | 清理排程 | 符合 |
 | 7 | 是否需要多語系登入頁？ | §7.2 | 繁體中文 + 英文 |

@@ -155,9 +155,11 @@ flowchart LR
 | M2 | 4 | repo 是否改名為 `jacky917-security`？（R-D2） | 若 3 為是，則一併改 |
 | M2 | 5 | artifactId 是否依角色改名？（R-D3） | 是 |
 | M2 | 6 | [§4.2](#42-建議一併處理待確認) 的破壞性清理要納入哪些？ | 全部 |
-| **M4** | 7 | 網頁前端是否接受 BFF 架構？（AS D03） | 是 |
+| ~~M4~~ | ~~7~~ | ~~網頁前端是否接受 BFF 架構？~~ ✅ 已決定：採用 BFF | — |
 | M4 | 8 | 第一版的第三方登入提供者？（AS D05） | Google |
-| M4 | 9 | 資料庫用 PostgreSQL？（AS D14） | 是 |
+| ~~M4~~ | ~~9~~ | ~~資料庫？~~ ✅ 已決定：預設 SQLite，YAML 切換 PostgreSQL | — |
 | M4 | 10 | 是否有行動 App？是否需要第一版就開放註冊？是否有既有使用者要匯入？AS 的網域規劃？（AS §12） | — |
+
+已決定的 AS 事項：採用 BFF（D03）、預設 SQLite（D14／D22）、第 1 階段包含 `client_credentials`（D15）、允許以已驗證的 Email 登入。
 
 另外，`.cursor/rules/jacky917-security.mdc` 中「Spring Boot：3.5.10」的硬性決策，需要更新為 4.1。
