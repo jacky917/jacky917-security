@@ -3,12 +3,20 @@ package jacky917.security.authorizationserver.autoconfigure;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import jacky917.security.authorizationserver.authentication.LoginSuccessHandler;
+import jacky917.security.authorizationserver.client.ClientProfileRepository;
+import jacky917.security.authorizationserver.token.AudienceResolver;
+import jacky917.security.authorizationserver.token.AuthorityResolver;
+import jacky917.security.authorizationserver.token.ConfiguredAudienceResolver;
+import jacky917.security.authorizationserver.token.DefaultAuthorityResolver;
+import jacky917.security.authorizationserver.token.Jacky917TokenCustomizer;
+import jacky917.security.authorizationserver.token.TokenClaimsContributor;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.session.SessionAuthorizationRepository;
 import jacky917.security.authorizationserver.session.SessionLinkingAuthorizationService;
 import jacky917.security.authorizationserver.user.UserAccountService;
 import jacky917.security.authorizationserver.web.LoginController;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
@@ -30,6 +38,8 @@ import org.springframework.security.oauth2.server.authorization.OAuth2Authorizat
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
+import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
+import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
@@ -180,6 +190,37 @@ class AuthorizationServerSecurityConfiguration {
     @DependsOnDatabaseInitialization
     AuthSessionService authSessionService(JdbcClient jdbcClient, AuthorizationServerProperties properties, Clock clock) {
         return new AuthSessionService(jdbcClient, properties.getToken().getSessionMaxAge(), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    AudienceResolver audienceResolver(AuthorizationServerProperties properties) {
+        return new ConfiguredAudienceResolver(properties.getToken().getAudience());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    AuthorityResolver authorityResolver(UserAccountService users, JdbcClient jdbcClient, Clock clock) {
+        return new DefaultAuthorityResolver(users, jdbcClient, clock);
+    }
+
+    /**
+     * Adds the jacky917 claims to access tokens and ID tokens.
+     * <p>
+     * 在 Access Token 與 ID Token 中加入 jacky917 的 claim。
+     *
+     * @return the token customizer
+     *         <br>token customizer
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    OAuth2TokenCustomizer<JwtEncodingContext> jacky917TokenCustomizer(
+            AudienceResolver audienceResolver, AuthorityResolver authorityResolver,
+            ClientProfileRepository clientProfiles, SessionAuthorizationRepository links, AuthSessionService sessions,
+            UserAccountService users, ObjectProvider<TokenClaimsContributor> contributors, Clock clock) {
+        return new Jacky917TokenCustomizer(audienceResolver, authorityResolver, clientProfiles, links, sessions, users,
+                contributors.orderedStream().toList(), clock);
     }
 
     @Bean

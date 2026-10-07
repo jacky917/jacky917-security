@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 🚧 實作中（第 1 階段）：工作 1～7 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
+| 狀態 | 🚧 實作中（第 1 階段）：工作 1～8 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -989,7 +989,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 5 | 使用者：`UserAccountService`、`Jacky917UserDetailsService`、密碼政策、第一位管理員 | ✅ |
 | 6 | 登入：兩條 filter chain、登入頁（Thymeleaf，繁中／英文）、`LoginSuccessHandler`、`auth_session`；授權碼 + PKCE 完整流程 | ✅ |
 | 7 | `SessionLinkingAuthorizationService`：授權與登入 Session 的連結 | ✅ |
-| 8～10 | Token、Google、範例與 E2E | ⏳ |
+| 8 | Token：`Jacky917TokenCustomizer`、`AuthorityResolver`（第一方與第三方）、`AudienceResolver`、`TokenClaimsContributor` | ✅ |
+| 9～10 | Google、範例與 E2E | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1021,6 +1022,12 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 直接登入後的頁面 | — | `GET /` 顯示「已登入」 | 直接開啟登入頁並登入時，Spring Security 會導向 `/` |
 | 授權連結的判斷（§5.2） | 依「儲存時是否有 HTTP 請求」判斷 | 依「連結是否已存在」判斷：已存在則沿用；不存在時才從瀏覽器 Session 取得 `asid` | 換 Token 也有 HTTP 請求（來自 client），只是沒有瀏覽器 Session；原本的判斷會誤擋 |
 | 連結的檢查 | — | 只連結到**同一位使用者**的 `ACTIVE` Session；授權與連結在同一個交易中儲存，連結失敗時授權一併回滾 | 避免留下沒有 Session 的授權（之後的 Token 無法帶 `asid`） |
+| ID Token 的 `auth_time` | 由 customizer 設為 `auth_session.created_at` | 沿用 Spring Security 產生的值，不覆寫 | 已查證：Spring Security 7.1.1 的 `JwtGenerator` 以驗證時間設定 `auth_time`，刷新時從前一個 ID Token 沿用；與登入時間相同，覆寫只會增加不一致的風險 |
+| 簽發時的狀態檢查 | 第 2 階段的 `ReuseDetectingRefreshTokenProvider`（§5.4） | 第 1 階段的 customizer 已先檢查：使用者可以登入、登入 Session 為 `ACTIVE` 且未到期，否則 `invalid_grant` | 停權與撤銷在下一次刷新就生效；§5.4 的重用偵測與撤銷仍於工作 11 加入 |
+| 沒有 `client_profile` 的 client | — | 視為第三方（不給角色，權限受 scope 限制） | 最小權限：不是由本 starter 註冊的 client 不應自動取得第一方權限 |
+| 第三方 client 的權限 | 第 3 階段 | `DefaultAuthorityResolver` 已實作資料模型 §11.3 的查詢 | 查詢簡單，先實作並以測試確認，第 3 階段只需加上同意畫面 |
+| Claim 的集合型別 | — | customizer 最後把所有集合轉為 `ArrayList`／`LinkedHashMap`（包含 `TokenClaimsContributor` 加入的） | 實測發現：claim 會隨授權存入資料庫，刷新時以型別允許清單讀回；`List.of()` 等不可變集合不在清單中，刷新會失敗 |
+| `token.audience-strategy`（`PER_SCOPE`） | 設定屬性 | 未提供；以替換 `AudienceResolver` Bean 達成 | 第 1 階段只需要共用 audience（D07-B） |
 | `/userinfo` | — | SAS 端點的 filter chain 以 `oauth2ResourceServer().jwt()` 驗證 Access Token，`JwtDecoder` 由公開的金鑰建立 | OIDC userinfo 需要 Bearer Token |
 | 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
 

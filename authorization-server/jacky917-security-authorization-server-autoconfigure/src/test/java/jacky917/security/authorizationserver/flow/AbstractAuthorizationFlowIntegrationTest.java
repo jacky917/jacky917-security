@@ -2,12 +2,16 @@ package jacky917.security.authorizationserver.flow;
 
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.support.TestDatabases;
+import jacky917.security.authorizationserver.token.TokenClaimsContributor;
+import jacky917.security.authorizationserver.user.NewUser;
+import jacky917.security.authorizationserver.user.UserAccountService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -17,6 +21,7 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -90,6 +95,9 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
     @Autowired
     OAuth2AuthorizationService authorizations;
 
+    @Autowired
+    UserAccountService users;
+
     @Test
     @DisplayName("授權碼 + PKCE 完整流程：登入後建立 auth_session，換到的 Access Token 的 sub 為使用者 ID")
     void authorizationCodeFlow() throws Exception {
@@ -153,6 +161,105 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
                 RequestContextHolder.resetRequestAttributes();
             }
         }
+    }
+
+    @Test
+    @DisplayName("第一方 Access Token 的 claim（T-TOKEN-01）；ID Token 有 sid、amr、name，沒有角色與權限（T-TOKEN-04）")
+    void tokenClaims() throws Exception {
+        String userId = createUser("token-user", "Token User", "AS_SUPPORT");
+        LoggedIn result = logInAndExchangeCode("token-user");
+
+        Jwt access = jwtDecoder.decode(result.tokens().get("access_token").asString());
+        assertThat(access.getAudience()).containsExactly("jacky917-api");
+        assertThat(access.getClaimAsString("client_id")).isEqualTo("web-bff");
+        assertThat(access.getClaimAsString("asid")).isEqualTo(result.asid());
+        assertThat(access.getClaimAsString("idp")).isEqualTo("local");
+        assertThat(access.getClaimAsStringList("roles")).containsExactlyInAnyOrder("USER", "AS_SUPPORT");
+        assertThat(access.getClaimAsStringList("permissions"))
+                .containsExactlyInAnyOrder("as:user:read", "as:session:revoke", "as:audit:read");
+        assertThat(access.getClaimAsStringList("scope")).containsExactlyInAnyOrder("openid", "profile");
+        assertThat(access.getClaims()).doesNotContainKeys("email", "name");
+
+        Jwt id = jwtDecoder.decode(result.tokens().get("id_token").asString());
+        assertThat(id.getSubject()).isEqualTo(userId);
+        assertThat(id.getAudience()).containsExactly("web-bff");
+        assertThat(id.getClaims()).containsKeys("sid", "auth_time").doesNotContainKeys("roles", "permissions", "asid");
+        assertThat(id.getClaimAsStringList("amr")).containsExactly("pwd");
+        assertThat(id.getClaimAsString("name")).isEqualTo("Token User");
+        assertThat(id.getClaims()).as("沒有要求 email scope").doesNotContainKey("email");
+    }
+
+    @Test
+    @DisplayName("移除角色後刷新：新的 Access Token 已沒有該角色（D18、T-TOKEN-05）")
+    void refreshReflectsRoleChanges() throws Exception {
+        String userId = createUser("role-user", null, "AS_SUPPORT");
+        LoggedIn result = logInAndExchangeCode("role-user");
+        jdbc.sql("DELETE FROM app_user_role WHERE user_id = :user AND role_id = (SELECT id FROM app_role WHERE code = 'AS_SUPPORT')")
+                .param("user", userId).update();
+        Jwt refreshed = jwtDecoder.decode(refresh(result).get("access_token").asString());
+        assertThat(refreshed.getClaimAsStringList("roles")).containsExactly("USER");
+        assertThat(refreshed.getClaimAsStringList("permissions")).isEmpty();
+        assertThat(refreshed.getClaimAsStringList("tenants")).as("TokenClaimsContributor 的 claim")
+                .containsExactly("tenant-a", "tenant-b");
+    }
+
+    @Test
+    @DisplayName("登入 Session 被撤銷、使用者被停用或暫時鎖定後，刷新回 invalid_grant")
+    void refreshIsRefusedWhenSessionOrUserIsNoLongerValid() throws Exception {
+        createUser("revoked-user", null);
+        LoggedIn revoked = logInAndExchangeCode("revoked-user");
+        jdbc.sql("UPDATE auth_session SET status = 'REVOKED', revoked_at = :now, revoke_reason = 'ADMIN' WHERE session_id = :id")
+                .param("now", java.sql.Timestamp.from(java.time.Instant.now())).param("id", revoked.asid()).update();
+        assertRefreshRefused(revoked);
+
+        String disabledId = createUser("disabled-user", null);
+        LoggedIn disabled = logInAndExchangeCode("disabled-user");
+        jdbc.sql("UPDATE app_user SET status = 'DISABLED' WHERE id = :id").param("id", disabledId).update();
+        assertRefreshRefused(disabled);
+
+        String lockedId = createUser("locked-user", null);
+        LoggedIn locked = logInAndExchangeCode("locked-user");
+        jdbc.sql("UPDATE app_user SET locked_until = :until WHERE id = :id")
+                .param("until", java.sql.Timestamp.from(java.time.Instant.now().plusSeconds(600))).param("id", lockedId).update();
+        assertRefreshRefused(locked);
+    }
+
+    @Test
+    @DisplayName("第三方 client：沒有角色，權限只有「使用者擁有」且「scope 涵蓋」的部分（D07、T-TOKEN-02）")
+    void thirdPartyClientsGetScopedPermissionsOnly() throws Exception {
+        createUser("third-user", null, "AS_ADMIN");
+        LoggedIn result = logInAndExchangeCode("third-user");
+        String clientId = clients.findByClientId("web-bff").getId();
+        try {
+            jdbc.sql("UPDATE client_profile SET trust_level = 'THIRD_PARTY', privacy_policy_url = 'https://app.example.com/privacy' "
+                    + "WHERE registered_client_id = :id").param("id", clientId).update();
+            jdbc.sql("INSERT INTO app_scope_permission (scope_code, permission_id) "
+                    + "SELECT 'profile', id FROM app_permission WHERE code IN ('as:user:read', 'as:audit:read')").update();
+            Jwt refreshed = jwtDecoder.decode(refresh(result).get("access_token").asString());
+            assertThat(refreshed.getClaims()).doesNotContainKey("roles");
+            assertThat(refreshed.getClaimAsStringList("permissions")).containsExactlyInAnyOrder("as:user:read", "as:audit:read");
+        } finally {
+            jdbc.sql("DELETE FROM app_scope_permission WHERE scope_code = 'profile'").update();
+            jdbc.sql("UPDATE client_profile SET trust_level = 'FIRST_PARTY' WHERE registered_client_id = :id")
+                    .param("id", clientId).update();
+        }
+    }
+
+    private JsonNode refresh(LoggedIn result) throws Exception {
+        return tokenRequest(mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                .param("grant_type", "refresh_token").param("refresh_token", result.tokens().get("refresh_token").asString())));
+    }
+
+    private void assertRefreshRefused(LoggedIn result) throws Exception {
+        String body = mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                        .param("grant_type", "refresh_token")
+                        .param("refresh_token", result.tokens().get("refresh_token").asString()))
+                .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
+        assertThat(body).contains("invalid_grant");
+    }
+
+    private String createUser(String username, String displayName, String... roles) {
+        return users.createUser(new NewUser(username, null, false, PASSWORD, displayName, java.util.Set.of(roles))).id();
     }
 
     /**
@@ -258,6 +365,9 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
         Jwt accessToken = jwtDecoder.decode(tokens.get("access_token").asString());
         assertThat(accessToken.getSubject()).isEqualTo("report-batch");
         assertThat(accessToken.getClaimAsStringList("scope")).containsExactly("report.generate");
+        assertThat(accessToken.getAudience()).containsExactly("jacky917-api");
+        assertThat(accessToken.getClaimAsString("client_id")).isEqualTo("report-batch");
+        assertThat(accessToken.getClaims()).doesNotContainKeys("asid", "idp", "roles", "permissions");
         assertThat(jdbc.sql("SELECT COUNT(*) FROM session_authorization WHERE registered_client_id = "
                 + "(SELECT id FROM oauth2_registered_client WHERE client_id = 'report-batch')")
                 .query(Integer.class).single()).as("client_credentials 沒有登入 Session").isZero();
@@ -324,5 +434,17 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
     @SpringBootConfiguration
     @EnableAutoConfiguration
     static class TestApplication {
+
+        /**
+         * 應用程式自訂的 claim；刻意使用 List.of()，確認刷新時仍能讀回（customizer 會轉換集合）。
+         */
+        @Bean
+        TokenClaimsContributor tenantsContributor() {
+            return (context, user) -> {
+                if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType()) && user.isPresent()) {
+                    context.getClaims().claim("tenants", java.util.List.of("tenant-a", "tenant-b"));
+                }
+            };
+        }
     }
 }

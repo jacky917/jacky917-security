@@ -296,6 +296,9 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/AuthSessionService.java`、`AuthSession.java` | `as-autoconfigure` | 登入 Session | 建立與查詢 `auth_session`；瀏覽器 Session 屬性存放 `asid`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/SessionLinkingAuthorizationService.java` | `as-autoconfigure` | 授權連結 | 包裝官方 JDBC 授權服務：新授權在同一個交易中連結到同一位使用者的 `ACTIVE` 登入 Session。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/SessionAuthorizationRepository.java` | `as-autoconfigure` | 連結資料 | `session_authorization` 的查詢與建立（`ON CONFLICT DO NOTHING`）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../token/Jacky917TokenCustomizer.java` | `as-autoconfigure` | Token 的 claim | `aud`、`client_id`、`asid`、`idp`、`roles`、`permissions`、ID Token 的 `amr` 與使用者資料；簽發時檢查使用者與 Session 狀態。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../token/AuthorityResolver.java`、`DefaultAuthorityResolver.java` | `as-autoconfigure` | 權限計算 SPI | 第一方：全部角色與權限；第三方：scope 涵蓋的權限（資料模型 §11.3）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../token/AudienceResolver.java`、`ConfiguredAudienceResolver.java`、`TokenClaimsContributor.java` | `as-autoconfigure` | Token SPI | `aud`；業務自訂 claim。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginSuccessHandler.java` | `as-autoconfigure` | 登入成功 | 記錄登入、建立 `auth_session`、回到授權請求。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/LoginController.java` | `as-autoconfigure` | 登入頁 | 依語言顯示；所有錯誤顯示相同訊息；`/jacky917/theme.css`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/templates/jacky917/`、`static/jacky917/`、`jacky917/authorization-server-messages*.properties` | `as-autoconfigure` | 登入頁資源 | Thymeleaf 範本、樣式、英文與繁體中文訊息。 |
@@ -306,7 +309,7 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/KeyEncryptorTest.java` | `as-test` | 單元測試 | 加解密、錯誤主金鑰、竄改、`kid` 綁定。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../client/ClientRegistrationIntegrationTest.java` | `as-test` | 整合測試 | 註冊、重新啟動時更新、secret 輪換、缺少 secret、停權。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../user/UserAccountIntegrationTest.java` | `as-test` | 整合測試 | 帳號或 Email 登入、失敗訊息一致、停用與鎖定、角色過期、唯一性、密碼政策、重新雜湊、第一位管理員。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*AuthorizationFlowIntegrationTest.java` | `as-test` | 整合測試 | 授權碼 + PKCE 完整流程、Session 連結、刷新輪換、沒有 Session 的授權被拒絕並回滾、登入失敗、標頭、無 PKCE、未註冊 redirect、client_credentials、停權 client、discovery 與 JWKS；SQLite 與 PostgreSQL 各一次。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*AuthorizationFlowIntegrationTest.java` | `as-test` | 整合測試 | 授權碼 + PKCE 完整流程、Token 的 claim（第一方、第三方、client_credentials、ID Token）、刷新反映角色變更、Session 撤銷／停用／鎖定後拒絕刷新、自訂 claim、Session 連結、刷新輪換、沒有 Session 的授權被拒絕並回滾、登入失敗、標頭、無 PKCE、未註冊 redirect、client_credentials、停權 client、discovery 與 JWKS；SQLite 與 PostgreSQL 各一次。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../autoconfigure/AutoConfigurationOrderingTest.java` | `as-test` | 單元測試 | `beforeName` 列出的類別都存在。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/SigningKeyIntegrationTest.java` | `as-test` | 整合測試 | T-KEY-01、T-KEY-03、輪換期間的公開與簽章、ES256。 |
 

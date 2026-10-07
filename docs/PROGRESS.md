@@ -657,3 +657,23 @@
   - **DEC-076**: 以「連結是否已存在」決定是否需要 `asid`（換 Token 也有 HTTP 請求，原設計的判斷會誤擋）。
 - **Next TODO**:
   - 工作 8：`Jacky917TokenCustomizer`（`aud`、`asid`、`idp`、`roles`、`permissions`、ID Token 的使用者資料）。
+
+---
+## Step 26: Authorization Server 第 1 階段——工作 8（Token）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `Jacky917TokenCustomizer`：Access Token 的 `aud`（`jacky917-api`）、`client_id`、`asid`、`idp`、`roles`（只給第一方）、`permissions`；ID Token 的 `amr`、`name`／`picture`／`locale`（`profile` scope）、`email`（`email` scope 且已驗證）；ID Token 不放角色與權限。
+  - [x] `client_credentials` 的 Token 只有 `aud`、`client_id`、`scope`（`sub` 為 client id）。
+  - [x] 角色與權限每次簽發都從資料庫讀取（D18）；使用者無法登入或登入 Session 失效時回 `invalid_grant`。
+  - [x] SPI：`AuthorityResolver`（含第三方的 scope 交集）、`AudienceResolver`、`TokenClaimsContributor`。
+- **Commands Run & Results**:
+  - AS 模組 87 個測試全數通過（SQLite 與 PostgreSQL 各一次）：T-TOKEN-01～05、Session 撤銷／停用／暫時鎖定後拒絕刷新、自訂 claim 經刷新後仍存在。
+  - 查證：Spring Security 7.1.1 的 `JwtGenerator` 已設定 ID Token 的 `sid`、`auth_time`、`azp`、`nonce`；Access Token 的 `aud` 預設為 client id，且沒有 `client_id` claim。
+  - 測試發現並修正：claim 使用 `List.of()` 等不可變集合時，授權存入資料庫後無法讀回，刷新失敗（customizer 最後統一轉為 `ArrayList`／`LinkedHashMap`）。
+  - `mvn -B -o clean verify`：**SUCCESS**，143 個測試（Resource Server 47、Authorization Server 87、範例 9）。
+- **Decision Log**:
+  - **DEC-077**: `auth_time` 沿用 Spring Security 的值，不覆寫。
+  - **DEC-078**: 第 1 階段在簽發 Token 時即檢查使用者與 Session 狀態。
+  - **DEC-079**: 沒有 `client_profile` 的 client 視為第三方。
+- **Next TODO**:
+  - 工作 9：Google 登入（通用 OIDC mapper、`FederatedIdentityService`、自動建立使用者）。
