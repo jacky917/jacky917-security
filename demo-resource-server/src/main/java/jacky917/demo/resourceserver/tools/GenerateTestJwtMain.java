@@ -21,9 +21,13 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 本地產生測試 JWT 的 CLI 工具。
- *
- * <p>範例：</p>
+ * Command-line tool that prints a test JWT signed with the demo HS256 key.
+ * <p>
+ * 以 demo HS256 金鑰簽署並輸出測試 JWT 的命令列工具。
+ * <p>
+ * Example:
+ * <p>
+ * 範例：
  * <pre>
  * mvn -pl demo-resource-server -q exec:java \
  *   -Dexec.mainClass=jacky917.demo.resourceserver.tools.GenerateTestJwtMain \
@@ -32,6 +36,28 @@ import java.util.stream.Collectors;
  */
 public class GenerateTestJwtMain {
 
+    /**
+     * Generates a test JWT and prints it together with an {@code export}
+     * command.
+     * <p>
+     * 產生測試 JWT，並連同 {@code export} 指令一起輸出。
+     * <p>
+     * Supported options, all in {@code --key=value} form: {@code sub},
+     * {@code roles}, {@code perms}, {@code scope}, {@code issuer}, {@code aud},
+     * {@code sid}, and {@code minutes}. Unknown or malformed arguments are
+     * ignored, and a non-positive {@code minutes} falls back to 30.
+     * <p>
+     * 支援的選項皆為 {@code --key=value} 格式：{@code sub}、{@code roles}、
+     * {@code perms}、{@code scope}、{@code issuer}、{@code aud}、{@code sid} 與
+     * {@code minutes}。未知或格式錯誤的參數會被忽略；{@code minutes} 非正數時
+     * 改用 30。
+     *
+     * @param args  the command-line options
+     *              <br>命令列選項
+     * @throws Exception if the key cannot be loaded or the token cannot be
+     *         signed
+     *         <br>若無法載入金鑰或無法簽署 token
+     */
     public static void main(String[] args) throws Exception {
         Map<String, String> cli = parseArgs(args);
         String sub = cli.getOrDefault("sub", "demo-user");
