@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 🚧 實作中（第 1 階段）：工作 1～6 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
+| 狀態 | 🚧 實作中（第 1 階段）：工作 1～7 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -988,7 +988,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 4 | Client：官方 JDBC repository + 停權過濾、`client_profile`、設定中宣告的第一方 client | ✅ |
 | 5 | 使用者：`UserAccountService`、`Jacky917UserDetailsService`、密碼政策、第一位管理員 | ✅ |
 | 6 | 登入：兩條 filter chain、登入頁（Thymeleaf，繁中／英文）、`LoginSuccessHandler`、`auth_session`；授權碼 + PKCE 完整流程 | ✅ |
-| 7～10 | Session 連結、Token、Google、範例與 E2E | ⏳ |
+| 7 | `SessionLinkingAuthorizationService`：授權與登入 Session 的連結 | ✅ |
+| 8～10 | Token、Google、範例與 E2E | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1018,6 +1019,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 登入頁的文字 | 應用程式的 `MessageSource`（`messages_zh_TW.properties` 等） | Starter 自己的訊息檔 `jacky917/authorization-server-messages`（英文預設、繁體中文），依請求語言顯示 | 不覆蓋、也不依賴應用程式的 `MessageSource` |
 | 內容安全政策 | `default-src 'self'; frame-ancestors 'none'` | 另加 `img-src 'self' https: data:`（外部 logo）與 `form-action 'self'` | 主色無法以內嵌樣式設定，改由 `/jacky917/theme.css` 提供（只接受色碼，避免注入 CSS） |
 | 直接登入後的頁面 | — | `GET /` 顯示「已登入」 | 直接開啟登入頁並登入時，Spring Security 會導向 `/` |
+| 授權連結的判斷（§5.2） | 依「儲存時是否有 HTTP 請求」判斷 | 依「連結是否已存在」判斷：已存在則沿用；不存在時才從瀏覽器 Session 取得 `asid` | 換 Token 也有 HTTP 請求（來自 client），只是沒有瀏覽器 Session；原本的判斷會誤擋 |
+| 連結的檢查 | — | 只連結到**同一位使用者**的 `ACTIVE` Session；授權與連結在同一個交易中儲存，連結失敗時授權一併回滾 | 避免留下沒有 Session 的授權（之後的 Token 無法帶 `asid`） |
 | `/userinfo` | — | SAS 端點的 filter chain 以 `oauth2ResourceServer().jwt()` 驗證 Access Token，`JwtDecoder` 由公開的金鑰建立 | OIDC userinfo 需要 Bearer Token |
 | 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
 

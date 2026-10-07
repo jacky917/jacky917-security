@@ -5,6 +5,8 @@ import com.nimbusds.jose.proc.SecurityContext;
 import jacky917.security.authorizationserver.authentication.LoginSuccessHandler;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.session.AuthSessionService;
+import jacky917.security.authorizationserver.session.SessionAuthorizationRepository;
+import jacky917.security.authorizationserver.session.SessionLinkingAuthorizationService;
 import jacky917.security.authorizationserver.user.UserAccountService;
 import jacky917.security.authorizationserver.web.LoginController;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -31,6 +33,8 @@ import org.springframework.security.oauth2.server.authorization.settings.Authori
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 
@@ -111,11 +115,40 @@ class AuthorizationServerSecurityConfiguration {
         return AuthorizationServerSettings.builder().issuer(properties.getIssuer().toString()).build();
     }
 
+    /**
+     * The official JDBC authorization service, linking each new
+     * authorization to its login session (detailed design §5.2).
+     * <p>
+     * 官方 JDBC 授權服務，並把每一個新授權連結到其登入 Session（詳細設計 §5.2）。
+     *
+     * @param jdbcOperations      the JDBC operations of the authorization server database
+     *                            <br>Authorization Server 資料庫的 JDBC operations
+     * @param clients             the client repository
+     *                            <br>client repository
+     * @param links               the authorization links
+     *                            <br>授權連結
+     * @param transactionManager  saves an authorization and its link together
+     *                            <br>在同一個交易中儲存授權與連結
+     * @param clock               the clock for timestamps
+     *                            <br>用於時間戳記的時鐘
+     * @return the authorization service
+     *         <br>授權服務
+     */
     @Bean
     @ConditionalOnMissingBean
     @DependsOnDatabaseInitialization
-    OAuth2AuthorizationService authorizationService(JdbcOperations jdbcOperations, RegisteredClientRepository clients) {
-        return new JdbcOAuth2AuthorizationService(jdbcOperations, clients);
+    OAuth2AuthorizationService authorizationService(JdbcOperations jdbcOperations, RegisteredClientRepository clients,
+                                                    SessionAuthorizationRepository links,
+                                                    PlatformTransactionManager transactionManager, Clock clock) {
+        return new SessionLinkingAuthorizationService(new JdbcOAuth2AuthorizationService(jdbcOperations, clients), links,
+                new TransactionTemplate(transactionManager), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    SessionAuthorizationRepository sessionAuthorizationRepository(JdbcClient jdbcClient) {
+        return new SessionAuthorizationRepository(jdbcClient);
     }
 
     @Bean

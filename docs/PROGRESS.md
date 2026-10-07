@@ -642,3 +642,18 @@
   - **DEC-075**: 主色以 `/jacky917/theme.css` 提供，只接受色碼。
 - **Next TODO**:
   - 工作 7：`SessionLinkingAuthorizationService`（授權與 `auth_session` 的連結）。
+
+---
+## Step 25: Authorization Server 第 1 階段——工作 7（授權與登入 Session 的連結）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `SessionLinkingAuthorizationService` 包裝官方 `JdbcOAuth2AuthorizationService`：授權碼流程的授權第一次儲存時，從瀏覽器 Session 取得 `asid`，在同一個交易中寫入 `session_authorization`。
+  - [x] 換 Token、刷新沿用既有連結；`client_credentials` 不建立連結。
+  - [x] 沒有 `asid`、或 `asid` 不是同一位使用者的 `ACTIVE` Session 時拒絕，授權一併回滾。
+- **Commands Run & Results**:
+  - AS 模組 79 個測試全數通過；新增：連結建立一次、刷新換發新的 Refresh Token 且舊的失效、連結不變、拒絕沒有 Session 的授權並確認沒有殘留（SQLite 與 PostgreSQL）。
+  - 破壞實驗：移除交易 → 「不留下沒有連結的授權」的斷言失敗；還原後通過。
+- **Decision Log**:
+  - **DEC-076**: 以「連結是否已存在」決定是否需要 `asid`（換 Token 也有 HTTP 請求，原設計的判斷會誤擋）。
+- **Next TODO**:
+  - 工作 8：`Jacky917TokenCustomizer`（`aud`、`asid`、`idp`、`roles`、`permissions`、ID Token 的使用者資料）。

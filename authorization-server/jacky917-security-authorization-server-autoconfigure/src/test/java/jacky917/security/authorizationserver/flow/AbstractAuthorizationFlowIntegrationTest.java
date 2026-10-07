@@ -12,11 +12,19 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.util.UriComponentsBuilder;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -31,6 +39,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -75,35 +84,100 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
     @Autowired
     JwtDecoder jwtDecoder;
 
+    @Autowired
+    RegisteredClientRepository clients;
+
+    @Autowired
+    OAuth2AuthorizationService authorizations;
+
     @Test
     @DisplayName("授權碼 + PKCE 完整流程：登入後建立 auth_session，換到的 Access Token 的 sub 為使用者 ID")
     void authorizationCodeFlow() throws Exception {
+        LoggedIn result = logInAndExchangeCode("admin");
+        Map<String, Object> authSession = jdbc.sql("SELECT login_method, idp, amr, status FROM auth_session "
+                + "WHERE session_id = :id").param("id", result.asid()).query().singleRow();
+        assertThat(authSession).containsEntry("login_method", "PASSWORD").containsEntry("idp", "local")
+                .containsEntry("amr", "pwd").containsEntry("status", "ACTIVE");
+
+        assertThat(result.tokens().has("refresh_token")).isTrue();
+        assertThat(result.tokens().has("id_token")).isTrue();
+        Jwt accessToken = jwtDecoder.decode(result.tokens().get("access_token").asString());
+        assertThat(accessToken.getSubject()).isEqualTo(result.userId());
+        assertThat(accessToken.getIssuer().toString()).isEqualTo("http://localhost:9000");
+        assertThat(accessToken.getHeaders()).containsKey("kid");
+
+        // 詳細設計 §5.2：授權在發出授權碼時與登入 Session 連結；換 Token 不會重複建立
+        assertThat(jdbc.sql("SELECT a.principal_name FROM session_authorization sa JOIN oauth2_authorization a "
+                        + "ON a.id = sa.authorization_id WHERE sa.session_id = :asid")
+                .param("asid", result.asid()).query(String.class).list()).containsExactly(result.userId());
+    }
+
+    @Test
+    @DisplayName("刷新：換發新的 Refresh Token（輪換），授權與登入 Session 的連結維持不變")
+    void refreshKeepsTheSessionLink() throws Exception {
+        LoggedIn result = logInAndExchangeCode("admin");
+        String firstRefreshToken = result.tokens().get("refresh_token").asString();
+        JsonNode refreshed = tokenRequest(mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                .param("grant_type", "refresh_token").param("refresh_token", firstRefreshToken)));
+        assertThat(refreshed.get("refresh_token").asString()).isNotEqualTo(firstRefreshToken);
+        assertThat(jwtDecoder.decode(refreshed.get("access_token").asString()).getSubject()).isEqualTo(result.userId());
+
+        // 舊的 Refresh Token 已失效
+        mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                        .param("grant_type", "refresh_token").param("refresh_token", firstRefreshToken))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbc.sql("SELECT session_id FROM session_authorization sa JOIN oauth2_authorization a "
+                        + "ON a.id = sa.authorization_id WHERE a.principal_name = :user AND sa.session_id = :asid")
+                .param("user", result.userId()).param("asid", result.asid()).query(String.class).list()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("沒有 asid 或 asid 不屬於同一位使用者的新授權被拒絕，且不會留下授權資料")
+    void authorizationWithoutLoginSessionIsRejected() throws Exception {
+        LoggedIn other = logInAndExchangeCode("admin");
+        RegisteredClient client = clients.findByClientId("web-bff");
+        for (String asid : new String[]{null, other.asid()}) {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            if (asid != null) {
+                request.getSession(true).setAttribute(AuthSessionService.SESSION_ATTRIBUTE, asid);
+            }
+            RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+            try {
+                String id = java.util.UUID.randomUUID().toString();
+                OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client).id(id)
+                        .principalName("someone-else").authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                        .build();
+                assertThatThrownBy(() -> authorizations.save(authorization)).isInstanceOf(IllegalStateException.class);
+                assertThat(authorizations.findById(id)).as("交易回滾，不留下沒有連結的授權").isNull();
+            } finally {
+                RequestContextHolder.resetRequestAttributes();
+            }
+        }
+    }
+
+    /**
+     * 模擬瀏覽器：授權請求 → 登入頁 → 登入 → 授權碼；再模擬 BFF 以授權碼換 Token。
+     */
+    LoggedIn logInAndExchangeCode(String username) throws Exception {
         String verifier = randomVerifier();
         MockHttpSession session = new MockHttpSession();
 
         // 1. 未登入的瀏覽器發出授權請求 → 導向登入頁
-        URI authorize = authorizeUrl(challenge(verifier));
-        mockMvc.perform(get(authorize).session(session).accept(MediaType.TEXT_HTML))
+        mockMvc.perform(get(authorizeUrl(challenge(verifier))).session(session).accept(MediaType.TEXT_HTML))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string(HttpHeaders.LOCATION, "/login"));
 
         // 2. 登入頁有表單與 CSRF token；3. 送出帳密 → 回到原本的授權請求
         String csrf = csrfToken(session);
         MvcResult login = mockMvc.perform(post("/login").session(session)
-                        .param("username", "admin").param("password", PASSWORD).param("_csrf", csrf))
+                        .param("username", username).param("password", PASSWORD).param("_csrf", csrf))
                 .andExpect(status().is3xxRedirection()).andReturn();
         String savedRequest = login.getResponse().getRedirectedUrl();
         assertThat(savedRequest).startsWith("http://localhost/oauth2/authorize");
+        String asid = (String) session.getAttribute(AuthSessionService.SESSION_ATTRIBUTE);
+        assertThat(asid).isNotNull();
 
-        String userId = jdbc.sql("SELECT id FROM app_user WHERE username = 'admin'").query(String.class).single();
-        Map<String, Object> authSession = jdbc.sql("SELECT session_id, login_method, idp, amr, status FROM auth_session "
-                + "WHERE user_id = :user").param("user", userId).query().singleRow();
-        assertThat(authSession).containsEntry("login_method", "PASSWORD").containsEntry("idp", "local")
-                .containsEntry("amr", "pwd").containsEntry("status", "ACTIVE");
-        assertThat(session.getAttribute(AuthSessionService.SESSION_ATTRIBUTE)).isEqualTo(authSession.get("session_id"));
-
-        // 4. 已登入 → 授權碼導回 client
-        // 以 URI 傳入：字串會被當成 URI 樣板再編碼一次
+        // 4. 已登入 → 授權碼導回 client（以 URI 傳入：字串會被當成 URI 樣板再編碼一次）
         MvcResult code = mockMvc.perform(get(URI.create(savedRequest)).session(session))
                 .andExpect(status().is3xxRedirection()).andReturn();
         Map<String, String> callback = UriComponentsBuilder.fromUriString(code.getResponse().getRedirectedUrl())
@@ -117,12 +191,12 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
                 .param("code", callback.get("code"))
                 .param("redirect_uri", REDIRECT_URI)
                 .param("code_verifier", verifier)));
-        assertThat(tokens.has("refresh_token")).isTrue();
-        assertThat(tokens.has("id_token")).isTrue();
-        Jwt accessToken = jwtDecoder.decode(tokens.get("access_token").asString());
-        assertThat(accessToken.getSubject()).isEqualTo(userId);
-        assertThat(accessToken.getIssuer().toString()).isEqualTo("http://localhost:9000");
-        assertThat(accessToken.getHeaders()).containsKey("kid");
+        String userId = jdbc.sql("SELECT id FROM app_user WHERE username = :username").param("username", username)
+                .query(String.class).single();
+        return new LoggedIn(userId, asid, tokens);
+    }
+
+    record LoggedIn(String userId, String asid, JsonNode tokens) {
     }
 
     @Test
@@ -184,6 +258,9 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
         Jwt accessToken = jwtDecoder.decode(tokens.get("access_token").asString());
         assertThat(accessToken.getSubject()).isEqualTo("report-batch");
         assertThat(accessToken.getClaimAsStringList("scope")).containsExactly("report.generate");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM session_authorization WHERE registered_client_id = "
+                + "(SELECT id FROM oauth2_registered_client WHERE client_id = 'report-batch')")
+                .query(Integer.class).single()).as("client_credentials 沒有登入 Session").isZero();
     }
 
     @Test
