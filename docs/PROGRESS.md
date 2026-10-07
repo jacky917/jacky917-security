@@ -48,8 +48,8 @@
 - **Files Changed**:
   - **Updated**: `jacky917-security-autoconfigure/pom.xml`
   - **Updated**: `demo-resource-server/pom.xml`
-  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/properties/Jacky917SecurityProperties.java`
-  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
+  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/properties/Jacky917SecurityProperties.java`
+  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
   - **New**: `jacky917-security-autoconfigure/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
   - **Updated**: `docs/PROGRESS.md`
   - **Updated**: `docs/PROJECT_STRUCTURE.md`
@@ -77,12 +77,12 @@
   - `mvn -U clean verify`: **SUCCESS**
 - **Files Changed**:
   - **Updated**: `jacky917-security-autoconfigure/pom.xml`
-  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
-  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/properties/Jacky917SecurityProperties.java`
-  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/authentication/JwtAuthoritiesExtractor.java`
-  - **Updated**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/autoconfigure/authentication/JwtAuthoritiesExtractorTest.java`
-  - **Deleted**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/jwt/JwtAuthoritiesExtractor.java`
-  - **Deleted**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/autoconfigure/jwt/JwtAuthoritiesExtractorTest.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/properties/Jacky917SecurityProperties.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/authentication/JwtAuthoritiesExtractor.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/resourceserver/autoconfigure/authentication/JwtAuthoritiesExtractorTest.java`
+  - **Deleted**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/jwt/JwtAuthoritiesExtractor.java`
+  - **Deleted**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/resourceserver/autoconfigure/jwt/JwtAuthoritiesExtractorTest.java`
   - **Updated**: `docs/jwt-claims.md`
   - **Updated**: `docs/starter-design.md`
   - **Updated**: `docs/PROGRESS.md`
@@ -119,9 +119,9 @@
   - **New**: `jacky917-security-annotations/src/main/java/jacky917/security/annotations/RequireScope.java`
   - **Updated**: `jacky917-security-autoconfigure/pom.xml`
   - **Updated**: `jacky917-security-autoconfigure/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
-  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
-  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/methodsecurity/Jacky917AuthorityEvaluator.java`
-  - **New**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/autoconfigure/integration/MethodSecurityAnnotationsIntegrationTest.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/config/Jacky917SecurityAutoConfiguration.java`
+  - **New**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/methodsecurity/Jacky917AuthorityEvaluator.java`
+  - **New**: `jacky917-security-autoconfigure/src/test/java/jacky917/security/resourceserver/autoconfigure/integration/MethodSecurityAnnotationsIntegrationTest.java`
   - **Updated**: `docs/authorization-model.md`
   - **Updated**: `docs/PROGRESS.md`
   - **Updated**: `docs/PROJECT_STRUCTURE.md`
@@ -262,7 +262,7 @@
 - **Files Changed**:
   - **Updated**: `demo-resource-server/pom.xml`
   - **Updated**: `demo-authorization-server/pom.xml`
-  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/properties/Jacky917SecurityProperties.java`
+  - **Updated**: `jacky917-security-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/properties/Jacky917SecurityProperties.java`
   - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/clip/Clip.java`
   - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/clip/ClipDemoDataInitializer.java`
   - **New**: `demo-resource-server/src/main/java/jacky917/demo/resourceserver/clip/ClipRepository.java`

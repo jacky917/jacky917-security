@@ -143,9 +143,9 @@ public ResponseEntity<Void> publishArticle(@PathVariable String id) { ... }
 
 `demo-resource-server` 以 Clip 為例實作了 ABAC：
 
-- [`AuthzService`](../demo-resource-server/src/main/java/jacky917/demo/resourceserver/authz/AuthzService.java)：判斷介面
-- [`DemoAuthzConfiguration`](../demo-resource-server/src/main/java/jacky917/demo/resourceserver/authz/DemoAuthzConfiguration.java)：以 `clip.ownerId == JWT sub` 判斷，找不到資料時拒絕
-- [`DemoSecureController#abac`](../demo-resource-server/src/main/java/jacky917/demo/resourceserver/controller/DemoSecureController.java)：`@PreAuthorize("hasAuthority('PERM_clip:read') and @authzService.canAccessClip(authentication, #clipId)")`
+- [`AuthzService`](../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/authz/AuthzService.java)：判斷介面
+- [`DemoAuthzConfiguration`](../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/authz/DemoAuthzConfiguration.java)：以 `clip.ownerId == JWT sub` 判斷，找不到資料時拒絕
+- [`DemoSecureController#abac`](../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/controller/DemoSecureController.java)：`@PreAuthorize("hasAuthority('PERM_clip:read') and @authzService.canAccessClip(authentication, #clipId)")`
 
 ---
 

@@ -2,7 +2,7 @@
 
 本文件列出 `jacky917-security-starter` 已知的限制，以及容易誤用的行為。每一項都附上「會發生什麼事」與「該怎麼做」。
 
-標示 🧪 的項目已有自動化測試驗證，見 [`SecurityBehaviorIntegrationTest`](../jacky917-security-autoconfigure/src/test/java/jacky917/security/autoconfigure/integration/SecurityBehaviorIntegrationTest.java)。
+標示 🧪 的項目已有自動化測試驗證，見 [`SecurityBehaviorIntegrationTest`](../resource-server/jacky917-security-resource-server-autoconfigure/src/test/java/jacky917/security/resourceserver/autoconfigure/integration/SecurityBehaviorIntegrationTest.java)。
 
 ---
 

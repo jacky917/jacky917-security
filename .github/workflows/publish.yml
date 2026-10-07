@@ -20,16 +20,24 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: maven
           server-id: github
           server-username: MAVEN_USERNAME
           server-password: GITHUB_TOKEN
 
-      # 執行 Maven deploy，且跳過 demo 模組（因為 demo 不需要被別人當作依賴導入）
-      # 「.」代表根目錄的 parent POM：子模組都繼承它，若不一起發佈，消費端會解析失敗
-      - name: Publish to GitHub Packages
-        run: >
-          mvn --batch-mode deploy
-          -pl .,jacky917-security-starter,jacky917-security-autoconfigure,jacky917-security-annotations
-          -DskipTests
+      # 發佈的版本號只看 pom.xml 的 revision；tag 不一致時中止，避免「建立 v1.0.1 卻發佈 1.0.0」
+      - name: Verify tag matches project version
+        run: |
+          VERSION=$(mvn --batch-mode --quiet help:evaluate -Dexpression=revision -DforceStdout)
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=${TAG} revision=${VERSION}"
+          if [ "${VERSION}" != "${TAG}" ]; then
+            echo "::error::Release tag ${GITHUB_REF_NAME} does not match revision ${VERSION} in pom.xml"
+            exit 1
+          fi
+
+      # 部署整個 reactor（包含測試）：examples 以 maven.deploy.skip 排除，新增模組時不必修改此處
+      - name: Build, test and publish to GitHub Packages
+        run: mvn --batch-mode deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

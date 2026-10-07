@@ -2,7 +2,7 @@
 
 本文件列出 `jacky917-security-starter` 的所有設定屬性，以及它們與 Spring Boot 原生 `spring.security.oauth2.resourceserver.*` 屬性的關係。
 
-屬性對應的 Java 類別為 [`Jacky917SecurityProperties`](../jacky917-security-autoconfigure/src/main/java/jacky917/security/autoconfigure/properties/Jacky917SecurityProperties.java)。IDE（IntelliJ IDEA、VS Code Spring Boot Tools）會依據 configuration metadata 提供自動完成與說明。
+屬性對應的 Java 類別為 [`Jacky917SecurityProperties`](../resource-server/jacky917-security-resource-server-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/properties/Jacky917SecurityProperties.java)。IDE（IntelliJ IDEA、VS Code Spring Boot Tools）會依據 configuration metadata 提供自動完成與說明。
 
 ---
 
