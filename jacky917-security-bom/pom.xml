@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.jacky917</groupId>
+        <artifactId>jacky917-security-parent</artifactId>
+        <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>jacky917-security-bom</artifactId>
+    <packaging>pom</packaging>
+    <name>jacky917-security-bom</name>
+    <description>Bill of materials for jacky917-security: import it to manage the versions of all published modules</description>
+
+    <!-- 只列出本專案發佈的模組；不包含 Spring Boot 的版本管理。
+         版本使用 ${project.version}：使用者 import BOM 時，Maven 以 BOM 本身的版本代換 -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.github.jacky917</groupId>
+                <artifactId>jacky917-security-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.jacky917</groupId>
+                <artifactId>jacky917-security-annotations</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.jacky917</groupId>
+                <artifactId>jacky917-security-resource-server-autoconfigure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.jacky917</groupId>
+                <artifactId>jacky917-security-resource-server-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <configuration>
+                    <!-- bom 模式：保留本檔的 dependencyManagement（不展開繼承來的 Spring Boot 版本管理） -->
+                    <flattenMode>bom</flattenMode>
+                    <pomElements>
+                        <!-- 不帶出繼承自 Spring Boot parent 的大量版本屬性 -->
+                        <properties>remove</properties>
+                    </pomElements>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

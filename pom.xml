@@ -59,6 +59,8 @@
         <module>resource-server/jacky917-security-annotations</module>
         <module>resource-server/jacky917-security-resource-server-autoconfigure</module>
         <module>resource-server/jacky917-security-resource-server-starter</module>
+        <module>jacky917-security-bom</module>
+        <module>relocation/jacky917-security-starter</module>
         <module>examples/example-resource-server</module>
         <module>examples/example-authorization-server</module>
     </modules>
