@@ -36,7 +36,7 @@
 | `permissions`| `Array<String>` 或 `String`（逗號分隔） | 每個權限字串會被加上 `PERM_` 前綴。 | `["product:read", "product:write"]` -> `PERM_product:read`, `PERM_product:write` |
 | `scope` | `String`（空白分隔）或 `Array<String>` | 解析後每個元素加上 `SCOPE_` 前綴。 | `"openid profile"` 或 `["openid","profile"]` -> `SCOPE_openid`, `SCOPE_profile` |
 | `scp` | `Array<String>` 或 `String`（逗號分隔） | `scope` 的另一種常見形式，每個元素加上 `SCOPE_` 前綴。 | `["read:data", "write:data"]` -> `SCOPE_read:data`, `SCOPE_write:data` |
-| `sid` | `String` | Session ID。由 Authorization Server 用於關聯 Refresh Token、管理多裝置登入與登出。**Starter 不讀取也不驗證此 claim**，業務程式可透過 `jwt.getClaimAsString("sid")` 取得。 | `"d8a4f0c5-9b2f-4a3d-9f8a-2c1e0b5d4f3c"` |
+| `sid` | `String` | Session ID。由 Authorization Server 用於關聯 Refresh Token、管理多裝置登入與登出。**Starter 不讀取也不驗證此 claim**，業務程式可透過 `jwt.getClaimAsString("sid")` 取得。規劃中的 Authorization Server（2.x）改以 `asid` 傳遞登入 Session，ID Token 的 `sid` 交由 Spring Security 管理，見 [AS 詳細設計 D20](auth-server-detailed-design.md#d20-session-識別-claim)。 | `"d8a4f0c5-9b2f-4a3d-9f8a-2c1e0b5d4f3c"` |
 
 **注意**：
 - 所有從 claims 提取的權限/角色字串，在轉換為 `GrantedAuthority` 後會進行**合併、去重、排序**，確保輸出穩定。

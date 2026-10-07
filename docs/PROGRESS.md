@@ -19,6 +19,7 @@
 - [🟡] Step 11: 2.0 設計（Spring Boot 4.1 升級 + Repo 拆分）— 設計草案完成，待決策
 - [🟢] Step 12: 建立 `1.x` 維護分支（M0；`1.1.0` 待發佈）
 - [🟢] Step 13: 升級到 Spring Boot 4.1.1（M1；待合併）
+- [🟡] Step 14: Authorization Server 詳細設計（資料模型 + 元件與流程）— 設計草案完成，待確認
 
 ---
 
@@ -409,4 +410,31 @@
 - **Next TODO**:
   - 在有 Docker 的環境驗證 MySQL（Connector/J 9.7.0）。
   - PR #1 合併後，將本分支以 PR 合併到 `main`，並發佈 `2.0.0-M1`。
+
+---
+## Step 14: Authorization Server 詳細設計（方案 C）
+- **Status**: 🟡 設計草案完成，待確認（尚未實作）
+- **Acceptance Criteria**:
+  - [x] `docs/auth-server-data-model.md`：23 張表的完整 DDL（官方表依 jar 內 schema 檔改為 PostgreSQL 版）、欄位說明、索引與理由、狀態機、關鍵查詢、初始資料、Flyway 規劃、DB 帳號權限、清理規則與容量估算。
+  - [x] `docs/auth-server-detailed-design.md`：D15～D21、套件與元件、與 Spring Security AS 的整合點、SPI、三條 filter chain、Token 有效期與 claim 規則、六個主要流程（含失敗分支）、設定屬性規格、錯誤處理、稽核與 metrics、威脅模型、37 個測試案例、第 1～2 階段工作分解。
+  - [x] `docs/auth-server-design.md`：§5 改為摘要並指向資料模型；`sid` → `asid`；移除表名前綴；新增 D15～D21 索引。
+- **查證（Spring Security 7.1.1、Spring Session 4.1.1 jar）**:
+  - 官方 schema 檔內容與 PostgreSQL 調整說明（`blob`→`text`、`timestamp`→`timestamptz`）；官方表沒有任何索引。
+  - `JdbcOAuth2AuthorizationService` 表名為寫死常數 `TABLE_NAME = "oauth2_authorization"` → 取消表名前綴（D17）。
+  - `TokenSettings` 預設：授權碼與 Access Token 5 分鐘、Refresh Token 60 分鐘、`reuseRefreshTokens=true`。
+  - `OAuth2RefreshTokenGenerator` 不發 Refresh Token 給授權碼流程的 public client；刷新流程支援 DPoP。
+  - `JwtGenerator` 由 `SessionInformation` 產生 ID Token 的 `sid`，`OidcLogoutAuthenticationProvider` 以 `SessionRegistry` 驗證 → Access Token 改用 `asid`（D20）。
+  - Jackson 3 內建 `UserMixin`、`UsernamePasswordAuthenticationTokenMixin` → Principal 標準化不需自訂 mixin（D16）。
+  - `HttpSecurity#oauth2AuthorizationServer`、`OAuth2AuthorizationServerConfigurer`（僅公開建構子）、`tokenEndpoint().authenticationProviders(...)`、`OidcLogoutAuthenticationSuccessHandler#setLogoutHandler`、Pushed Authorization Request configurer 皆存在。
+- **Commands Run & Results**:
+  - 以 embedded PostgreSQL 16.15 執行資料模型全部 DDL，並以 Spring Security 7.1.1 官方 JDBC 類別存取：**40 項檢查全部通過**（見 `docs/auth-server-data-model.md` §16）。第一次執行時有 1 項約束測試的 SQL 本身寫錯，修正後才確認該約束確實生效。
+  - 文件連結、錨點與 YAML 檢查：無錯誤。
+- **Decision Log**:
+  - **DEC-043**: 表設計以 `docs/auth-server-data-model.md` 為唯一權威來源，避免兩份 DDL 逐漸不一致。
+  - **DEC-044**: AS 使用專屬資料庫並取消表名前綴（D17）。
+  - **DEC-045**: Access Token 以 `asid` 表示登入 Session（D20）。
+  - **DEC-046**: Refresh 以列鎖序列化，並設 30 秒寬限期區分併發與重用攻擊（D19）。
+- **Next TODO**:
+  - 取得 `docs/auth-server-detailed-design.md` §12 的答覆。
+  - 完成 M2（repo 重構）後，依詳細設計 §11 開始第 1 階段。
 

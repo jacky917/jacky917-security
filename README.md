@@ -41,6 +41,7 @@ class OrderController {
 | [GitHub Packages](docs/github-packages.md) | 發佈與引用設定 |
 | [2.0 總設計](docs/v2-overview.md) | **規劃中**：升級 Spring Boot 4.1 與新增 Authorization Server 的目標、里程碑、破壞性變更與待確認事項 |
 | [Spring Boot 4.1 升級設計](docs/boot4-migration-design.md)、[Repo 拆分設計](docs/repo-structure-design.md) | 2.0 的升級影響清單與步驟；repo 結構、命名、建置、版本與 CI |
+| [AS 資料模型](docs/auth-server-data-model.md)、[AS 詳細設計](docs/auth-server-detailed-design.md) | **規劃中**：Authorization Server 的完整表設計（DDL、索引、狀態機、Flyway），以及元件、流程、Token、威脅模型與測試案例 |
 | [Authorization Server 設計](docs/auth-server-design.md) | **規劃中**：以 Spring Authorization Server 建置登入服務（支援第三方登入）的架構、決策、資料表與實作計畫 |
 | [Refresh Token Rotation](docs/refresh-rotation.md)、[資料表設計](docs/database-schema.md) | Authorization Server 端的早期參考設計 |
 

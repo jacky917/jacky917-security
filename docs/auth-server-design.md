@@ -7,6 +7,7 @@
 | 範圍 | 新增 `jacky917-security-authorization-server-starter`：以 Spring Security 7 的 Authorization Server 為基礎，支援帳號密碼登入與第三方登入（Google 等） |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（D01 已決定） |
 | 上層文件 | [2.0 總設計](v2-overview.md)；模組命名與 repo 結構以 [Repo 拆分設計](repo-structure-design.md) 為準 |
+| 詳細設計 | [資料模型（表設計）](auth-server-data-model.md)、[詳細設計（元件、流程、Token、維運）](auth-server-detailed-design.md)。兩份文件與本文件衝突時，以詳細設計為準 |
 | 不在範圍 | 業務 API 端的授權（由現有的 `jacky917-security-starter` 負責，本設計不改變其定位） |
 
 > **名詞約定**
@@ -100,9 +101,10 @@ flowchart LR
 | D09 | 授權資料儲存 | A. SAS 官方 JDBC／B. Redis 自訂／C. JPA 自訂 | **A** + 定期清理 |
 | D10 | 登入 Session 與水平擴展 | A. Sticky session／B. Spring Session JDBC／C. Spring Session Redis | 第一版 **B** |
 | D11 | 簽章金鑰管理 | A. Keystore 檔案／B. **資料庫 + 加密 + 輪換**／C. KMS／Vault | **B**，介面預留 **C** |
-| D12 | 登出 | A. 只清 AS Session／B. RP-Initiated Logout + 撤銷 sid／C. 再加 Back-channel Logout | **B** |
+| D12 | 登出 | A. 只清 AS Session／B. RP-Initiated Logout + 撤銷登入 Session／C. 再加 Back-channel Logout | **B** |
 | D13 | Client 管理 | A. 設定檔／B. Flyway seed／C. Admin API／D. 動態註冊（DCR） | 第一方 **B**，第三方 **C**，**不開放 D** |
 | ⚠️ D14 | 資料庫 | A. **PostgreSQL**／B. MySQL／C. 兩者都支援 | **A** |
+| D15～D21 | grant type、Principal 標準化、專屬資料庫、權限計算時機、Refresh 併發、Session claim、密碼政策 | 見 [詳細設計 §1](auth-server-detailed-design.md#1-新增決策d15d21) | — |
 
 ---
 
@@ -271,7 +273,7 @@ flowchart TD
 **推薦 C**。SAS 內建 Rotation，但**沒有內建重用偵測**，需以裝飾器包裝 `OAuth2AuthorizationService`：
 
 - 輪換時，把舊 Refresh Token 的 SHA-256 寫入 `refresh_token_history`。
-- 收到找不到的 Refresh Token 時，查 `refresh_token_history`；查到即代表重用，撤銷該 `sid` 的所有授權與 Session。
+- 收到找不到的 Refresh Token 時，查 `refresh_token_history`；查到即代表重用，撤銷該登入 Session（`auth_session`）的所有授權。詳見 [詳細設計 §5.4](auth-server-detailed-design.md#54-刷新-token-與重用偵測)（含併發刷新的寬限期，D19）。
 
 有效期建議：
 
@@ -293,7 +295,7 @@ flowchart TD
 
 **推薦 A**，並補上：
 
-- 定期清理過期的 `oauth2_authorization`（見 §5.7）。
+- 定期清理過期的 `oauth2_authorization`（見 [資料模型 §14](auth-server-data-model.md#14-資料保留清理與容量估算)）。
 - 資料庫層啟用加密（TDE 或磁碟加密），並限制 DB 帳號權限，因為 Token 值是明文。
 - 自訂的 principal 物件要註冊 Jackson mixin，否則 JDBC 儲存時無法序列化（SAS 的 Jackson 反序列化有白名單限制）。Spring Security 7.1.1 的 JDBC 實作已支援 **Jackson 3**（內建 `AuthorizationServerJacksonModule`），mixin 也要以 Jackson 3 撰寫。
 
@@ -336,7 +338,7 @@ K1 簽發的最後一個 Token 過期後   K1 改為 RETIRED   JWKS 不再公開
 | 選項 | 說明 | 評估 |
 |---|---|---|
 | A. 只清除 AS 的 Session | — | Refresh Token 仍有效，BFF 還能繼續續期 ❌ |
-| **B. RP-Initiated Logout + 撤銷 sid** | BFF 導向 AS 的 `/connect/logout`；AS 撤銷該 `sid` 的所有授權與 Refresh Token，並清除 Session | 標準做法；SAS 支援 RP-Initiated Logout |
+| **B. RP-Initiated Logout + 撤銷登入 Session** | BFF 導向 AS 的 `/connect/logout`；AS 撤銷該登入 Session（`auth_session`）的所有授權與 Refresh Token，並清除 AS 瀏覽器 Session | 標準做法；SAS 支援 RP-Initiated Logout |
 | C. 再加 Back-channel Logout | AS 主動通知所有 client 該 Session 已登出 | SAS 未內建發送端，需自行實作；第一版不做 |
 
 **推薦 B**。要接受的限制：已簽發的 Access Token 在 RS 端仍有效到過期為止（最多 10 分鐘）。若需要即時失效，之後再疊加先前討論的方案 D（權限中心／撤銷清單）。
@@ -377,7 +379,7 @@ authorization-server/
 │       ├── federation/      第三方登入：FederatedIdentityService、通用 OIDC mapper、GitHub 等專用 mapper、帳號連結
 │       ├── token/           Jacky917TokenCustomizer、AudienceResolver、AuthorityResolver
 │       ├── refresh/         ReuseDetectingAuthorizationService（裝飾器）、refresh_token_history
-│       ├── session/         AuthSessionService（sid）、登出處理
+│       ├── session/         AuthSessionService（auth_session）、登出處理
 │       ├── keys/            SigningKeyStore、輪換排程、JWKSource
 │       ├── protection/      登入失敗計數、鎖定、rate limit
 │       ├── web/             登入、同意、帳號連結、帳號設定頁的 controller
@@ -423,293 +425,23 @@ AS 內部的兩條 filter chain：
 
 ## 5. 資料表設計
 
-PostgreSQL 16 以上。表名在實作時加上可設定的前綴（預設 `j917_`），本節為了易讀省略前綴。
+**完整的表設計（DDL、欄位說明、索引、狀態機、關鍵查詢、seed、Flyway 規劃、容量估算）已移至 [資料模型](auth-server-data-model.md)，以該文件為唯一權威來源。** 本節只保留摘要。
 
-### 5.1 總覽
-
-| 分類 | 表 | 來源 | 用途 |
-|---|---|---|---|
-| 身分 | `app_user` | 自建 | 使用者 |
-| 身分 | `user_federated_identity` | 自建 | 第三方帳號連結 |
-| 身分 | `user_action_token` | 自建 | 重設密碼、Email 驗證的一次性 Token |
-| 權限 | `app_role`、`app_permission` | 自建 | 角色、權限 |
-| 權限 | `app_user_role`、`app_role_permission` | 自建 | 對應關係 |
-| OAuth | `oauth2_registered_client` | **SAS 官方** | Client 註冊資料 |
-| OAuth | `oauth2_authorization` | **SAS 官方** | 授權碼、Access／Refresh Token 狀態 |
-| OAuth | `oauth2_authorization_consent` | **SAS 官方** | 使用者對第三方 client 的同意紀錄 |
-| OAuth | `client_profile` | 自建 | Client 的擴充資料（信任等級、顯示名稱、擁有者） |
-| OAuth | `api_resource` | 自建 | API（audience）定義 |
-| OAuth | `app_scope`、`app_scope_permission` | 自建 | Scope 定義與 scope → 權限對應 |
-| Session | `auth_session` | 自建 | 一次登入（一個裝置）＝一個 `sid` |
-| Session | `session_authorization` | 自建 | `sid` ↔ `oauth2_authorization` 對應，用於依 `sid` 撤銷 |
-| Session | `refresh_token_history` | 自建 | 已輪換的舊 Refresh Token，用於重用偵測 |
-| Session | `SPRING_SESSION`、`SPRING_SESSION_ATTRIBUTES` | **Spring Session 官方** | AS 的 HttpSession（D10） |
-| 安全 | `signing_key` | 自建 | 簽章金鑰與輪換狀態 |
-| 安全 | `login_audit` | 自建 | 登入紀錄、暴力破解防護 |
-| 安全 | `admin_audit_log` | 自建 | 管理操作稽核 |
-
-官方表請使用對應版本隨附的 DDL，不要自行改寫（只調整 PostgreSQL 不相容的欄位型別）。
-
-### 5.2 關聯圖
-
-```mermaid
-erDiagram
-    app_user ||--o{ user_federated_identity : "連結"
-    app_user ||--o{ user_action_token : "擁有"
-    app_user ||--o{ app_user_role : ""
-    app_role ||--o{ app_user_role : ""
-    app_role ||--o{ app_role_permission : ""
-    app_permission ||--o{ app_role_permission : ""
-    app_user ||--o{ auth_session : "登入"
-    auth_session ||--o{ session_authorization : ""
-    oauth2_authorization ||--|| session_authorization : ""
-    oauth2_registered_client ||--o{ oauth2_authorization : ""
-    oauth2_registered_client ||--|| client_profile : "擴充"
-    oauth2_registered_client ||--o{ oauth2_authorization_consent : ""
-    api_resource ||--o{ app_scope : "包含"
-    app_scope ||--o{ app_scope_permission : ""
-    app_permission ||--o{ app_scope_permission : ""
-    auth_session ||--o{ refresh_token_history : ""
-    app_user ||--o{ login_audit : ""
-```
-
-### 5.3 身分與權限
-
-```sql
-CREATE TABLE app_user (
-    id                  UUID         PRIMARY KEY,                    -- 即 Token 的 sub，永不變更
-    username            VARCHAR(64)  UNIQUE,                         -- 第三方登入建立的使用者可為 NULL
-    email               VARCHAR(255),
-    email_verified      BOOLEAN      NOT NULL DEFAULT FALSE,
-    password_hash       VARCHAR(255),                                -- {bcrypt}... ；只有第三方登入時為 NULL
-    display_name        VARCHAR(128),
-    avatar_url          VARCHAR(1024),
-    status              VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE',      -- ACTIVE / LOCKED / DISABLED
-    failed_login_count  INT          NOT NULL DEFAULT 0,
-    locked_until        TIMESTAMPTZ,
-    password_changed_at TIMESTAMPTZ,
-    last_login_at       TIMESTAMPTZ,
-    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    row_version         BIGINT       NOT NULL DEFAULT 0,             -- 樂觀鎖
-    CONSTRAINT ck_app_user_status CHECK (status IN ('ACTIVE', 'LOCKED', 'DISABLED'))
-);
--- Email 不分大小寫唯一，且只限已驗證的 Email（未驗證的 Email 不寫入此欄，見 D06）
-CREATE UNIQUE INDEX ux_app_user_email ON app_user (LOWER(email)) WHERE email IS NOT NULL;
-
-CREATE TABLE user_federated_identity (
-    id               UUID         PRIMARY KEY,
-    user_id          UUID         NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-    provider         VARCHAR(32)  NOT NULL,                          -- google / github / line / apple
-    provider_subject VARCHAR(255) NOT NULL,                          -- 提供者的使用者 ID（Google sub、GitHub id）
-    email            VARCHAR(255),                                   -- 提供者回傳的 Email（僅供參考，不作識別）
-    email_verified   BOOLEAN      NOT NULL DEFAULT FALSE,
-    display_name     VARCHAR(128),
-    avatar_url       VARCHAR(1024),
-    raw_attributes   JSONB,                                          -- 原始回應（除錯用；不得包含 Token）
-    linked_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    last_login_at    TIMESTAMPTZ,
-    CONSTRAINT ux_federated_provider_subject UNIQUE (provider, provider_subject),
-    CONSTRAINT ux_federated_user_provider    UNIQUE (user_id, provider)  -- 每個提供者只能連結一個帳號
-);
-CREATE INDEX ix_federated_user ON user_federated_identity (user_id);
-
-CREATE TABLE user_action_token (
-    token_hash CHAR(64)    PRIMARY KEY,                              -- SHA-256，不存明文
-    user_id    UUID        NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-    purpose    VARCHAR(32) NOT NULL,                                 -- PASSWORD_RESET / EMAIL_VERIFY / LINK_ACCOUNT
-    payload    JSONB,                                                -- 例如待連結的 provider + subject
-    expires_at TIMESTAMPTZ NOT NULL,
-    used_at    TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX ix_action_token_user ON user_action_token (user_id, purpose);
-
-CREATE TABLE app_role (
-    id          UUID         PRIMARY KEY,
-    code        VARCHAR(64)  NOT NULL UNIQUE,                        -- ADMIN（不含 ROLE_）
-    name        VARCHAR(128) NOT NULL,
-    description TEXT,
-    built_in    BOOLEAN      NOT NULL DEFAULT FALSE,                 -- 內建角色不可刪除
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE app_permission (
-    id          UUID         PRIMARY KEY,
-    code        VARCHAR(128) NOT NULL UNIQUE,                        -- order:read（不含 PERM_）
-    name        VARCHAR(128) NOT NULL,
-    description TEXT,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE app_user_role (
-    user_id    UUID        NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-    role_id    UUID        NOT NULL REFERENCES app_role(id) ON DELETE CASCADE,
-    granted_by UUID        REFERENCES app_user(id) ON DELETE SET NULL,
-    granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (user_id, role_id)
-);
-CREATE INDEX ix_user_role_role ON app_user_role (role_id);
-
-CREATE TABLE app_role_permission (
-    role_id       UUID NOT NULL REFERENCES app_role(id)       ON DELETE CASCADE,
-    permission_id UUID NOT NULL REFERENCES app_permission(id) ON DELETE CASCADE,
-    PRIMARY KEY (role_id, permission_id)
-);
-CREATE INDEX ix_role_permission_permission ON app_role_permission (permission_id);
-```
-
-### 5.4 OAuth 擴充
-
-```sql
--- oauth2_registered_client、oauth2_authorization、oauth2_authorization_consent：使用 SAS 官方 DDL
-
-CREATE TABLE client_profile (
-    registered_client_id VARCHAR(100) PRIMARY KEY
-                         REFERENCES oauth2_registered_client(id) ON DELETE CASCADE,
-    trust_level          VARCHAR(16)   NOT NULL,                     -- FIRST_PARTY / THIRD_PARTY（D07）
-    display_name         VARCHAR(128)  NOT NULL,                     -- 同意畫面顯示的名稱
-    logo_url             VARCHAR(1024),
-    homepage_url         VARCHAR(1024),
-    privacy_policy_url   VARCHAR(1024),                              -- 第三方 client 必填（由程式檢查）
-    terms_url            VARCHAR(1024),
-    owner_user_id        UUID          REFERENCES app_user(id) ON DELETE SET NULL,
-    status               VARCHAR(16)   NOT NULL DEFAULT 'ACTIVE',    -- PENDING_REVIEW / ACTIVE / SUSPENDED
-    created_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    updated_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    CONSTRAINT ck_client_trust CHECK (trust_level IN ('FIRST_PARTY', 'THIRD_PARTY'))
-);
-
-CREATE TABLE api_resource (
-    code        VARCHAR(64)  PRIMARY KEY,                            -- 即 aud 的值，例如 order-api
-    name        VARCHAR(128) NOT NULL,
-    description TEXT,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE app_scope (
-    code              VARCHAR(128) PRIMARY KEY,                      -- order.read；openid、profile、email 為內建
-    api_resource_code VARCHAR(64)  REFERENCES api_resource(code),    -- OIDC 標準 scope 為 NULL
-    display_name      VARCHAR(128) NOT NULL,                         -- 同意畫面：「讀取你的訂單」
-    description       TEXT,
-    consent_required  BOOLEAN      NOT NULL DEFAULT TRUE,
-    built_in          BOOLEAN      NOT NULL DEFAULT FALSE
-);
-
-CREATE TABLE app_scope_permission (
-    scope_code    VARCHAR(128) NOT NULL REFERENCES app_scope(code)      ON DELETE CASCADE,
-    permission_id UUID         NOT NULL REFERENCES app_permission(id) ON DELETE CASCADE,
-    PRIMARY KEY (scope_code, permission_id)
-);
-```
-
-### 5.5 Session、授權關聯與重用偵測
-
-```sql
-CREATE TABLE auth_session (
-    session_id     UUID         PRIMARY KEY,                         -- 即 Token 的 sid
-    user_id        UUID         NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-    status         VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE',           -- ACTIVE / REVOKED / EXPIRED
-    login_method   VARCHAR(16)  NOT NULL,                            -- PASSWORD / FEDERATED
-    idp            VARCHAR(32)  NOT NULL DEFAULT 'local',            -- local / google / github …
-    ip_address     VARCHAR(45),
-    user_agent     TEXT,
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    last_seen_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),              -- 每次 refresh 時更新
-    expires_at     TIMESTAMPTZ  NOT NULL,                            -- 絕對上限（D08：90 天）
-    revoked_at     TIMESTAMPTZ,
-    revoke_reason  VARCHAR(32),                                      -- LOGOUT / LOGOUT_ALL / REUSE_DETECTED / ADMIN / PASSWORD_CHANGED
-    CONSTRAINT ck_auth_session_status CHECK (status IN ('ACTIVE', 'REVOKED', 'EXPIRED'))
-);
-CREATE INDEX ix_auth_session_user_active ON auth_session (user_id) WHERE status = 'ACTIVE';
-CREATE INDEX ix_auth_session_expires     ON auth_session (expires_at);
-
--- 一個 sid 可能對應多個 client 的授權（例如同時登入網頁 BFF 與第三方應用）
-CREATE TABLE session_authorization (
-    authorization_id     VARCHAR(100) PRIMARY KEY
-                         REFERENCES oauth2_authorization(id) ON DELETE CASCADE,
-    session_id           UUID         NOT NULL REFERENCES auth_session(session_id) ON DELETE CASCADE,
-    registered_client_id VARCHAR(100) NOT NULL,
-    created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
-CREATE INDEX ix_session_authorization_session ON session_authorization (session_id);
-
--- 已被輪換掉的舊 Refresh Token（D08）
-CREATE TABLE refresh_token_history (
-    token_hash           CHAR(64)     PRIMARY KEY,                   -- SHA-256(舊 Refresh Token)
-    authorization_id     VARCHAR(100) NOT NULL,                      -- 不設 FK：授權被刪除後仍需保留以偵測重用
-    session_id           UUID         NOT NULL,
-    user_id              UUID         NOT NULL,
-    registered_client_id VARCHAR(100) NOT NULL,
-    rotated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    expires_at           TIMESTAMPTZ  NOT NULL                       -- = 舊 Token 原本的到期時間，過期後可清除
-);
-CREATE INDEX ix_refresh_history_expires ON refresh_token_history (expires_at);
-```
-
-> **為什麼 `refresh_token_history` 不設外鍵？** 偵測到重用時會刪除 `oauth2_authorization`，但之後攻擊者可能再次嘗試同一個舊 Token，紀錄必須保留到該 Token 原本的到期時間。
-
-### 5.6 安全與稽核
-
-```sql
-CREATE TABLE signing_key (
-    kid                   VARCHAR(64) PRIMARY KEY,
-    algorithm             VARCHAR(16) NOT NULL DEFAULT 'RS256',
-    public_key            TEXT        NOT NULL,                      -- PEM
-    private_key_encrypted TEXT        NOT NULL,                      -- 以主金鑰（環境變數或 KMS）加密
-    status                VARCHAR(16) NOT NULL,                      -- NEXT / ACTIVE / RETIRING / RETIRED
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    activated_at          TIMESTAMPTZ,
-    retired_at            TIMESTAMPTZ,
-    CONSTRAINT ck_signing_key_status CHECK (status IN ('NEXT', 'ACTIVE', 'RETIRING', 'RETIRED'))
-);
--- 同一時間只能有一把 ACTIVE
-CREATE UNIQUE INDEX ux_signing_key_active ON signing_key (status) WHERE status = 'ACTIVE';
-
-CREATE TABLE login_audit (
-    id                 BIGSERIAL    PRIMARY KEY,
-    user_id            UUID         REFERENCES app_user(id) ON DELETE SET NULL,
-    username_attempted VARCHAR(255),                                 -- 帳號不存在時仍記錄
-    login_method       VARCHAR(16)  NOT NULL,                        -- PASSWORD / FEDERATED
-    idp                VARCHAR(32)  NOT NULL DEFAULT 'local',
-    registered_client_id VARCHAR(100),
-    success            BOOLEAN      NOT NULL,
-    failure_reason     VARCHAR(32),                                  -- BAD_CREDENTIALS / LOCKED / DISABLED / LINK_REQUIRED
-    ip_address         VARCHAR(45),
-    user_agent         TEXT,
-    created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-);
-CREATE INDEX ix_login_audit_ip_time   ON login_audit (ip_address, created_at);   -- 依 IP 限流
-CREATE INDEX ix_login_audit_user_time ON login_audit (user_id, created_at);
-
-CREATE TABLE admin_audit_log (
-    id               BIGSERIAL   PRIMARY KEY,
-    operator_user_id UUID,
-    action           VARCHAR(64) NOT NULL,                           -- GRANT_ROLE / DISABLE_USER / CREATE_CLIENT …
-    target_type      VARCHAR(32) NOT NULL,                           -- USER / ROLE / CLIENT
-    target_id        VARCHAR(100),
-    detail           JSONB,
-    ip_address       VARCHAR(45),
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX ix_admin_audit_target ON admin_audit_log (target_type, target_id, created_at);
-```
-
-### 5.7 資料保留與清理排程
-
-SAS 與 Spring Session 都**不會自動刪除** `oauth2_authorization` 的過期資料，需要排程清理：
-
-| 表 | 清理條件 | 建議頻率 |
+| 分類 | 表 | 來源 |
 |---|---|---|
-| `oauth2_authorization` | 授權碼、Access Token、Refresh Token 全部過期 | 每小時 |
-| `refresh_token_history` | `expires_at < NOW()` | 每天 |
-| `auth_session` | `status <> 'ACTIVE'` 且超過 30 天，或 `expires_at` 已過 | 每天 |
-| `user_action_token` | `expires_at < NOW()` | 每天 |
-| `login_audit` | 超過 180 天（依法規調整） | 每週 |
-| `signing_key` | `RETIRED` 超過 1 年 | 每月 |
-| `SPRING_SESSION` | Spring Session 內建清理 | 內建 |
+| 身分 | `app_user`、`user_federated_identity`、`user_action_token` | 自建 |
+| 權限 | `app_role`、`app_permission`、`app_user_role`、`app_role_permission` | 自建 |
+| OAuth | `oauth2_registered_client`、`oauth2_authorization`、`oauth2_authorization_consent` | **Spring Security 官方** |
+| OAuth 擴充 | `client_profile`、`api_resource`、`app_scope`、`app_scope_permission` | 自建 |
+| Session | `auth_session`、`session_authorization`、`refresh_token_history` | 自建 |
+| Session | `SPRING_SESSION`、`SPRING_SESSION_ATTRIBUTES` | **Spring Session 官方** |
+| 安全與維運 | `signing_key`、`login_audit`、`admin_audit_log`、`shedlock` | 自建／ShedLock |
 
-多實例部署時，清理排程需要分散式鎖（例如 ShedLock），避免同時執行。
+與初版的主要差異（詳見 [資料模型 §15](auth-server-data-model.md#15-與前一版設計的差異)）：
+
+- **取消表名前綴**，AS 改用專屬資料庫：官方 JDBC 實作的表名是寫死的常數。
+- Access Token 中的登入 Session 識別由 `sid` 改為 **`asid`**：ID Token 的 `sid` 由 Spring Security 用於 OIDC 登出驗證，不可覆寫。
+- 補上官方表的 PostgreSQL 版 DDL 與索引（官方 schema 沒有任何索引）。
 
 ---
 
@@ -727,7 +459,7 @@ claim 名稱定義在 `jacky917-security-core` 的 `Jacky917ClaimNames`，簽發
 | `exp`、`iat`、`nbf`、`jti` | — | 標準 |
 | `client_id` | `web-bff` | 由哪個 client 取得 |
 | `scope` | `["openid","profile","order.read"]` | 現有 starter 會轉成 `SCOPE_*` |
-| `sid` | `9b1c…`（`auth_session.session_id`） | 登入 Session |
+| `asid` | `9b1c…`（`auth_session.session_id`） | 登入 Session（[詳細設計 D20](auth-server-detailed-design.md#d20-session-識別-claim)） |
 | `roles` | `["ADMIN"]` | **只有第一方 client** |
 | `permissions` | `["order:read","order:write"]` | 第一方：全部權限；第三方：scope 對應權限 ∩ 使用者權限 |
 | `idp` | `google` | 本次登入方式，`local` 代表帳號密碼 |
@@ -738,7 +470,7 @@ claim 名稱定義在 `jacky917-security-core` 的 `Jacky917ClaimNames`，簽發
 
 | Claim | 條件 |
 |---|---|
-| `iss`、`sub`、`aud`（= client_id）、`exp`、`iat`、`auth_time`、`nonce`、`sid` | 一律 |
+| `iss`、`sub`、`aud`（= client_id）、`exp`、`iat`、`auth_time`、`nonce`、`sid`（由 Spring Security 依 AS 瀏覽器 Session 產生，**不是** `asid`） | 一律 |
 | `name`、`picture` | scope 含 `profile` |
 | `email`、`email_verified` | scope 含 `email`，且 Email 已驗證 |
 | `amr` | `["pwd"]` 或 `["fed"]`；第 4 階段加入 MFA 時為 `["pwd","otp"]` |
@@ -766,7 +498,7 @@ sequenceDiagram
     B->>A: GET /oauth2/authorize
     A-->>B: 302 → /login（尚未登入）
     B->>A: POST /login（帳號密碼）或第三方登入（見 7.2）
-    A->>A: 建立 auth_session（sid），寫入 login_audit
+    A->>A: 建立 auth_session（asid），寫入 login_audit
     A-->>B: 302 → BFF /login/oauth2/code/jacky917?code=…&state=…
     B->>F: GET callback
     F->>A: POST /oauth2/token（code + code_verifier + client secret）
@@ -821,7 +553,7 @@ sequenceDiagram
 
     X->>A: refresh_token=RT1（竊取的舊 Token）
     A->>A: oauth2_authorization 查無 RT1 → 查 refresh_token_history → 命中
-    A->>A: 撤銷 sid：刪除該 sid 的所有 oauth2_authorization，auth_session 改為 REVOKED（REUSE_DETECTED），寫入稽核
+    A->>A: 撤銷登入 Session：刪除其所有 oauth2_authorization，auth_session 改為 REVOKED（REUSE_DETECTED），寫入稽核
     A-->>X: 400 invalid_grant
 
     F->>A: refresh_token=RT2
@@ -842,7 +574,7 @@ sequenceDiagram
     F->>F: 清除 BFF Session
     F-->>B: 302 → AS /connect/logout?id_token_hint=…&post_logout_redirect_uri=…
     B->>A: GET /connect/logout
-    A->>A: 撤銷 sid 的所有授權與 Refresh Token；auth_session 改為 REVOKED（LOGOUT）；清除 AS Session
+    A->>A: 撤銷登入 Session 的所有授權與 Refresh Token；auth_session 改為 REVOKED（LOGOUT）；清除 AS Session
     A-->>B: 302 → post_logout_redirect_uri
     Note over R: 已簽發的 Access Token 仍有效至過期（最多 10 分鐘），D12 已接受此限制
 ```
@@ -881,7 +613,7 @@ sequenceDiagram
 | `GET/POST /link-account` | 2 | 帳號連結確認（D06-C） |
 | `GET /account` | 2 | 個人資料、已連結的第三方帳號、登入中的裝置 |
 | `POST /account/identities/{provider}/link`、`DELETE …` | 2 | 手動連結／解除連結（D06-D） |
-| `DELETE /account/sessions/{sid}` | 2 | 登出指定裝置 |
+| `DELETE /account/sessions/{asid}` | 2 | 登出指定裝置 |
 | `POST /account/sessions/revoke-all` | 2 | 登出所有裝置 |
 | `GET/POST /oauth2/consent` | 3 | 第三方應用的同意畫面 |
 | `/admin/api/users/**`、`/roles/**`、`/clients/**` | 3 | 管理 API |
@@ -908,7 +640,6 @@ jacky917:
   security:
     authorization-server:            # 前綴見 Repo 拆分設計 R-D5
       issuer: https://auth.example.com
-      table-prefix: j917_
       token:
         access-token-ttl: 10m
         refresh-token-ttl: 14d
@@ -972,11 +703,13 @@ jacky917:
 
 ## 11. 分階段實作計畫
 
+第 1、2 階段的細部工作分解見 [詳細設計 §11](auth-server-detailed-design.md#11-第-12-階段工作分解)。
+
 | 階段 | 內容 | 完成條件 |
 |---|---|---|
 | **0. 準備** | 對應 [2.0 總設計](v2-overview.md#3-執行順序與里程碑) 的 M0～M3：升級到 Boot 4.1、repo 重構、建立 core 與 BOM | `2.0.0` 發佈 |
-| **1. MVP** | auth-server-starter 骨架；SAS + JDBC 儲存（D09）；Flyway V1；帳號密碼登入；**Google 登入**（新使用者自動建立）；Token customizer（`aud`、`sid`、`roles`、`permissions`、`idp`）；資料庫金鑰（不含自動輪換）；`example-authorization-server`；`example-bff`（Spring Boot `oauth2Login`）；`e2e-tests` | E2E：瀏覽器 → BFF → AS（Google 或密碼）→ BFF → `example-resource-server` 回 200；RS 以 `issuer-uri` 驗證並檢查 `aud` |
-| **2. 安全強化** | Refresh Token 重用偵測（D08）；`sid` 登出與 RP-Initiated Logout（D12）；登入保護與 `login_audit`；帳號連結（D06）；**GitHub、LINE**；帳號設定頁；清理排程；金鑰自動輪換；Spring Session JDBC（D10） | 重用偵測、帳號連結、登出的整合測試通過；兩個 AS 實例下登入正常 |
+| **1. MVP** | auth-server-starter 骨架；SAS + JDBC 儲存（D09）；Flyway V1；帳號密碼登入；**Google 登入**（新使用者自動建立）；Token customizer（`aud`、`asid`、`roles`、`permissions`、`idp`）；資料庫金鑰（不含自動輪換）；`example-authorization-server`；`example-bff`（Spring Boot `oauth2Login`）；`e2e-tests` | E2E：瀏覽器 → BFF → AS（Google 或密碼）→ BFF → `example-resource-server` 回 200；RS 以 `issuer-uri` 驗證並檢查 `aud` |
+| **2. 安全強化** | Refresh Token 重用偵測（D08）；登入 Session 撤銷與 RP-Initiated Logout（D12）；登入保護與 `login_audit`；帳號連結（D06）；**GitHub、LINE**；帳號設定頁；清理排程；金鑰自動輪換；Spring Session JDBC（D10） | 重用偵測、帳號連結、登出的整合測試通過；兩個 AS 實例下登入正常 |
 | **3. 第三方應用** | `client_profile`、`api_resource`、`app_scope`；同意畫面；第三方 Token 權限規則（D07）；Admin API；`aud` 切換為 PER_SCOPE | 第三方 client 只能取得同意範圍內的權限 |
 | **4. 帳號功能** | 註冊、Email 驗證、忘記密碼；MFA（TOTP）；Apple 登入 | 依需求 |
 | **5. 選用** | 即時撤銷（權限中心／撤銷清單）；Spring Session Redis；KMS 金鑰；行動 App 支援 | 依需求 |

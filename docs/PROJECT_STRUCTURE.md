@@ -79,7 +79,9 @@
 |-- docs
 |   |-- PROGRESS.md
 |   |-- PROJECT_STRUCTURE.md
+|   |-- auth-server-data-model.md
 |   |-- auth-server-design.md
+|   |-- auth-server-detailed-design.md
 |   |-- authorization-model.md
 |   |-- boot4-migration-design.md
 |   |-- configuration.md
@@ -208,6 +210,8 @@
 | `docs/v2-overview.md` | `docs` | 2.0 總設計 | 兩大任務（Boot 4.1 升級、Authorization Server）的目標、里程碑 M0～M6、破壞性變更與決策索引。 |
 | `docs/boot4-migration-design.md` | `docs` | Boot 4.1 升級設計 | 版本對照、逐檔影響清單（已對照 Maven Central 查證）、步驟與風險。 |
 | `docs/repo-structure-design.md` | `docs` | Repo 拆分設計 | 單一 repo 多模組、命名、flatten／BOM、版本與分支、CI、重構步驟。 |
+| `docs/auth-server-data-model.md` | `docs` | AS 資料模型 | 23 張表的 DDL（含官方表 PostgreSQL 版）、欄位說明、索引、狀態機、關鍵查詢、seed、Flyway、DB 帳號、清理與容量估算；表設計的唯一權威來源。 |
+| `docs/auth-server-detailed-design.md` | `docs` | AS 詳細設計 | D15～D21、元件與 SPI、filter chain、Token claim、流程（登入、第三方、刷新與重用偵測、登出、金鑰輪換）、設定規格、威脅模型、測試案例、工作分解。 |
 | `docs/auth-server-design.md` | `docs` | Auth Server 設計（方案 C） | Spring Authorization Server、第三方登入、14 項決策、完整 DDL、流程與分階段計畫；狀態為設計草案。 |
 | `docs/refresh-rotation.md`、`docs/database-schema.md` | `docs` | Auth Server 早期參考設計 | 已由 `auth-server-design.md` 取代主要內容，保留作為背景說明。 |
 | `docs/PROGRESS.md` | `docs` | 進度追蹤 | 記錄每一步狀態、命令、決策與下一步。 |
