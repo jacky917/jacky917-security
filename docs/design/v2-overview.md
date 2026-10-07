@@ -112,7 +112,7 @@ flowchart LR
 | 移除 `jacky917.security.method-security.enabled` | 關閉後註解靜默失效，風險大於用途 | 移除該設定 |
 | 移除 `jacky917.security.debug-log`，改用標準 logger 等級 | 與 `logging.level` 重複，且容易灌爆日誌 | 改用 `logging.level.jacky917.security` |
 | 移除 `@Secured` 支援 | 只保留一種授權寫法，避免組合錯誤 | 改用 `@PreAuthorize` 或 `@Require*` |
-| `@RequireRole`／`@RequirePerm`／`@RequireScope` 跟隨 `jwt.prefix.*` 設定 | 修正 [限制 §3](limitations.md#3-單一條件註解的前綴固定) | 沒有修改過前綴的使用者不受影響 |
+| `@RequireRole`／`@RequirePerm`／`@RequireScope` 跟隨 `jwt.prefix.*` 設定 | 修正 [限制 §3](../resource-server/limitations.md#3-單一條件註解的前綴固定) | 沒有修改過前綴的使用者不受影響 |
 
 非破壞性的新功能（`CurrentUser`、測試輔助模組、啟動時偵測註解疊加等）可以在 2.x 的小版本陸續加入，不必擠進 2.0。
 

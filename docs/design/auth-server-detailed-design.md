@@ -708,7 +708,7 @@ sequenceDiagram
 | AS 瀏覽器 Session 已過期（閒置超過 30 分鐘，但 `auth_session` 仍有效） | 走第 ② 條路徑，以 ID Token 找到授權 |
 | ID Token 已過期 | 已查證：Spring Security 7.1.1 的 `OidcLogoutAuthenticationProvider` 以 `id_token_hint` 的值查找授權，未檢查 ID Token 是否過期；只要授權仍存在即可處理（T-LOGOUT-04） |
 | 授權已被清理（Refresh Token 也過期） | 找不到授權；只清除 AS 瀏覽器 Session。此時 `auth_session` 也必然已失去作用（沒有授權可刷新），由清理排程改為 `EXPIRED` |
-| 已簽發的 Access Token | 有效至過期（最長 10 分鐘），見 [限制 §6](limitations.md#6-token-無法撤銷) |
+| 已簽發的 Access Token | 有效至過期（最長 10 分鐘），見 [限制 §6](../resource-server/limitations.md#6-token-無法撤銷) |
 
 ### 5.6 其他撤銷情境
 

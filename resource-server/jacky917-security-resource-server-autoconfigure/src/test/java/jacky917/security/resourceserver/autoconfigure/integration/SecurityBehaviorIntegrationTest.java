@@ -33,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 驗證 docs/limitations.md 中描述的行為（錯誤回應格式、放行路徑、註解組合限制）。
+ * 驗證 docs/resource-server/limitations.md 中描述的行為（錯誤回應格式、放行路徑、註解組合限制）。
  */
 @SpringBootTest(
         classes = SecurityBehaviorIntegrationTest.TestApplication.class,

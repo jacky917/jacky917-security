@@ -127,7 +127,7 @@ Boot 4.1.1 的類別位置（已確認）：
 
 1. **`beforeName` 列出的每個類別都存在**：名稱打錯或 Spring Boot 搬移類別時直接失敗。
 2. 應用程式中只有 Starter 的 `SecurityFilterChain`（Boot 的預設 filter chain 沒有被建立）。
-3. 應用程式中只有一個 `JwtAuthenticationConverter`，而且是 Starter 提供的（[限制 §5](limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效)）。
+3. 應用程式中只有一個 `JwtAuthenticationConverter`，而且是 Starter 提供的（[限制 §5](../resource-server/limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效)）。
 
 > **實測補充（PR #2 review）**：Spring Boot 排序自動配置時，先依類別名稱的字母順序，再套用 `before`／`after`。`jacky917.…` 本來就排在 `org.springframework.…` 之前，因此即使把 `beforeName` 整個刪掉，第 2、3 項仍然會通過。第 2、3 項驗證的是「目前行為正確」，**只有第 1 項能抓到 `beforeName` 寫錯**。`beforeName` 是日後套件名稱改變時的保險。測試應用程式也改為只用 `@EnableAutoConfiguration`（不直接 `@Import`），與實際使用者的載入方式相同。
 
@@ -140,7 +140,7 @@ Boot 4 預設使用 Jackson 3（groupId `tools.jackson`，類別 `tools.jackson.
 | 選項 | 說明 | 評估 |
 |---|---|---|
 | A. 引入已棄用的 `spring-boot-jackson2` | 程式不用改 | 依賴一個已棄用的模組，下個大版本又要改 ❌ |
-| **B. 注入應用程式的 Jackson 3 `JsonMapper`** | `ObjectProvider<JsonMapper>`，取不到時自行建立 | ✅ 順便修正 [限制 §12](limitations.md#12-錯誤回應的限制)：`spring.jackson.*` 設定將會生效 |
+| **B. 注入應用程式的 Jackson 3 `JsonMapper`** | `ObjectProvider<JsonMapper>`，取不到時自行建立 | ✅ 順便修正 [限制 §12](../resource-server/limitations.md#12-錯誤回應的限制)：`spring.jackson.*` 設定將會生效 |
 | C. 手寫 JSON | 只有 5 個欄位 | 完全不依賴 Jackson，但 `message`、`path` 需要自行跳脫特殊字元，容易出錯 |
 
 **推薦 B**。`spring-boot-starter-webmvc` 已經帶入 Jackson 3，不需要新增依賴。
@@ -164,7 +164,7 @@ Boot 4 預設使用 Jackson 3（groupId `tools.jackson`，類別 `tools.jackson.
 | `/api/**/admin`（`**` 在中間） | ✅ | ❌ **啟動失敗** |
 | `/files/*.png` | ✅ | ✅ |
 
-這是給使用者的**破壞性變更**，要寫進升級說明，並更新 [設定參考](configuration.md) 的 `permit-all-patterns` 說明。
+這是給使用者的**破壞性變更**，要寫進升級說明，並更新 [設定參考](../resource-server/configuration.md) 的 `permit-all-patterns` 說明。
 
 ---
 
@@ -198,7 +198,7 @@ main ─── (目前 1.0.0) ──┬── 升級 Boot 4.1 ── 2.0.0-M1 �
 | 4 | 錯誤回應改用 Jackson 3 `JsonMapper`（M4） | `SecurityBehaviorIntegrationTest` 通過 |
 | 5 | 測試的 `@AutoConfigureMockMvc` 改套件（M3） | autoconfigure 模組全部測試通過 |
 | 6 | Demo：移除 Jackson 2、springdoc 升級、外掛版本（M4、M6、S3） | 全部測試通過 |
-| 7 | 手動 E2E：依 [E2E 測試指南](e2e-testing.md) 啟動兩個 demo 走一遍 | 所有端點結果與 Boot 3.5 一致 |
+| 7 | 手動 E2E：依 [E2E 測試指南](../guides/e2e-testing.md) 啟動兩個 demo 走一遍 | 所有端點結果與 Boot 3.5 一致 |
 | 8 | 更新文件：相容性表格、starter 名稱、`permit-all-patterns` 規則、限制文件 | 文件連結檢查通過 |
 | 9 | 發佈 `2.0.0-M1` | 另建一個空專案，引入 `2.0.0-M1` 確認可以正常使用 |
 
@@ -210,7 +210,7 @@ main ─── (目前 1.0.0) ──┬── 升級 Boot 4.1 ── 2.0.0-M1 �
 |---|---|
 | 401／403 JSON 格式與 `WWW-Authenticate` | `SecurityBehaviorIntegrationTest` |
 | 放行路徑、放行路徑上的無效 Token | 同上 |
-| 註解疊加時拋出例外 | 同上（Spring Security 7 若改變此行為，要同步更新 [限制 §1](limitations.md#1-同一個方法只能有一個授權註解)） |
+| 註解疊加時拋出例外 | 同上（Spring Security 7 若改變此行為，要同步更新 [限制 §1](../resource-server/limitations.md#1-同一個方法只能有一個授權註解)） |
 | 類別與方法註解不合併 | 同上 |
 | 五種 `@Require*` 註解 | `MethodSecurityAnnotationsIntegrationTest` |
 | claims → authorities | `JwtAuthoritiesExtractorTest` |
@@ -251,7 +251,7 @@ main ─── (目前 1.0.0) ──┬── 升級 Boot 4.1 ── 2.0.0-M1 �
 | 分支 | `claude/spring-boot-4.1-upgrade`（自 PR #1 的分支切出） |
 | 版本 | `2.0.0-SNAPSHOT`，parent `spring-boot-starter-parent:4.1.1` |
 | 建置 | `mvn clean verify`：**41 個測試全數通過**（原 37 個 + 新增 4 個） |
-| 手動 E2E | 兩個 demo 以 Boot 4.1.1 啟動，依 [E2E 測試指南](e2e-testing.md) 的 14 個請求結果全部符合預期。因本機 Docker 未啟動，Resource Server 改以 H2 執行（未驗證 MySQL Connector/J 9.7.0） |
+| 手動 E2E | 兩個 demo 以 Boot 4.1.1 啟動，依 [E2E 測試指南](../guides/e2e-testing.md) 的 14 個請求結果全部符合預期。因本機 Docker 未啟動，Resource Server 改以 H2 執行（未驗證 MySQL Connector/J 9.7.0） |
 
 ### 新增的測試
 
@@ -272,8 +272,8 @@ main ─── (目前 1.0.0) ──┬── 升級 Boot 4.1 ── 2.0.0-M1 �
 
 ### 與設計一致、行為不變的部分
 
-- 註解疊加仍然在呼叫時拋出 `AnnotationConfigurationException`（[限制 §1](limitations.md#1-同一個方法只能有一個授權註解) 不變）。
-- 類別與方法的註解仍然不合併（[限制 §2](limitations.md#2-類別與方法的註解不會合併) 不變）。
+- 註解疊加仍然在呼叫時拋出 `AnnotationConfigurationException`（[限制 §1](../resource-server/limitations.md#1-同一個方法只能有一個授權註解) 不變）。
+- 類別與方法的註解仍然不合併（[限制 §2](../resource-server/limitations.md#2-類別與方法的註解不會合併) 不變）。
 - 放行路徑帶無效 Token 仍回 401；401／403 JSON 格式不變。
 
 ### 尚未完成

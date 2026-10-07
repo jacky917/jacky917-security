@@ -162,5 +162,5 @@ curl -i "http://localhost:8080/secure/me" -H "Authorization: Bearer not-a-jwt"
 - `Could not find artifact com.github.jacky917:...`：先執行 `mvn -DskipTests install`。
 - `Communications link failure`（Resource Server 啟動失敗）：MySQL 未啟動，或埠號不是 3307。
 - `連線被拒絕`：確認兩個服務都已啟動，且埠號為 8081 / 8080。
-- 其他問題見 [疑難排解](troubleshooting.md)。
+- 其他問題見 [疑難排解](../resource-server/troubleshooting.md)。
 

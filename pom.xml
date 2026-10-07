@@ -52,7 +52,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <flatten-maven-plugin.version>1.8.0</flatten-maven-plugin.version>
-        <!-- 依賴方向規則（見 docs/repo-structure-design.md §3）：預設關閉，由各模組開啟 -->
+        <!-- 依賴方向規則（見 docs/design/repo-structure-design.md §3）：預設關閉，由各模組開啟 -->
         <jacky917.enforce.resource-server-boundary.skip>true</jacky917.enforce.resource-server-boundary.skip>
         <jacky917.enforce.no-dependencies.skip>true</jacky917.enforce.no-dependencies.skip>
     </properties>
@@ -143,7 +143,7 @@
                                     <excludes>
                                         <exclude>io.github.jacky917:jacky917-security-authorization-server*</exclude>
                                     </excludes>
-                                    <message>Resource Server modules must not depend on Authorization Server modules (docs/repo-structure-design.md §3).</message>
+                                    <message>Resource Server modules must not depend on Authorization Server modules (docs/design/repo-structure-design.md §3).</message>
                                 </bannedDependencies>
                             </rules>
                         </configuration>
@@ -161,7 +161,7 @@
                                     <excludes>
                                         <exclude>*</exclude>
                                     </excludes>
-                                    <message>jacky917-security-core must not have any dependency (docs/repo-structure-design.md §3).</message>
+                                    <message>jacky917-security-core must not have any dependency (docs/design/repo-structure-design.md §3).</message>
                                 </bannedDependencies>
                             </rules>
                         </configuration>

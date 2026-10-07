@@ -2,7 +2,7 @@
 
 本文件列出 `jacky917-security-starter` 的所有設定屬性，以及它們與 Spring Boot 原生 `spring.security.oauth2.resourceserver.*` 屬性的關係。
 
-屬性對應的 Java 類別為 [`Jacky917SecurityProperties`](../resource-server/jacky917-security-resource-server-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/properties/Jacky917SecurityProperties.java)。IDE（IntelliJ IDEA、VS Code Spring Boot Tools）會依據 configuration metadata 提供自動完成與說明。
+屬性對應的 Java 類別為 [`Jacky917SecurityProperties`](../../resource-server/jacky917-security-resource-server-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/properties/Jacky917SecurityProperties.java)。IDE（IntelliJ IDEA、VS Code Spring Boot Tools）會依據 configuration metadata 提供自動完成與說明。
 
 ---
 
@@ -185,4 +185,4 @@ Starter 提供自己的 `JwtAuthenticationConverter`，因此 Spring Boot 依下
 | Servlet Web 應用 | WebFlux 與非 Web 應用會略過 |
 | `jacky917.security.enabled` 不為 `false` | 預設啟用 |
 
-各個 Bean 另有自己的條件，見 [Starter 設計 — Bean 清單](starter-design.md#自動配置建立的-bean)。
+各個 Bean 另有自己的條件，見 [Starter 設計 — Bean 清單](../design/starter-design.md#自動配置建立的-bean)。

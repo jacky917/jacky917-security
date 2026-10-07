@@ -25,7 +25,7 @@
 
 ## 1. 引入依賴
 
-前置設定（GitHub Packages 認證、repository）見 [README — 快速開始](../README.md#快速開始業務專案)。
+前置設定（GitHub Packages 認證、repository）見 [README — 快速開始](../../README.md#快速開始業務專案)。
 
 > [!IMPORTANT]
 > **2.x（Spring Boot 4.1）尚未發佈。** GitHub Packages 上目前只有 `1.0.0`（Spring Boot 3.5），使用方式見 [`1.x` 分支](https://github.com/jacky917/jacky917-security-starter/tree/1.x)。
@@ -136,7 +136,7 @@ class JwtDecoderConfig {
 > [!CAUTION]
 > HS256 的金鑰同時可以「驗證」與「簽發」Token。任何拿到這把金鑰的服務都能偽造任意身分的 Token。多服務架構建議改用 RS256 / ES256 等非對稱演算法。HS256 金鑰長度至少需 256 bits（32 bytes）。
 
-`demo-resource-server` 的 [`DemoJwtDecoderConfiguration`](../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/config/DemoJwtDecoderConfiguration.java) 是一個從 JWK 檔載入 HS256 金鑰的實際範例（僅驗證 issuer，未驗證 audience，僅供示範）。
+`demo-resource-server` 的 [`DemoJwtDecoderConfiguration`](../../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/config/DemoJwtDecoderConfiguration.java) 是一個從 JWK 檔載入 HS256 金鑰的實際範例（僅驗證 issuer，未驗證 audience，僅供示範）。
 
 ---
 
@@ -353,7 +353,7 @@ Order get(@PathVariable String orderId) { ... }
 - SpEL 中以 `@beanName` 參照 Bean，以 `#參數名` 參照方法參數。參數名稱需要編譯時保留（Spring Boot 的 Maven parent 預設已開啟 `-parameters`）。
 - 判斷方法請**預設回傳 `false`**，任何例外狀況（找不到資料、參數為 `null`）都應拒絕。
 - 資源不存在時回傳 `false` 會得到 403 而不是 404，這可以避免洩漏「資源是否存在」，但若你的 API 需要 404，請在 Controller 內自行判斷。
-- 完整範例見 `demo-resource-server` 的 [`DemoAuthzConfiguration`](../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/authz/DemoAuthzConfiguration.java)。
+- 完整範例見 `demo-resource-server` 的 [`DemoAuthzConfiguration`](../../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/authz/DemoAuthzConfiguration.java)。
 
 更多授權模型說明見 [授權模型](authorization-model.md)。
 

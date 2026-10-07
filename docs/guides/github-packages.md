@@ -70,7 +70,7 @@ PAT 至少需包含：
 
 ## 5. GitHub Actions 發佈流程
 
-實際設定見 [`.github/workflows/publish.yml`](../.github/workflows/publish.yml)。在 GitHub 上**發佈 Release** 時觸發：
+實際設定見 [`.github/workflows/publish.yml`](../../.github/workflows/publish.yml)。在 GitHub 上**發佈 Release** 時觸發：
 
 ```yaml
 on:
@@ -157,4 +157,4 @@ jobs:
 - `Could not find artifact com.github.jacky917:jacky917-security-parent:pom`
   - 該版本發佈時沒有包含 parent POM，見第 5 節
 - `Could not find artifact org.springframework.boot:spring-boot-starter-parent:pom:3.5.10-SNAPSHOT`
-  - parent POM 依賴 Spring Boot SNAPSHOT，消費端無法存取 Spring Snapshot repository，見 [限制 §16](limitations.md#16-發佈與依賴)
+  - parent POM 依賴 Spring Boot SNAPSHOT，消費端無法存取 Spring Snapshot repository，見 [限制 §16](../resource-server/limitations.md#16-發佈與依賴)

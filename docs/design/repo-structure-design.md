@@ -150,7 +150,7 @@ flowchart TB
 
 **推薦 B**。好處：
 
-- 根本解決先前「parent 沒一起發佈就無法解析」的問題（[限制 §16](limitations.md#16-發佈與依賴)）。
+- 根本解決先前「parent 沒一起發佈就無法解析」的問題（[限制 §16](../resource-server/limitations.md#16-發佈與依賴)）。
 - 使用者不會被迫繼承我們的建置設定。
 - 是函式庫的常見做法（Spring 官方的函式庫也不繼承 `spring-boot-starter-parent`）。
 

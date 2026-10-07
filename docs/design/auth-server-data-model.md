@@ -366,7 +366,7 @@ CREATE TABLE app_permission (
 
 | 規則 | 說明 |
 |---|---|
-| `code` **不含前綴** | `ADMIN`、`order:read`。`ROLE_`／`PERM_` 前綴由 Resource Server 端的 starter 加上，與 [JWT Claims 契約](jwt-claims.md) 一致 |
+| `code` **不含前綴** | `ADMIN`、`order:read`。`ROLE_`／`PERM_` 前綴由 Resource Server 端的 starter 加上，與 [JWT Claims 契約](../resource-server/jwt-claims.md) 一致 |
 | 角色代碼 | 大寫英數與底線，例如 `ADMIN`、`CONTENT_MANAGER` |
 | 權限代碼 | `資源:動作`，小寫，例如 `order:read`、`report:export`；可多層：`admin:user:write` |
 | `built_in` | AS 自身需要的角色與權限（[§12](#12-初始資料)），不可刪除、不可改代碼 |

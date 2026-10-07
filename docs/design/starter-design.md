@@ -1,6 +1,6 @@
 # Starter 設計理念與架構
 
-本文件說明 `jacky917-security-starter` 的設計原則、模組結構、自動配置的實際運作方式，以及每個元件的擴充點。使用方式見 [使用指南](getting-started.md)。
+本文件說明 `jacky917-security-starter` 的設計原則、模組結構、自動配置的實際運作方式，以及每個元件的擴充點。使用方式見 [使用指南](../resource-server/getting-started.md)。
 
 ---
 
@@ -93,7 +93,7 @@ sequenceDiagram
 使用字串而不是 `Class`，是為了讓類別搬家或不存在時不會直接啟動失敗。代價是名稱打錯時不會有任何錯誤，因此由 `AutoConfigurationOrderingIntegrationTest` 檢查每個類別都存在。另外，Spring Boot 會先依類別名稱的字母順序排序，`jacky917.…` 本來就排在 `org.springframework.…` 之前；`beforeName` 是日後套件名稱改變時的保險。這確保：
 
 - Starter 的 `SecurityFilterChain` 先註冊，Spring Boot 的預設 filter chain（`@ConditionalOnDefaultWebSecurity`）因此不會建立。
-- Starter 的 `JwtAuthenticationConverter` 先註冊，Spring Boot 依 `spring.security.oauth2.resourceserver.jwt.authorit*` / `principal-claim-name` 建立的 converter 因此不會建立（見 [限制 §5](limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效)）。
+- Starter 的 `JwtAuthenticationConverter` 先註冊，Spring Boot 依 `spring.security.oauth2.resourceserver.jwt.authorit*` / `principal-claim-name` 建立的 converter 因此不會建立（見 [限制 §5](../resource-server/limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效)）。
 - Spring Boot 仍會依 `spring.security.oauth2.resourceserver.jwt.*` 建立 `JwtDecoder`，Starter 的 filter chain 會使用它。
 
 ### 自動配置建立的 Bean
@@ -147,8 +147,8 @@ public @interface RequireAll { String value(); }
 
 這個設計帶來的限制：
 
-- 因為底層是 `@PreAuthorize`，同一個方法無法疊加多個（見 [限制 §1](limitations.md#1-同一個方法只能有一個授權註解)）。
-- 前綴寫在註解字串中，不會跟著設定檔改變（見 [限制 §3](limitations.md#3-單一條件註解的前綴固定)）。
+- 因為底層是 `@PreAuthorize`，同一個方法無法疊加多個（見 [限制 §1](../resource-server/limitations.md#1-同一個方法只能有一個授權註解)）。
+- 前綴寫在註解字串中，不會跟著設定檔改變（見 [限制 §3](../resource-server/limitations.md#3-單一條件註解的前綴固定)）。
 - 屬性值直接插入 SpEL 字串常值中，不可包含單引號。
 
 ---
@@ -157,10 +157,10 @@ public @interface RequireAll { String value(); }
 
 | 想做的事 | 做法 | 範例 |
 |---|---|---|
-| 改 claim 名稱、前綴 | 屬性 `jacky917.security.jwt.*` | [設定參考](configuration.md#jwt-claim-與前綴) |
-| 讀取巢狀 claim、加入額外 authority | 定義 `JwtAuthoritiesExtractor` 子類別 Bean | [使用指南 §8.2](getting-started.md#82-自訂-authority-映射例如-keycloak-的-realm_accessroles) |
-| 改 principal 名稱 | 定義 `JwtAuthenticationConverter` Bean | [使用指南 §8.1](getting-started.md#81-改用-email-作為-principal-名稱) |
-| HTTP method 規則、多條 chain、自訂錯誤格式 | 定義 `SecurityFilterChain` Bean | [使用指南 §8.3](getting-started.md#83-自訂-securityfilterchain) |
+| 改 claim 名稱、前綴 | 屬性 `jacky917.security.jwt.*` | [設定參考](../resource-server/configuration.md#jwt-claim-與前綴) |
+| 讀取巢狀 claim、加入額外 authority | 定義 `JwtAuthoritiesExtractor` 子類別 Bean | [使用指南 §8.2](../resource-server/getting-started.md#82-自訂-authority-映射例如-keycloak-的-realm_accessroles) |
+| 改 principal 名稱 | 定義 `JwtAuthenticationConverter` Bean | [使用指南 §8.1](../resource-server/getting-started.md#81-改用-email-作為-principal-名稱) |
+| HTTP method 規則、多條 chain、自訂錯誤格式 | 定義 `SecurityFilterChain` Bean | [使用指南 §8.3](../resource-server/getting-started.md#83-自訂-securityfilterchain) |
 | 改 `@RequireAny` / `@RequireAll` 判斷邏輯 | 定義名為 `jacky917AuthorityEvaluator` 的 Bean | |
-| 資源層級授權（ABAC） | 自訂 Bean + `@PreAuthorize("@bean.method(...)")` | [授權模型 — ABAC](authorization-model.md#abac資源屬性授權) |
-| Token 驗證規則（aud、黑名單、多 issuer） | 自訂 `JwtDecoder` 與 `OAuth2TokenValidator` | [使用指南 §2](getting-started.md#2-提供-jwtdecoder必要) |
+| 資源層級授權（ABAC） | 自訂 Bean + `@PreAuthorize("@bean.method(...)")` | [授權模型 — ABAC](../resource-server/authorization-model.md#abac資源屬性授權) |
+| Token 驗證規則（aud、黑名單、多 issuer） | 自訂 `JwtDecoder` 與 `OAuth2TokenValidator` | [使用指南 §2](../resource-server/getting-started.md#2-提供-jwtdecoder必要) |

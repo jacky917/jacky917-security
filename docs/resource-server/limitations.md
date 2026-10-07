@@ -2,7 +2,7 @@
 
 本文件列出 `jacky917-security-starter` 已知的限制，以及容易誤用的行為。每一項都附上「會發生什麼事」與「該怎麼做」。
 
-標示 🧪 的項目已有自動化測試驗證，見 [`SecurityBehaviorIntegrationTest`](../resource-server/jacky917-security-resource-server-autoconfigure/src/test/java/jacky917/security/resourceserver/autoconfigure/integration/SecurityBehaviorIntegrationTest.java)。
+標示 🧪 的項目已有自動化測試驗證，見 [`SecurityBehaviorIntegrationTest`](../../resource-server/jacky917-security-resource-server-autoconfigure/src/test/java/jacky917/security/resourceserver/autoconfigure/integration/SecurityBehaviorIntegrationTest.java)。
 
 ---
 
@@ -154,7 +154,7 @@ JWT 驗證是無狀態的：只要簽章正確且未過期，Token 就有效。S
 
 **該怎麼做**
 
-- 將 Access Token 有效期縮短（建議 5～15 分鐘），搭配 Refresh Token Rotation，見 [Refresh Token Rotation](refresh-rotation.md)。
+- 將 Access Token 有效期縮短（建議 5～15 分鐘），搭配 Refresh Token Rotation，見 [Refresh Token Rotation](../design/refresh-rotation.md)。
 - 對高風險操作（刪除、付款、權限變更），在業務邏輯中即時查詢使用者狀態，不要只依賴 Token 內的 authority。
 - 需要即時撤銷時，自訂 `JwtDecoder` 並加入一個查詢黑名單（例如以 `jti` 或 `sid` 為 key 的 Redis）的 `OAuth2TokenValidator`。
 
@@ -315,4 +315,4 @@ Token 的驗證規則完全由你提供的 `JwtDecoder` 決定。Starter 不會�
 
 **該怎麼做**
 
-見 [GitHub Packages](github-packages.md) 與 [疑難排解](troubleshooting.md#could-not-find-artifact--jacky917-security-parent)。
+見 [GitHub Packages](../guides/github-packages.md) 與 [疑難排解](troubleshooting.md#could-not-find-artifact--jacky917-security-parent)。

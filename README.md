@@ -22,7 +22,7 @@ class OrderController {
 ```
 
 > [!IMPORTANT]
-> 本 Starter **不負責簽發 Token**，也**不會自動建立 `JwtDecoder`**。你必須透過 `spring.security.oauth2.resourceserver.jwt.*` 設定或自訂 Bean 提供 `JwtDecoder`，否則應用程式無法啟動。詳見 [使用指南](docs/getting-started.md#2-提供-jwtdecoder必要)。
+> 本 Starter **不負責簽發 Token**，也**不會自動建立 `JwtDecoder`**。你必須透過 `spring.security.oauth2.resourceserver.jwt.*` 設定或自訂 Bean 提供 `JwtDecoder`，否則應用程式無法啟動。詳見 [使用指南](docs/resource-server/getting-started.md#2-提供-jwtdecoder必要)。
 
 ---
 
@@ -30,20 +30,20 @@ class OrderController {
 
 | 文件 | 內容 |
 |---|---|
-| [使用指南](docs/getting-started.md) | 從引入依賴到上線的完整步驟：JwtDecoder、放行路徑、註解、ABAC、錯誤回應、覆寫元件、測試寫法 |
-| [設定參考](docs/configuration.md) | 所有 `jacky917.security.*` 屬性、預設值，以及與 Spring Boot 原生屬性的關係 |
-| [限制與注意事項](docs/limitations.md) | **上線前必讀**：已知限制、容易踩到的行為與對應的解法 |
-| [疑難排解](docs/troubleshooting.md) | 常見錯誤訊息與排查步驟 |
-| [JWT Claims 契約](docs/jwt-claims.md) | Token 內容格式、claim 解析規則與範例 |
-| [授權模型](docs/authorization-model.md) | RBAC / Permission / Scope / ABAC 的使用方式與組合 |
-| [Starter 設計](docs/starter-design.md) | 自動配置架構、Bean 清單、啟用條件與擴充點 |
-| [E2E 測試指南](docs/e2e-testing.md) | 同時啟動兩個 Demo 服務，走完取 Token → 呼叫 API 的流程 |
-| [GitHub Packages](docs/github-packages.md) | 發佈與引用設定 |
-| [2.0 總設計](docs/v2-overview.md) | **規劃中**：升級 Spring Boot 4.1 與新增 Authorization Server 的目標、里程碑、破壞性變更與待確認事項 |
-| [Spring Boot 4.1 升級設計](docs/boot4-migration-design.md)、[Repo 拆分設計](docs/repo-structure-design.md) | 2.0 的升級影響清單與步驟；repo 結構、命名、建置、版本與 CI |
-| [AS 資料模型](docs/auth-server-data-model.md)、[AS 詳細設計](docs/auth-server-detailed-design.md) | **規劃中**：Authorization Server 的完整表設計（DDL、索引、狀態機、Flyway），以及元件、流程、Token、威脅模型與測試案例 |
-| [Authorization Server 設計](docs/auth-server-design.md) | **規劃中**：以 Spring Authorization Server 建置登入服務（支援第三方登入）的架構、決策、資料表與實作計畫 |
-| [Refresh Token Rotation](docs/refresh-rotation.md)、[資料表設計](docs/database-schema.md) | Authorization Server 端的早期參考設計 |
+| [使用指南](docs/resource-server/getting-started.md) | 從引入依賴到上線的完整步驟：JwtDecoder、放行路徑、註解、ABAC、錯誤回應、覆寫元件、測試寫法 |
+| [設定參考](docs/resource-server/configuration.md) | 所有 `jacky917.security.*` 屬性、預設值，以及與 Spring Boot 原生屬性的關係 |
+| [限制與注意事項](docs/resource-server/limitations.md) | **上線前必讀**：已知限制、容易踩到的行為與對應的解法 |
+| [疑難排解](docs/resource-server/troubleshooting.md) | 常見錯誤訊息與排查步驟 |
+| [JWT Claims 契約](docs/resource-server/jwt-claims.md) | Token 內容格式、claim 解析規則與範例 |
+| [授權模型](docs/resource-server/authorization-model.md) | RBAC / Permission / Scope / ABAC 的使用方式與組合 |
+| [Starter 設計](docs/design/starter-design.md) | 自動配置架構、Bean 清單、啟用條件與擴充點 |
+| [E2E 測試指南](docs/guides/e2e-testing.md) | 同時啟動兩個 Demo 服務，走完取 Token → 呼叫 API 的流程 |
+| [GitHub Packages](docs/guides/github-packages.md) | 發佈與引用設定 |
+| [2.0 總設計](docs/design/v2-overview.md) | **規劃中**：升級 Spring Boot 4.1 與新增 Authorization Server 的目標、里程碑、破壞性變更與待確認事項 |
+| [Spring Boot 4.1 升級設計](docs/design/boot4-migration-design.md)、[Repo 拆分設計](docs/design/repo-structure-design.md) | 2.0 的升級影響清單與步驟；repo 結構、命名、建置、版本與 CI |
+| [AS 資料模型](docs/design/auth-server-data-model.md)、[AS 詳細設計](docs/design/auth-server-detailed-design.md) | **規劃中**：Authorization Server 的完整表設計（DDL、索引、狀態機、Flyway），以及元件、流程、Token、威脅模型與測試案例 |
+| [Authorization Server 設計](docs/design/auth-server-design.md) | **規劃中**：以 Spring Authorization Server 建置登入服務（支援第三方登入）的架構、決策、資料表與實作計畫 |
+| [Refresh Token Rotation](docs/design/refresh-rotation.md)、[資料表設計](docs/design/database-schema.md) | Authorization Server 端的早期參考設計 |
 
 ---
 
@@ -156,9 +156,9 @@ jacky917:
 ```
 
 > [!WARNING]
-> **同一個方法只能放一個授權註解。** 上述五個註解底層都是 `@PreAuthorize`，與 `@PreAuthorize` 或彼此疊加時，會在**呼叫時**拋出 `AnnotationConfigurationException`（HTTP 500），編譯與啟動都不會報錯。需要組合條件時請改寫成單一 `@PreAuthorize`。詳見 [限制與注意事項](docs/limitations.md#1-同一個方法只能有一個授權註解)。
+> **同一個方法只能放一個授權註解。** 上述五個註解底層都是 `@PreAuthorize`，與 `@PreAuthorize` 或彼此疊加時，會在**呼叫時**拋出 `AnnotationConfigurationException`（HTTP 500），編譯與啟動都不會報錯。需要組合條件時請改寫成單一 `@PreAuthorize`。詳見 [限制與注意事項](docs/resource-server/limitations.md#1-同一個方法只能有一個授權註解)。
 
-完整說明請看 [使用指南](docs/getting-started.md)。
+完整說明請看 [使用指南](docs/resource-server/getting-started.md)。
 
 ---
 
@@ -170,7 +170,7 @@ jacky917:
 | 未列入 `permit-all-patterns` 的請求 | 全部需要驗證 |
 | Session | `STATELESS`（不建立 HttpSession） |
 | CSRF | 停用 |
-| CORS | 未設定（需自行提供，見 [使用指南](docs/getting-started.md#9-cors)） |
+| CORS | 未設定（需自行提供，見 [使用指南](docs/resource-server/getting-started.md#9-cors)） |
 | Principal 名稱（`authentication.getName()`） | JWT 的 `sub` |
 | claims → authority | `roles` → `ROLE_*`、`permissions` → `PERM_*`、`scope` / `scp` → `SCOPE_*` |
 | 方法級授權 | 啟用（`@PreAuthorize`、`@PostAuthorize`、`@Secured`、自訂註解） |
@@ -247,7 +247,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/secure/me
 mvn -pl demo-resource-server -q exec:java -Dexec.mainClass=jacky917.demo.resourceserver.tools.GenerateTestJwtMain -Dexec.args="--sub=alice --roles=A --perms=bb,clip:read --scope=profile.read --minutes=30"
 ```
 
-完整流程與預期結果見 [E2E 測試指南](docs/e2e-testing.md)。
+完整流程與預期結果見 [E2E 測試指南](docs/guides/e2e-testing.md)。
 
 ### Demo 端點
 
@@ -278,12 +278,12 @@ Demo 內建資料：`demo-001`（owner：`alice`）、`private-001`（owner：`b
 
 **Q：我已經有自己的 `SecurityFilterChain`，還能用嗎？**
 
-可以，但 Starter 的 filter chain 會整個讓位，放行路徑、JSON 錯誤回應都要自己設定。`JwtAuthenticationConverter` 與註解仍可沿用。見 [使用指南 §8](docs/getting-started.md#8-覆寫預設元件)。
+可以，但 Starter 的 filter chain 會整個讓位，放行路徑、JSON 錯誤回應都要自己設定。`JwtAuthenticationConverter` 與註解仍可沿用。見 [使用指南 §8](docs/resource-server/getting-started.md#8-覆寫預設元件)。
 
 **Q：為什麼設定了 `spring.security.oauth2.resourceserver.jwt.principal-claim-name` 沒有效果？**
 
-Starter 會提供自己的 `JwtAuthenticationConverter`，使 Spring Boot 依該屬性建立的 converter 不會生效。見 [限制與注意事項](docs/limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效)。
+Starter 會提供自己的 `JwtAuthenticationConverter`，使 Spring Boot 依該屬性建立的 converter 不會生效。見 [限制與注意事項](docs/resource-server/limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效)。
 
 **Q：如何實作「只有資源擁有者能存取」這類規則？**
 
-用 `@PreAuthorize` 呼叫自訂 Bean，例如 `@PreAuthorize("hasAuthority('PERM_clip:read') and @authzService.canAccessClip(authentication, #clipId)")`。見 [授權模型 — ABAC](docs/authorization-model.md#abac資源屬性授權)。
+用 `@PreAuthorize` 呼叫自訂 Bean，例如 `@PreAuthorize("hasAuthority('PERM_clip:read') and @authzService.canAccessClip(authentication, #clipId)")`。見 [授權模型 — ABAC](docs/resource-server/authorization-model.md#abac資源屬性授權)。

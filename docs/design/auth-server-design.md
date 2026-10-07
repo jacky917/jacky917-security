@@ -747,4 +747,4 @@ jacky917:
 - [Spring Authorization Server：How-to: Authenticate using a Single Page Application with PKCE](https://docs.spring.io/spring-authorization-server/reference/guides/how-to-pkce.html)（public client 不發 Refresh Token、建議 BFF）
 - [Spring Authorization Server：How-to: Customize Claims and Authorities](https://docs.spring.io/spring-authorization-server/reference/1.5-SNAPSHOT/guides/how-to-custom-claims-authorities.html)
 - IETF：OAuth 2.0 for Browser-Based Applications（BFF 模式）
-- 本專案：[Refresh Token Rotation](refresh-rotation.md)、[資料表設計（早期版本）](database-schema.md)、[JWT Claims 契約](jwt-claims.md)
+- 本專案：[Refresh Token Rotation](refresh-rotation.md)、[資料表設計（早期版本）](database-schema.md)、[JWT Claims 契約](../resource-server/jwt-claims.md)
