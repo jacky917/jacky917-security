@@ -606,3 +606,20 @@
   - **DEC-070**: 第三方 client 在同意畫面完成前直接拒絕。
 - **Next TODO**:
   - 工作 5：使用者（`UserAccountService`、`UserDetailsService`、密碼政策）。
+
+---
+## Step 23: Authorization Server 第 1 階段——工作 5（使用者）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `UserAccountService` SPI 與 `JdbcUserAccountService`：以帳號或已驗證的 Email 查詢（不分大小寫）、建立使用者（UUIDv7、`USER` 角色）、角色與權限（排除過期的角色）。
+  - [x] `Jacky917UserDetailsService`：username 為使用者 ID（D16）；帳號不存在、沒有密碼、已刪除、未驗證的 Email 都回相同的錯誤；停用、鎖定、`locked_until` 未到期時無法登入；強度調高後登入時自動重新雜湊（D21）。
+  - [x] `PasswordPolicy`（12～128 字元）、`password.min-length`；第一位管理員（`bootstrap-admin.*`）。
+- **Commands Run & Results**:
+  - AS 模組 58 個測試全數通過（SQLite 與 PostgreSQL 各跑一次），以 Spring Security 的 `DaoAuthenticationProvider` 實際驗證。
+  - 發現：Spring Security 的錯誤訊息依 JVM 語系翻譯，測試改為比對「所有失敗的訊息相同」；Spring Security 7 會在帳號密碼登入時加入 `FACTOR_PASSWORD` authority。
+- **Decision Log**:
+  - **DEC-071**: `UserDetails` 的 username 直接使用使用者 ID，帳號密碼登入不需要 `PrincipalNormalizer`。
+  - **DEC-072**: 帳號不可含 `@`，讓「帳號或 Email」登入不會混淆。
+  - **DEC-073**: 第一位管理員在第 1 階段即提供（不開放註冊時的唯一入口）。
+- **Next TODO**:
+  - 工作 6：登入（filter chain、登入頁、成功／失敗處理、`auth_session`）。

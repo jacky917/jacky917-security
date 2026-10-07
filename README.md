@@ -79,7 +79,7 @@ groupId 皆為 `io.github.jacky917`（1.x 為 `com.github.jacky917`）。
 | | `jacky917-security-resource-server-autoconfigure` | 自動配置：`SecurityFilterChain`、claims → authorities、401/403 JSON、方法級授權 | ✅ |
 | | `jacky917-security-annotations` | `@RequireRole` / `@RequirePerm` / `@RequireScope` / `@RequireAny` / `@RequireAll` | ✅ |
 | `authorization-server/` | `jacky917-security-authorization-server-starter` | 🚧 **開發中（2.1.0 preview）**：OAuth 2.0／OIDC 登入服務，預設 SQLite、可切換 PostgreSQL | ✅（尚未發佈） |
-| | `jacky917-security-authorization-server-autoconfigure` | 🚧 目前完成：設定屬性、資料庫抽象（SQLite／PostgreSQL）、全部資料表的 migration、簽章金鑰、client 註冊 | ✅（尚未發佈） |
+| | `jacky917-security-authorization-server-autoconfigure` | 🚧 目前完成：設定屬性、資料庫抽象（SQLite／PostgreSQL）、全部資料表的 migration、簽章金鑰、client 註冊、使用者與帳號密碼驗證 | ✅（尚未發佈） |
 | `core/` | `jacky917-security-core` | 與 Authorization Server 共用的 claim 契約（純 Java，無任何依賴） | ✅ |
 | 根目錄 | `jacky917-security-bom` | 統一管理以上模組的版本 | ✅ |
 | `relocation/` | `jacky917-security-starter`（舊座標） | 只在 2.0.x 發佈：把 1.x 的座標導向新的 starter | ✅ |

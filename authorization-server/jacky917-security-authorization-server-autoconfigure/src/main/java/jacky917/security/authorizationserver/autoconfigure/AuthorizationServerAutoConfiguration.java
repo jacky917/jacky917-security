@@ -34,6 +34,6 @@ import org.springframework.context.annotation.Import;
         matchIfMissing = true)
 @EnableConfigurationProperties(AuthorizationServerProperties.class)
 @Import({AuthorizationServerDatabaseConfiguration.class, AuthorizationServerKeysConfiguration.class,
-        AuthorizationServerClientsConfiguration.class})
+        AuthorizationServerClientsConfiguration.class, AuthorizationServerUsersConfiguration.class})
 public class AuthorizationServerAutoConfiguration {
 }

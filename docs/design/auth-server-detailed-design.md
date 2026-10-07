@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 🚧 實作中（第 1 階段）：工作 1～4 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
+| 狀態 | 🚧 實作中（第 1 階段）：工作 1～5 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -986,7 +986,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 2 | 資料庫：dialect、預設 SQLite、啟動檢查、Flyway V1（PostgreSQL 與 SQLite 各 7 個檔案） | ✅ |
 | 3 | 簽章金鑰：`SigningKeyStore`、`KeyEncryptor`（AES-256-GCM）、`RotatingJwkSource`、首次啟動產生金鑰 | ✅ |
 | 4 | Client：官方 JDBC repository + 停權過濾、`client_profile`、設定中宣告的第一方 client | ✅ |
-| 5～10 | 使用者、登入、Session 連結、Token、Google、範例與 E2E | ⏳ |
+| 5 | 使用者：`UserAccountService`、`Jacky917UserDetailsService`、密碼政策、第一位管理員 | ✅ |
+| 6～10 | 登入、Session 連結、Token、Google、範例與 E2E | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1007,5 +1008,10 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | Secret 更新 | 只在 `client_secret` 為 `NULL` 時寫入 | 設定的 secret 與已儲存的雜湊不符時更換；相符時沿用（不重新雜湊） | 讓 secret 可以輪換；以 `PasswordEncoder#matches` 判斷，避免每次啟動產生新雜湊 |
 | 第三方 client | 第 3 階段 | 設定中宣告 `third-party` 時啟動失敗 | 同意畫面尚未完成，接受設定卻無法正確運作比直接拒絕更危險 |
 | Redirect URI 規則 | 完全比對 | 另檢查：`https`（`localhost` 可用 `http`）、無 fragment；原生 App 可用反向網域名稱的 scheme（RFC 8252 §7.1） | 設定錯誤在啟動時就發現 |
+| 帳號密碼登入的 principal（D16） | 登入成功後由 `PrincipalNormalizer` 轉換 | `UserDetails` 的 username 直接使用 `app_user.id`，登入當下 `Authentication#getName()` 就是使用者 ID | 帳號密碼登入不需要額外轉換；`PrincipalNormalizer` 只用於第三方登入（工作 9） |
+| 登入帳號 | 帳號或已驗證的 Email | 帳號不可含 `@`；輸入含 `@` 時只以 Email 查詢 | 兩種查詢不會互相混淆（A 的帳號不可能等於 B 的 Email） |
+| `UserAccountService` 的方法 | §2.3 全部 | 第 1 階段：查詢、`createUser`、`recordLoginSuccess`、`updatePasswordHash`、`loadAuthorities`；`createFederatedUser` 於工作 9、`recordLoginFailure` 於工作 13 加入 | 只實作目前會用到的方法 |
+| AS 頁面用的 authority | — | `ROLE_<角色>` 與 `PERM_<權限>`（前綴取自 core） | 與 Resource Server 的預設前綴一致。Spring Security 7 另外會加入 `FACTOR_PASSWORD` |
+| 第一位管理員 | 第 4 階段強制首次登入後變更密碼 | 第 1 階段即建立（`bootstrap-admin.*`），只在沒有任何 `AS_ADMIN` 時建立一次 | 不開放註冊時，沒有它就無法登入；強制變更密碼仍留待第 4 階段 |
 | 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
 

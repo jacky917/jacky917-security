@@ -106,6 +106,14 @@ public class AuthorizationServerProperties implements Validator {
      */
     private Map<String, Client> clients = new LinkedHashMap<>();
 
+    /**
+     * The first administrator, created once when no user has the
+     * {@code AS_ADMIN} role.
+     * <p>
+     * 第一位管理員，只在沒有任何使用者擁有 {@code AS_ADMIN} 角色時建立一次。
+     */
+    private BootstrapAdmin bootstrapAdmin = new BootstrapAdmin();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -121,6 +129,7 @@ public class AuthorizationServerProperties implements Validator {
         properties.getToken().validate(errors);
         properties.getKeys().validate(errors);
         properties.getPassword().validate(errors);
+        properties.getBootstrapAdmin().validate(errors);
         properties.getClients().forEach((clientId, client) -> client.validate(clientId, errors));
     }
 
@@ -299,9 +308,58 @@ public class AuthorizationServerProperties implements Validator {
          */
         private int bcryptStrength = 12;
 
+        /**
+         * Minimum password length, between 8 and 64 characters.
+         * <p>
+         * 密碼最短長度，8～64 字元。
+         */
+        private int minLength = 12;
+
         void validate(Errors errors) {
+            if (minLength < 8 || minLength > 64) {
+                errors.rejectValue("password.minLength", "range", "password.min-length must be between 8 and 64");
+            }
             if (bcryptStrength < 10 || bcryptStrength > 14) {
                 errors.rejectValue("password.bcryptStrength", "range", "password.bcrypt-strength must be between 10 and 14");
+            }
+        }
+    }
+
+    /**
+     * The first administrator, bound from {@code .bootstrap-admin.*}.
+     * <p>
+     * 第一位管理員，綁定自 {@code .bootstrap-admin.*}。
+     */
+    @Getter
+    @Setter
+    public static class BootstrapAdmin {
+
+        /**
+         * Login name of the first administrator. Nothing is created when
+         * empty.
+         * <p>
+         * 第一位管理員的登入帳號。未設定時不建立。
+         */
+        private String username;
+
+        /**
+         * Initial password; inject it from an environment variable.
+         * <p>
+         * 初始密碼，請從環境變數注入。
+         */
+        private String password;
+
+        /**
+         * Optional verified email of the administrator.
+         * <p>
+         * 管理員已驗證的 Email（選填）。
+         */
+        private String email;
+
+        void validate(Errors errors) {
+            if (username != null && !username.isBlank() && (password == null || password.isBlank())) {
+                errors.rejectValue("bootstrapAdmin.password", "required",
+                        "bootstrap-admin.password is required when bootstrap-admin.username is set");
             }
         }
     }

@@ -11,6 +11,7 @@ import org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerA
 import org.springframework.boot.jdbc.autoconfigure.JdbcClientAutoConfiguration;
 import org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.transaction.autoconfigure.TransactionAutoConfiguration;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -74,6 +75,7 @@ public final class TestDatabases {
                         DataSourceTransactionManagerAutoConfiguration.class,
                         JdbcTemplateAutoConfiguration.class,
                         JdbcClientAutoConfiguration.class,
+                        TransactionAutoConfiguration.class,
                         FlywayAutoConfiguration.class,
                         AuthorizationServerAutoConfiguration.class))
                 .withPropertyValues(
