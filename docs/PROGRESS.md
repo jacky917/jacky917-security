@@ -471,3 +471,20 @@
   - AS 剩餘待確認：第三方登入提供者（推薦第 1 階段只做 Google）、行動 App、第一版是否開放註冊、既有使用者匯入、網域規劃。
   - M2 前需決定：groupId、artifactId 改名、repo 改名、2.0 破壞性清理範圍。
 
+---
+## Step 17: PR #2 review 修正
+- **Status**: 🟢 Completed
+- **Review 結果**：8 項中 7 項屬實；第 6 項（每次錯誤回應查一次 `JsonMapper`）成本可忽略，不修改。
+- **修正內容**:
+  - #1 排序測試：實驗證實原測試在 `beforeName` 打錯、甚至完全移除時都會通過（Spring Boot 先依字母順序排序，`jacky917.…` 本來就在 `org.springframework.…` 之前）。新增「`beforeName` 列出的類別都存在」的測試，並實測打錯字時會失敗；測試應用程式改為只用 `@EnableAutoConfiguration`。
+  - #2 README 與使用指南的依賴範例：標示 2.x 尚未發佈、目前只有 `1.0.0`。
+  - #3 資料模型：全部 23 張表統一在 V1 建立，消除 §2、§13.1、§17.4 的矛盾。
+  - #4 demo 測試改用 Jackson 3，不再依賴 springdoc 間接帶入的 Jackson 2。
+  - #5 401 斷言：未帶 token 時 `WWW-Authenticate` 不得包含 `error=`。
+  - #7 demo 讀取 JWK 改用 `Resource#getContentAsString`。
+  - #8 ShedLock 一律使用；Spring Session JDBC 只在 PostgreSQL 啟用。
+- **Commands Run & Results**:
+  - 原排序測試的四種破壞實驗：全部 PASS（證實測不到）。新測試：名稱正確 PASS、打錯 FAIL 並指出類別、還原後 PASS。
+  - `mvn -B -o clean verify`：**SUCCESS**，42 個測試全數通過。
+  - 文件連結、錨點、YAML 檢查：無錯誤。
+

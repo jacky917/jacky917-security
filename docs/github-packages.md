@@ -8,7 +8,7 @@
 
 - `groupId`: `com.github.jacky917`
 - `artifactId`: `jacky917-security-starter`（以及其他子模組，皆為小寫 + 連字號）
-- `version`: `1.0.0`（由父模組統一管理）
+- `version`: 目前已發佈 `1.0.0`（Spring Boot 3.5）；`main` 分支為開發中的 `2.0.0-SNAPSHOT`（Spring Boot 4.1，尚未發佈）。版本由父模組統一管理
 
 > 重點：子模組不自行定義專案版本，全部繼承父模組版本。
 

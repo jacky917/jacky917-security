@@ -12,7 +12,6 @@ import jakarta.annotation.PostConstruct;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
@@ -57,9 +56,7 @@ public class JwtIssuerService {
     @PostConstruct
     void init() throws Exception {
         ClassPathResource resource = new ClassPathResource("demo/jwk/demo-hs256.jwk.json");
-        try (InputStream inputStream = resource.getInputStream()) {
-            this.signingKey = OctetSequenceKey.parse(new String(inputStream.readAllBytes(), StandardCharsets.UTF_8));
-        }
+        this.signingKey = OctetSequenceKey.parse(resource.getContentAsString(StandardCharsets.UTF_8));
     }
 
     /**

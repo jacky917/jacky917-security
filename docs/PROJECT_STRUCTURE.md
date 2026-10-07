@@ -173,7 +173,7 @@
 | `.../JwtAuthoritiesExtractorTest.java` | `autoconfigure-test` | 單元測試 | claims 型態、去重、排序、prefix 覆寫與 `null` 前綴。 |
 | `.../Jacky917AuthorityEvaluatorTest.java` | `autoconfigure-test` | 單元測試 | AND/OR 判斷與「空參數不可放行」回歸測試。 |
 | `.../MethodSecurityAnnotationsIntegrationTest.java` | `autoconfigure-test` | 整合測試 | 四種自訂註解的 200/403。 |
-| `.../AutoConfigurationOrderingIntegrationTest.java` | `autoconfigure-test` | 整合測試 | 確認 `beforeName` 排序生效：只有 Starter 的 filter chain 與 JWT converter。 |
+| `.../AutoConfigurationOrderingIntegrationTest.java` | `autoconfigure-test` | 整合測試 | 檢查 `beforeName` 列出的類別都存在；只有 Starter 的 filter chain 與 JWT converter。 |
 | `.../ErrorResponseJsonMapperIntegrationTest.java` | `autoconfigure-test` | 整合測試 | 錯誤回應使用應用程式的 Jackson 3 `JsonMapper`。 |
 | `.../SecurityBehaviorIntegrationTest.java` | `autoconfigure-test` | 整合測試 | 驗證 `docs/limitations.md` 描述的行為：401/403 JSON、`WWW-Authenticate`、放行路徑、註解覆蓋與疊加限制。 |
 | `demo-resource-server/pom.xml` | `demo-resource` | Resource Demo 建置設定 | 含 Web、JPA、MySQL、H2（測試）、Swagger；不發佈。 |

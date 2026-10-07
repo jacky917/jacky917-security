@@ -90,7 +90,7 @@ sequenceDiagram
 - `org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration`
 - `org.springframework.boot.security.oauth2.server.resource.autoconfigure.web.OAuth2ResourceServerWebSecurityAutoConfiguration`
 
-使用字串而不是 `Class`，是為了讓類別搬家或不存在時不會直接啟動失敗。代價是名稱打錯時排序會靜默失效，因此由 `AutoConfigurationOrderingIntegrationTest` 驗證排序確實生效。這確保：
+使用字串而不是 `Class`，是為了讓類別搬家或不存在時不會直接啟動失敗。代價是名稱打錯時不會有任何錯誤，因此由 `AutoConfigurationOrderingIntegrationTest` 檢查每個類別都存在。另外，Spring Boot 會先依類別名稱的字母順序排序，`jacky917.…` 本來就排在 `org.springframework.…` 之前；`beforeName` 是日後套件名稱改變時的保險。這確保：
 
 - Starter 的 `SecurityFilterChain` 先註冊，Spring Boot 的預設 filter chain（`@ConditionalOnDefaultWebSecurity`）因此不會建立。
 - Starter 的 `JwtAuthenticationConverter` 先註冊，Spring Boot 依 `spring.security.oauth2.resourceserver.jwt.authorit*` / `principal-claim-name` 建立的 converter 因此不會建立（見 [限制 §5](limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效)）。

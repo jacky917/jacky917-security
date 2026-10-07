@@ -80,7 +80,7 @@
 
 ## 2. 資料表總覽
 
-| # | 表 | 分類 | 來源 | 預估筆數（10 萬使用者） | 階段 |
+| # | 表 | 分類 | 來源 | 預估筆數（10 萬使用者） | 開始使用的階段 |
 |---|---|---|---|---|---|
 | 1 | `app_user` | 身分 | 自建 | 10 萬 | 1 |
 | 2 | `user_federated_identity` | 身分 | 自建 | 10～15 萬 | 1 |
@@ -106,7 +106,7 @@
 | 22 | `SPRING_SESSION_ATTRIBUTES` | Session | **官方** | 同上 × 屬性數 | 2 |
 | 23 | `shedlock` | 維運 | ShedLock | 排程數量（< 10） | 1 |
 
-「階段」對應 [Authorization Server 設計 §11](auth-server-design.md#11-分階段實作計畫)。為了避免之後頻繁 migration，**第 1 階段就建立 #1～#16、#18**，其餘依階段新增。
+「開始使用的階段」對應 [Authorization Server 設計 §11](auth-server-design.md#11-分階段實作計畫)，代表程式從哪個階段開始讀寫該表。**全部 23 張表都在第 1 階段的 V1 migration 中一次建立**：暫時用不到的空表沒有副作用，而且 PostgreSQL 與 SQLite 兩份 migration 不必在每個階段各自追加，可避免兩者逐漸不一致。
 
 ---
 
@@ -862,7 +862,7 @@ CREATE TABLE SPRING_SESSION_ATTRIBUTES (
 
 | 注意 | 說明 |
 |---|---|
-| 第 1 階段 | 單一實例時可不啟用 Spring Session，使用容器內建的 HttpSession；表結構仍隨 V1 建立，第 2 階段只需開啟設定 |
+| 何時使用 | 只在 PostgreSQL 且需要多個 AS 實例時啟用（D10）。SQLite 或單一實例時使用容器內建的 HttpSession；表結構仍隨 V1 建立，日後只需開啟設定 |
 | 屬性內容 | AS 瀏覽器 Session 中存放：Spring Security context、授權請求（`/oauth2/authorize` 參數）、`asid`（[詳細設計 §5.2](auth-server-detailed-design.md#52-授權碼流程與-session-連結)） |
 | 清理 | Spring Session 內建排程依 `EXPIRY_TIME` 清理 |
 
@@ -1108,25 +1108,24 @@ jacky917-security-authorization-server-autoconfigure/src/main/resources/
     ├── postgresql/   （以下檔案）
     └── sqlite/       （同名檔案，SQLite 方言，§17）
 
-    ├── V1_0_0__identity.sql            app_user、user_federated_identity
+    ├── V1_0_0__identity.sql            app_user、user_federated_identity、user_action_token
     ├── V1_0_1__authorization_model.sql app_role、app_permission、app_user_role、app_role_permission、
     │                                   api_resource、app_scope、app_scope_permission
     ├── V1_0_2__oauth2_official.sql     oauth2_registered_client、oauth2_authorization、
     │                                   oauth2_authorization_consent（PostgreSQL 版）+ 索引
     ├── V1_0_3__oauth2_extensions.sql   client_profile
-    ├── V1_0_4__sessions.sql            auth_session、session_authorization、SPRING_SESSION*
-    ├── V1_0_5__security.sql            signing_key、login_audit、shedlock
-    ├── V1_0_6__seed.sql                內建角色、權限、scope、api_resource
-    ├── V2_0_0__refresh_history.sql     （第 2 階段）refresh_token_history
-    ├── V3_0_0__admin_audit.sql         （第 3 階段）admin_audit_log
-    └── V4_0_0__action_tokens.sql       （第 4 階段）user_action_token
+    ├── V1_0_4__sessions.sql            auth_session、session_authorization、refresh_token_history、SPRING_SESSION*
+    ├── V1_0_5__security.sql            signing_key、login_audit、admin_audit_log、shedlock
+    └── V1_0_6__seed.sql                內建角色、權限、scope、api_resource
 ```
+
+之後的版本（`V2_…` 起）只用於**結構變更**（新增欄位、索引等），不再用於「該階段才建立的表」。
 
 > CI 必須對兩種資料庫都執行 migration 與整合測試（[詳細設計 §10](auth-server-detailed-design.md#10-測試案例)），避免兩份 DDL 不一致。
 
 | 規則 | 說明 |
 |---|---|
-| 版本號 | `V<階段>_<次版>_<修訂>`，與 AS 實作階段對應，方便對照 |
+| 版本號 | `V<主版>_<次版>_<修訂>`：`V1_0_x` 為初始結構；之後的結構變更依序遞增 |
 | 位置 | 預設 `classpath:db/migration/jacky917-as`，以 `spring.flyway.locations` 引用；業務專案若在同一個 AS 應用中有自己的表，放在不同路徑 |
 | 歷史表 | 預設 `flyway_schema_history`（AS 為專屬資料庫，P1） |
 | 已發佈的 migration 不可修改 | 任何調整都以新版本的 migration 進行；CI 以 `flyway validate` 檢查 checksum |
@@ -1326,7 +1325,7 @@ Starter 在使用者沒有設定 `spring.datasource.url` 時，自動使用上�
 
 ### 17.4 DDL
 
-以下即 `db/migration/jacky917-as/sqlite/` 中第 1 階段 migration 的完整內容（已於 §16.2 以 Flyway 實際執行驗證）。結尾的 `SPRING_SESSION*` 取自 `spring-session-jdbc` 4.1.1 隨附的 `schema-sqlite.sql`。
+以下即 `db/migration/jacky917-as/sqlite/` 中 V1 migration 的完整內容，涵蓋全部 23 張表，與 §13.1 一致（已於 §16.2 以 Flyway 實際執行驗證）。結尾的 `SPRING_SESSION*` 取自 `spring-session-jdbc` 4.1.1 隨附的 `schema-sqlite.sql`。
 
 ```sql
 -- ============ 身分 ============

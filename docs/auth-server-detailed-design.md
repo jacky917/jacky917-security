@@ -214,7 +214,8 @@ MySQL 留待之後：官方表需要額外的連線參數；`ON CONFLICT` 要改
 | 預設 URL | 以 `EnvironmentPostProcessor` 加入**最低優先序**的預設值：只有使用者完全沒有設定 `spring.datasource.url` 時才生效 |
 | 資料庫檔案位置 | 預設 `./data/jacky917-auth.db`；不存在時自動建立資料夾，並把檔案權限設為 `600`（POSIX 系統） |
 | 啟動檢查 | `SqliteDialect#validate`：`PRAGMA foreign_keys` 必須為 1、`journal_mode` 必須為 `wal`、URL 必須含 `transaction_mode=IMMEDIATE` 與 `date_class=INTEGER`、Hikari `auto-commit` 必須為 `true`。任何一項不符即啟動失敗，訊息列出應有的完整 URL |
-| 多實例防呆 | SQLite 下不啟用 Spring Session JDBC 與 ShedLock（單實例不需要）；若偵測到 `spring.session.store-type=jdbc` 搭配 SQLite，啟動時輸出警告 |
+| 排程鎖（ShedLock） | **不論資料庫一律使用**：單一實例時沒有副作用，且只有一條程式路徑，較容易測試（§5.8） |
+| 共用 Session（Spring Session JDBC） | 只在 PostgreSQL 啟用（D10）。SQLite 為單一實例，使用容器內建的 HttpSession；`SPRING_SESSION*` 表仍隨 V1 建立但不使用。若偵測到 SQLite 搭配 `spring.session.store-type=jdbc`，啟動時輸出警告 |
 | 對其他決策的影響 | D10（共用 Session）只在 PostgreSQL 適用；D19 在 SQLite 由 `IMMEDIATE` 交易達成 |
 
 ---
@@ -947,7 +948,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 9 | 第三方登入（Google）：通用 OIDC mapper、`FederatedIdentityService`、自動建立使用者 | 6 | §5.3（不含連結確認） |
 | 10 | `example-authorization-server`、`example-bff`、E2E 測試 | 8、9 | T-E2E-01～03 |
 | — | **第 1 階段完成（2.1.0 preview）** | | |
-| 11 | 重用偵測：`ReuseDetectingRefreshTokenProvider`、`refresh_token_history`（V2） | 8 | §5.4、D19 |
+| 11 | 重用偵測：`ReuseDetectingRefreshTokenProvider`（`refresh_token_history` 已於 V1 建立） | 8 | §5.4、D19 |
 | 12 | 登出：`Jacky917LogoutHandler`、帳號頁的裝置清單與登出 | 7 | §5.5、§5.6 |
 | 13 | 登入保護：鎖定、IP 限流、`login_audit` | 6 | §5.1 |
 | 14 | 帳號連結確認、GitHub 與 LINE、帳號頁的連結管理 | 9 | §5.3 |

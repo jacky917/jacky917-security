@@ -123,12 +123,13 @@ Boot 4.1.1 的類別位置（已確認）：
 | `before = {X.class}` | 編譯失敗或啟動時 `ClassNotFoundException` | 綁死單一 Boot 版本 |
 | **`beforeName = {"..."}`** | 該項被忽略 | ✅ 不會因為 Boot 搬動類別而直接失敗 |
 
-**必須新增的測試**：用 `beforeName` 時，類別名稱打錯不會有任何錯誤，排序只是靜默失效。因此需要一個整合測試，確認：
+**必須新增的測試**：用 `beforeName` 時，類別名稱打錯不會有任何錯誤。整合測試確認：
 
-1. 應用程式中只有 Starter 的 `SecurityFilterChain`（Boot 的預設 filter chain 沒有被建立）。
-2. 應用程式中只有一個 `JwtAuthenticationConverter`，而且是 Starter 提供的。
+1. **`beforeName` 列出的每個類別都存在**：名稱打錯或 Spring Boot 搬移類別時直接失敗。
+2. 應用程式中只有 Starter 的 `SecurityFilterChain`（Boot 的預設 filter chain 沒有被建立）。
+3. 應用程式中只有一個 `JwtAuthenticationConverter`，而且是 Starter 提供的（[限制 §5](limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效)）。
 
-這兩件事正是先前 [限制 §5](limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效) 描述的行為，升級後要用測試鎖住。
+> **實測補充（PR #2 review）**：Spring Boot 排序自動配置時，先依類別名稱的字母順序，再套用 `before`／`after`。`jacky917.…` 本來就排在 `org.springframework.…` 之前，因此即使把 `beforeName` 整個刪掉，第 2、3 項仍然會通過。第 2、3 項驗證的是「目前行為正確」，**只有第 1 項能抓到 `beforeName` 寫錯**。`beforeName` 是日後套件名稱改變時的保險。測試應用程式也改為只用 `@EnableAutoConfiguration`（不直接 `@Import`），與實際使用者的載入方式相同。
 
 ### 4.2 Jackson 3
 
@@ -256,7 +257,7 @@ main ─── (目前 1.0.0) ──┬── 升級 Boot 4.1 ── 2.0.0-M1 �
 
 | 測試 | 驗證內容 |
 |---|---|
-| `AutoConfigurationOrderingIntegrationTest` | `beforeName` 排序生效：只有 Starter 的 `SecurityFilterChain` 與 `JwtAuthenticationConverter`；即使設定 `principal-claim-name`、`authority-prefix`，也不會使用 Spring Boot 的 converter |
+| `AutoConfigurationOrderingIntegrationTest` | `beforeName` 列出的類別都存在；只有 Starter 的 `SecurityFilterChain` 與 `JwtAuthenticationConverter`，即使設定 `principal-claim-name`、`authority-prefix` 也不會使用 Spring Boot 的 converter（見 §4.1 的實測補充） |
 | `ErrorResponseJsonMapperIntegrationTest` | 錯誤回應使用應用程式的 Jackson 3 `JsonMapper`（`spring.jackson.serialization.indent-output` 生效） |
 | `SecurityBehaviorIntegrationTest#protectedResourceMetadataIsPublic` | RFC 9728 metadata 端點可匿名存取 |
 

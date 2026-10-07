@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -52,6 +53,8 @@ class SecurityBehaviorIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("WWW-Authenticate", startsWith("Bearer")))
                 .andExpect(header().string("WWW-Authenticate", containsString("resource_metadata=")))
+                // 未帶 token 不是「token 無效」：不得出現 error 參數，否則與 invalidTokenReturnsJson401 無從區分
+                .andExpect(header().string("WWW-Authenticate", not(containsString("error="))))
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.errorCode").value("Unauthorized"))
                 .andExpect(jsonPath("$.path").value("/secure"));

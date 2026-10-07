@@ -8,8 +8,8 @@ import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jose.jwk.OctetSequenceKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import org.springframework.core.io.ClassPathResource;
 
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
@@ -123,14 +123,11 @@ public class GenerateTestJwtMain {
     }
 
     private static OctetSequenceKey loadJwk() throws Exception {
-        try (InputStream inputStream = GenerateTestJwtMain.class
-                .getClassLoader()
-                .getResourceAsStream("demo/jwk/demo-hs256.jwk.json")) {
-            if (inputStream == null) {
-                throw new IllegalStateException("找不到 JWK 檔案：demo/jwk/demo-hs256.jwk.json");
-            }
-            return OctetSequenceKey.parse(new String(inputStream.readAllBytes(), StandardCharsets.UTF_8));
+        ClassPathResource resource = new ClassPathResource("demo/jwk/demo-hs256.jwk.json");
+        if (!resource.exists()) {
+            throw new IllegalStateException("找不到 JWK 檔案：demo/jwk/demo-hs256.jwk.json");
         }
+        return OctetSequenceKey.parse(resource.getContentAsString(StandardCharsets.UTF_8));
     }
 
     private static Map<String, String> parseArgs(String[] args) {

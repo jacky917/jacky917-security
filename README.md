@@ -107,11 +107,15 @@ GitHub Packages **即使是公開套件也需要認證**。在 `~/.m2/settings.x
 
 ### 2. 引入依賴
 
+> [!IMPORTANT]
+> **2.x（Spring Boot 4.1）尚未發佈。** GitHub Packages 上目前只有 `1.0.0`（Spring Boot 3.5），使用方式見 [`1.x` 分支](https://github.com/jacky917/jacky917-security-starter/tree/1.x)。
+> 要先試用 2.x，請 clone 本 repo 後執行 `mvn -DskipTests install`，即可在本機使用 `2.0.0-SNAPSHOT`。
+
 ```xml
 <dependency>
     <groupId>com.github.jacky917</groupId>
     <artifactId>jacky917-security-starter</artifactId>
-    <version>2.0.0-SNAPSHOT</version>   <!-- Spring Boot 3.5 請用 1.1.0 -->
+    <version>2.0.0-SNAPSHOT</version>   <!-- 尚未發佈，需先在本機 mvn install；見上方說明 -->
 </dependency>
 <!-- Starter 只支援 Servlet 應用，請確認已引入 Spring MVC -->
 <dependency>

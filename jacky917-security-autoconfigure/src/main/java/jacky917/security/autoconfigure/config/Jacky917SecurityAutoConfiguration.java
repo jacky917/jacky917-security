@@ -71,7 +71,7 @@ import java.util.Map;
  * @since 0.0.1
  */
 @Slf4j
-// 以字串指定，類別不存在時會被忽略而不是啟動失敗；排序是否生效由 AutoConfigurationOrderingIntegrationTest 檢查
+// 以字串指定，類別不存在時會被忽略而不是啟動失敗；名稱是否正確由 AutoConfigurationOrderingIntegrationTest 檢查
 @AutoConfiguration(beforeName = {
         "org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration",
         "org.springframework.boot.security.autoconfigure.web.servlet.ServletWebSecurityAutoConfiguration",

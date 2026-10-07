@@ -1,7 +1,5 @@
 package jacky917.demo.authorizationserver;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jwt.SignedJWT;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,6 +8,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DisplayName("Demo Auth Server Token 簽發整合測試")
 class AuthControllerIntegrationTest {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final JsonMapper JSON_MAPPER = JsonMapper.builder().build();
 
     @Autowired
     private MockMvc mockMvc;
@@ -51,8 +51,8 @@ class AuthControllerIntegrationTest {
                 .andReturn();
 
         String response = result.getResponse().getContentAsString();
-        JsonNode node = OBJECT_MAPPER.readTree(response);
-        String accessToken = node.get("accessToken").asText();
+        JsonNode node = JSON_MAPPER.readTree(response);
+        String accessToken = node.get("accessToken").asString();
 
         SignedJWT jwt = SignedJWT.parse(accessToken);
         assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("alice");
