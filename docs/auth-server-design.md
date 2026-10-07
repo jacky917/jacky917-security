@@ -103,8 +103,8 @@ flowchart LR
 | D11 | 簽章金鑰管理 | A. Keystore 檔案／B. **資料庫 + 加密 + 輪換**／C. KMS／Vault | **B**，介面預留 **C** |
 | D12 | 登出 | A. 只清 AS Session／B. RP-Initiated Logout + 撤銷登入 Session／C. 再加 Back-channel Logout | **B** |
 | D13 | Client 管理 | A. 設定檔／B. Flyway seed／C. Admin API／D. 動態註冊（DCR） | 第一方 **B**，第三方 **C**，**不開放 D** |
-| ⚠️ D14 | 資料庫 | A. **PostgreSQL**／B. MySQL／C. 兩者都支援 | **A** |
-| D15～D21 | grant type、Principal 標準化、專屬資料庫、權限計算時機、Refresh 併發、Session claim、密碼政策 | 見 [詳細設計 §1](auth-server-detailed-design.md#1-新增決策d15d21) | — |
+| ✅ D14 | 資料庫 | A. PostgreSQL／B. MySQL／C. 多種都支援 | **已決定：預設 SQLite，YAML 切換 PostgreSQL**（見詳細設計 D22） |
+| D15～D22 | grant type、Principal 標準化、專屬資料庫、權限計算時機、Refresh 併發、Session claim、密碼政策、資料庫抽象 | 見 [詳細設計 §1](auth-server-detailed-design.md#1-新增決策d15d22) | — |
 
 ---
 
@@ -311,7 +311,7 @@ flowchart TD
 | **B. Spring Session JDBC** | Session 存在 PostgreSQL | 不需要額外的基礎設施 |
 | C. Spring Session Redis | Session 存在 Redis | 效能最好，但多一個要維運的元件 |
 
-**推薦**：第一版用 **B**，流量大時改為 **C**（只需更換依賴與設定）。
+**推薦**：使用 **PostgreSQL** 時第一版用 **B**，流量大時改為 **C**（只需更換依賴與設定）。使用預設的 **SQLite** 時只能單一實例（D14），使用容器內建的 HttpSession 即可，不需要 Spring Session。
 
 ### D11 簽章金鑰管理
 
@@ -354,15 +354,11 @@ K1 簽發的最後一個 Token 過期後   K1 改為 RETIRED   JWKS 不再公開
 | **C. Admin API** | **第三方 client**，由管理員或開發者自助申請、審核 |
 | D. OIDC 動態註冊（DCR） | 任何人都能註冊 client。除非要做開放平台，否則**不開放** |
 
-### D14 資料庫 ⚠️
+### D14 資料庫 ✅ 已決定
 
-| 選項 | 優點 | 缺點 |
-|---|---|---|
-| **A. PostgreSQL** | `JSONB`、`TIMESTAMPTZ`、部分索引（例如「Email 不為空才唯一」）；與現有 [database-schema.md](database-schema.md) 一致 | 現有 demo 使用 MySQL |
-| B. MySQL | 與現有 demo 一致 | SAS 官方 schema 的 `blob` 欄位與部分語法需調整；缺少部分索引 |
-| C. 兩者都支援 | 使用者選擇多 | 兩套 Flyway migration、兩套測試，維護成本加倍 |
-
-**推薦 A**，之後真的需要再補 MySQL migration。
+> **決定（2026-10-07）**：**預設 SQLite**（引入 starter 即可啟動，不需要任何資料庫伺服器），正式環境可在 YAML 切換為 **PostgreSQL 16+**，程式碼不需修改。設計見 [詳細設計 D22](auth-server-detailed-design.md#d22-資料庫抽象)，兩種資料庫的 DDL 與實測結果見 [資料模型](auth-server-data-model.md)。
+>
+> 取捨：SQLite **只能單一實例**（D10 的共用 Session 只在 PostgreSQL 適用）；需要水平擴展或高可用時改用 PostgreSQL。MySQL 列入第 5 階段。
 
 ---
 

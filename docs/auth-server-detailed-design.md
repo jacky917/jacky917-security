@@ -14,7 +14,7 @@
 
 ## 目錄
 
-1. [新增決策（D15～D21）](#1-新增決策d15d21)
+1. [新增決策（D15～D22）](#1-新增決策d15d22)
 2. [元件設計](#2-元件設計)
 3. [SecurityFilterChain 設計](#3-securityfilterchain-設計)
 4. [Token 設計](#4-token-設計)
@@ -29,7 +29,7 @@
 
 ---
 
-## 1. 新增決策（D15～D21）
+## 1. 新增決策（D15～D22）
 
 延續 [Authorization Server 設計](auth-server-design.md#2-決策總表) 的 D01～D14。
 
@@ -42,6 +42,7 @@
 | D19 | Refresh 併發與寬限期 | 列鎖序列化 + 30 秒寬限期內不視為攻擊 |
 | D20 | Session 識別 claim | Access Token 使用自訂 claim `asid`；ID Token 的 `sid` 交給 Spring Security |
 | D21 | 密碼雜湊與政策 | BCrypt（強度 12）+ 長度與外洩密碼檢查 |
+| ✅ D22 | 資料庫抽象 | **預設 SQLite**，YAML 切換 PostgreSQL；程式碼與資料庫無關（2026-10-07 使用者決定） |
 
 ### D15 支援的 grant type
 
@@ -103,7 +104,8 @@
 
 **AS 端做法**：
 
-1. **列鎖**：以裝飾器包裝 Spring Security 的 `OAuth2RefreshTokenAuthenticationProvider`，在交易中先執行 `SELECT id FROM oauth2_authorization WHERE refresh_token_value = ? FOR UPDATE`，再交給原本的 provider。第二個併發請求會等待第一個完成，之後因為 RT1 已不存在而失敗，**不會產生 RT3 覆蓋 RT2**。
+1. **列鎖**（PostgreSQL）：以裝飾器包裝 Spring Security 的 `OAuth2RefreshTokenAuthenticationProvider`，在交易中先執行 `SELECT id FROM oauth2_authorization WHERE refresh_token_value = ? FOR UPDATE`，再交給原本的 provider。第二個併發請求會等待第一個完成，之後因為 RT1 已不存在而失敗，**不會產生 RT3 覆蓋 RT2**。
+   **SQLite** 沒有 `FOR UPDATE`，改由連線參數 `transaction_mode=IMMEDIATE` 讓交易一開始就取得資料庫寫入鎖，效果相同（[資料模型 §16.2](auth-server-data-model.md#162-sqlite-353423-項全部通過) 已實測）。差異封裝在 D22 的 `AuthorizationServerDialect` 中。
 2. **寬限期**：舊 Refresh Token 在被輪換後的 **30 秒內**再次出現，視為併發造成的正常情況：回傳 `invalid_grant`，但**不撤銷 Session**。超過 30 秒才視為重用攻擊。
 
 **BFF 端做法**：同一個瀏覽器 Session 的刷新以 mutex 序列化（`example-bff` 示範）。
@@ -135,6 +137,84 @@
 | 錯誤訊息 | 帳號不存在與密碼錯誤回傳**相同訊息** | 防止帳號列舉 |
 | 計時攻擊 | 帳號不存在時仍執行一次假的 BCrypt 比對 | Spring 的 `DaoAuthenticationProvider` 已內建此行為 |
 
+### D22 資料庫抽象
+
+**需求（使用者決定）**：預設使用 SQLite，拿來就能啟動；正式環境只改 YAML 就能切換到其他資料庫。
+
+| 選項 | 做法 | 評估 |
+|---|---|---|
+| A. JPA／Hibernate | 由 Hibernate 產生 SQL | 官方 `JdbcOAuth2AuthorizationService` 本來就是 JDBC；SQLite 只有社群版 dialect；多一層 ORM 卻省不了多少程式 ❌ |
+| B. 每個資料庫一套 Repository 實作 | `PostgresUserRepository`、`SqliteUserRepository`… | 程式碼重複，容易不一致 ❌ |
+| **C. 可攜 SQL + 每個資料庫一套 DDL + 極小的 dialect 介面** | Repository 只寫一份（`JdbcClient`）；DDL 依資料庫分資料夾；少數無法共用的 SQL 放在 dialect | ✅ |
+
+**推薦 C**。做法：
+
+| 層次 | 是否依資料庫而不同 | 做法 |
+|---|---|---|
+| DDL（Flyway migration） | **是** | `db/migration/jacky917-as/{vendor}`，Spring Boot 依 JDBC URL 自動選擇資料夾 |
+| Repository 與查詢 | **否** | 只用可攜的 SQL（[資料模型 P8～P11](auth-server-data-model.md#11-原則)）：ID 與 IP 為字串、時間由應用程式以參數傳入、`IN (:list)` 取代陣列、子查詢取代 `DELETE ... USING` |
+| 少數無法共用的行為 | **是**，集中在 `AuthorizationServerDialect` | 見下表 |
+| Spring Security 官方表 | 否 | 官方 JDBC 類別本來就與資料庫無關 |
+
+`AuthorizationServerDialect` 介面：
+
+```java
+public interface AuthorizationServerDialect {
+    String vendor();                                  // "postgresql"、"sqlite"
+    String lockAuthorizationByRefreshTokenSql();      // PostgreSQL：... FOR UPDATE；SQLite：不加 FOR UPDATE（IMMEDIATE 交易）
+    boolean supportsMultipleInstances();              // SQLite：false
+    void validate(DataSource dataSource);             // SQLite：檢查必要的連線參數，缺少即啟動失敗
+}
+```
+
+依 JDBC URL 自動選擇（`DatabaseDriver.fromJdbcUrl`），也可以用 `database.dialect` 屬性指定。
+
+**切換方式**：
+
+```yaml
+# 不設定任何 datasource → 預設 SQLite（./data/jacky917-auth.db），什麼都不用做
+```
+
+```yaml
+# 切換到 PostgreSQL：改 YAML，並加入 PostgreSQL JDBC 驅動依賴
+spring:
+  datasource:
+    url: jdbc:postgresql://db.example.com:5432/auth
+    username: as_app
+    password: ${AS_DB_PASSWORD}
+```
+
+```xml
+<dependency>
+    <groupId>org.postgresql</groupId>
+    <artifactId>postgresql</artifactId>
+    <scope>runtime</scope>
+</dependency>
+```
+
+Flyway 會自動執行 PostgreSQL 版的 migration，程式碼不需修改。
+
+**支援矩陣**：
+
+| 資料庫 | 狀態 | 適合 | 多實例 |
+|---|---|---|---|
+| **SQLite** | ✅ 預設 | 開發、測試、單機與中小規模部署 | ❌ |
+| **PostgreSQL 16+** | ✅ 支援 | 正式環境、水平擴展 | ✅ |
+| MySQL 8.4 | ⏸ 第 5 階段 | — | ✅ |
+
+MySQL 留待之後：官方表需要額外的連線參數；`ON CONFLICT` 要改為 `INSERT IGNORE`；**不支援部分索引**（`WHERE ...`），`ux_app_user_email`、`ux_signing_key_single_active` 等需改用 generated column。架構已預留（新增一個 dialect 與一個 migration 資料夾），但需要另外驗證。
+
+**預設 SQLite 的實作細節**：
+
+| 項目 | 做法 |
+|---|---|
+| SQLite 驅動 | `org.xerial:sqlite-jdbc` 為 AS starter 的直接依賴，引入 starter 即可使用 |
+| 預設 URL | 以 `EnvironmentPostProcessor` 加入**最低優先序**的預設值：只有使用者完全沒有設定 `spring.datasource.url` 時才生效 |
+| 資料庫檔案位置 | 預設 `./data/jacky917-auth.db`；不存在時自動建立資料夾，並把檔案權限設為 `600`（POSIX 系統） |
+| 啟動檢查 | `SqliteDialect#validate`：`PRAGMA foreign_keys` 必須為 1、`journal_mode` 必須為 `wal`、URL 必須含 `transaction_mode=IMMEDIATE` 與 `date_class=INTEGER`、Hikari `auto-commit` 必須為 `true`。任何一項不符即啟動失敗，訊息列出應有的完整 URL |
+| 多實例防呆 | SQLite 下不啟用 Spring Session JDBC 與 ShedLock（單實例不需要）；若偵測到 `spring.session.store-type=jdbc` 搭配 SQLite，啟動時輸出警告 |
+| 對其他決策的影響 | D10（共用 Session）只在 PostgreSQL 適用；D19 在 SQLite 由 `IMMEDIATE` 交易達成 |
+
 ---
 
 ## 2. 元件設計
@@ -146,6 +226,7 @@ jacky917.security.authorizationserver
 ├── autoconfigure/
 │   ├── AuthorizationServerAutoConfiguration      主要自動配置（filter chain、SAS 元件）
 │   ├── AuthorizationServerJdbcConfiguration      JDBC repository／service
+│   ├── AuthorizationServerDatabaseConfiguration  D22：預設 SQLite、dialect 選擇、啟動檢查
 │   ├── AuthorizationServerFederationConfiguration 第三方登入
 │   └── AuthorizationServerJobsConfiguration      排程
 ├── properties/
@@ -193,6 +274,11 @@ jacky917.security.authorizationserver
 ├── audit/
 │   ├── AuditEventPublisher
 │   └── JdbcAuditEventListener                    寫入 login_audit、admin_audit_log
+├── database/
+│   ├── AuthorizationServerDialect                SPI：D22
+│   ├── PostgresqlDialect
+│   ├── SqliteDialect
+│   └── DefaultSqliteEnvironmentPostProcessor     沒有設定 datasource 時預設 SQLite
 ├── jobs/
 │   └── CleanupJobs                               資料模型 §14 的清理排程
 └── web/
@@ -671,6 +757,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 屬性 | 型別 | 預設 | 驗證 | 說明 |
 |---|---|---|---|---|
 | `enabled` | boolean | `true` | — | 停用整個 AS 自動配置 |
+| `database.dialect` | enum | `auto` | `auto`／`postgresql`／`sqlite` | D22；`auto` 依 JDBC URL 判斷 |
+| `database.sqlite.path` | Path | `./data/jacky917-auth.db` | 父資料夾可寫入 | 只在使用預設 SQLite URL 時使用 |
 | `issuer` | URI | **必填** | `https`（`localhost` 除外） | Token 的 `iss`；Resource Server 的 `issuer-uri` 必須完全相同 |
 | `token.access-token-ttl` | Duration | `10m` | 1 分鐘～1 小時 | 預設值；個別 client 可在 `token_settings` 覆寫 |
 | `token.refresh-token-ttl` | Duration | `14d` | 1 小時～90 天 | 同上 |
@@ -831,8 +919,14 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | T-E2E-01 | 端對端 | 瀏覽器 → BFF → AS（密碼）→ BFF → Resource Server | 200 |
 | T-E2E-02 | | 同上，以 Google（WireMock）登入 | 200 |
 | T-E2E-03 | | Resource Server 以 `issuer-uri` 自動探索並驗證 `aud` | 他服務的 audience 被拒絕 |
+| T-DB-01 | 資料庫 | 不設定 datasource 啟動 | 建立 SQLite 檔案，migration 執行，可完成登入與換 token |
+| T-DB-02 | | 自行設定缺少 `foreign_keys=true` 的 SQLite URL | 啟動失敗，訊息列出缺少的參數 |
+| T-DB-03 | | 改 YAML 為 PostgreSQL | 不改程式碼即可啟動並通過全部整合測試 |
+| T-DB-04 | | 兩種資料庫的 schema 一致性 | 表、欄位、索引、約束名稱相同 |
 
-測試工具：Testcontainers PostgreSQL 16（migration 與 JDBC 行為）、WireMock（模擬 Google 與 GitHub）、Spring Security Test、MockMvc。
+> 所有整合測試以 JUnit 參數化，**在 SQLite 與 PostgreSQL 各跑一次**。
+
+測試工具：SQLite（暫存檔）與 Testcontainers PostgreSQL 16（migration 與 JDBC 行為，兩者都跑）、WireMock（模擬 Google 與 GitHub）、Spring Security Test、MockMvc。
 
 ---
 
@@ -841,7 +935,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | # | 工作 | 依賴 | 對應 |
 |---|---|---|---|
 | 1 | 模組骨架：`authorization-server-autoconfigure`、`-starter`；屬性類別與驗證 | M2 重構 | §2.1、§6 |
-| 2 | Flyway V1（資料模型 §13.1 的 V1_0_0～V1_0_6）與 migration 測試 | 1 | 資料模型 |
+| 2 | D22：dialect、預設 SQLite、啟動檢查；Flyway V1 的 PostgreSQL 與 SQLite 兩個版本；migration 與一致性測試 | 1 | 資料模型、D22 |
 | 3 | 金鑰：`SigningKeyStore`、`KeyEncryptor`、`RotatingJwkSource`（首次啟動產生金鑰） | 2 | §5.7（不含排程） |
 | 4 | Client：JDBC repository、`client_profile`、`ClientSecretInitializer`、第一方 seed | 2 | 資料模型 §12.4 |
 | 5 | 使用者：`UserAccountService`、`UserDetailsService`、密碼政策 | 2 | D21 |
@@ -868,11 +962,11 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 
 | # | 問題 | 影響 | 目前假設 |
 |---|---|---|---|
-| 1 | 網頁前端是否採用 BFF？（D03） | 若不採用，SPA 無法取得 Refresh Token，需另外設計 | 採用 |
+| 1 | 網頁前端是否採用 BFF？（D03） | 若不採用，SPA 無法取得 Refresh Token，需另外設計 | 採用（待確認） |
 | 2 | 第一版第三方登入提供者？（D05） | 工作 9、14 | 第 1 階段 Google；第 2 階段 GitHub、LINE |
-| 3 | 資料庫是否為 PostgreSQL？（D14） | 資料模型全部 DDL | PostgreSQL 16 |
-| 4 | 是否需要 `client_credentials`？（D15） | 第 1 階段範圍 | 需要 |
-| 5 | 是否允許以 Email 作為登入帳號？ | `UserDetailsService` | 允許（只限已驗證的 Email） |
+| ~~3~~ | ~~資料庫？~~ ✅ **已決定**：預設 SQLite，可在 YAML 切換為 PostgreSQL（D22） | — | — |
+| 4 | 是否需要 `client_credentials`？（D15） | 第 1 階段範圍 | 需要（待確認） |
+| ~~5~~ | ~~是否允許以 Email 作為登入帳號？~~ ✅ **已決定**：允許（只限已驗證的 Email） | — | — |
 | 6 | 稽核紀錄保留期（`login_audit` 180 天、`admin_audit_log` 2 年）是否符合法規？ | 清理排程 | 符合 |
 | 7 | 是否需要多語系登入頁？ | §7.2 | 繁體中文 + 英文 |
 | 8 | AS 預計的網域與 BFF、前端是否同一主網域？ | Cookie `SameSite`、CORS | 同一主網域（例如 `auth.example.com`、`app.example.com`） |

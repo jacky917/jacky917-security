@@ -20,6 +20,7 @@
 - [🟢] Step 12: 建立 `1.x` 維護分支（M0；`1.1.0` 待發佈）
 - [🟢] Step 13: 升級到 Spring Boot 4.1.1（M1；待合併）
 - [🟡] Step 14: Authorization Server 詳細設計（資料模型 + 元件與流程）— 設計草案完成，待確認
+- [🟢] Step 15: 資料庫抽象（預設 SQLite、YAML 切換 PostgreSQL）設計與實測
 
 ---
 
@@ -437,4 +438,25 @@
 - **Next TODO**:
   - 取得 `docs/auth-server-detailed-design.md` §12 的答覆。
   - 完成 M2（repo 重構）後，依詳細設計 §11 開始第 1 階段。
+
+---
+## Step 15: 資料庫抽象（預設 SQLite、YAML 切換 PostgreSQL）
+- **Status**: 🟢 設計完成（尚未實作）
+- **使用者決定**：資料庫預設 SQLite，需抽象化以便在 YAML 無痛切換；允許以 Email 登入。
+- **Acceptance Criteria**:
+  - [x] 詳細設計新增 D22：可攜 SQL + 依資料庫分開的 Flyway migration（`{vendor}`）+ 極小的 `AuthorizationServerDialect`；預設 SQLite 的實作細節（`EnvironmentPostProcessor`、啟動檢查）；支援矩陣（SQLite、PostgreSQL；MySQL 第 5 階段）。
+  - [x] 資料模型改為可攜：ID `VARCHAR(36)`、IP `VARCHAR(45)`、JSON `TEXT`；時間由應用程式寫入；格式驗證移到應用程式；查詢改為兩種資料庫通用的 SQL。
+  - [x] 資料模型新增 §17：SQLite 型別對應、必要連線參數、限制、完整 DDL。
+  - [x] D14 標示為已決定；D10、D19 補上 SQLite 的對應做法；待確認事項更新（資料庫、Email 登入已決定）。
+- **Commands Run & Results**:
+  - 查證：Spring Session 4.1.1 隨附 `schema-sqlite.sql`；Flyway 12.4.0 核心已內建 SQLite；Boot 4.1.1 的 `DatabaseDriver` 含 `SQLITE`，Flyway 自動配置支援 `{vendor}`。
+  - SQLite 3.53.4（xerial 3.53.4.0 + HikariCP + Flyway 12.4.0）：**23 項全部通過**。過程中發現並記錄：`SQLiteDataSource` 不會套用 URL 中的 `transaction_mode`；xerial 在 `IMMEDIATE` 模式下 commit 後會立刻開始新交易並持有寫入鎖（連線池必須維持 `auto-commit=true`）；未設定 `foreign_keys=true` 時孤兒資料會被接受。
+  - PostgreSQL 16.15（改為可攜型別後重新驗證）：**40 項全部通過**；每一項約束測試都確認由目標約束擋下。
+  - 文件連結、錨點、YAML 檢查：無錯誤。
+- **Decision Log**:
+  - **DEC-047**: 預設 SQLite、YAML 切換 PostgreSQL（使用者決定，D14／D22）。
+  - **DEC-048**: 不使用 JPA；以可攜 SQL + 依資料庫分開的 DDL + dialect 介面實作資料庫抽象。
+  - **DEC-049**: 資料表只使用可攜型別，時間一律由應用程式寫入，格式驗證在應用程式。
+  - **DEC-050**: SQLite 以 `transaction_mode=IMMEDIATE` 取代 `FOR UPDATE`，並強制檢查必要連線參數。
+  - **DEC-051**: 允許以已驗證的 Email 登入（使用者決定）。
 
