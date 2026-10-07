@@ -1,7 +1,5 @@
 package jacky917.demo.resourceserver.config;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.OctetSequenceKey;
 import org.springframework.context.annotation.Bean;
@@ -15,6 +13,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Demo configuration of the JWT decoder.
@@ -46,13 +45,12 @@ public class DemoJwtDecoderConfiguration {
     @Bean
     public JwtDecoder jwtDecoder() throws Exception {
         ClassPathResource jwkResource = new ClassPathResource("demo/jwk/demo-hs256.jwk.json");
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode node;
+        String jwkJson;
         try (InputStream inputStream = jwkResource.getInputStream()) {
-            node = mapper.readTree(inputStream);
+            jwkJson = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
         }
 
-        OctetSequenceKey octetKey = OctetSequenceKey.parse(node.toString());
+        OctetSequenceKey octetKey = OctetSequenceKey.parse(jwkJson);
         SecretKey secretKey = new SecretKeySpec(octetKey.toByteArray(), "HmacSHA256");
 
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(secretKey)

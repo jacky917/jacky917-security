@@ -67,8 +67,8 @@ flowchart LR
 
 | 里程碑 | 內容 | 詳細 | 完成條件 |
 |---|---|---|---|
-| **M0 準備** | commit 目前所有未提交的變更；建立 `1.x` 分支；`1.x` 的 parent 改為 3.5.16 正式版，發佈 `1.1.0`（含 Step 9 的 bug 修正） | [升級設計 §6 步驟 0](boot4-migration-design.md#6-實施步驟) | `1.1.0` 可被外部專案引入 |
-| **M1 升級** | `main` 升級到 Boot 4.1.1，**不改結構** | [升級設計](boot4-migration-design.md) | 全部測試通過；行為回歸檢查通過 |
+| **M0 準備** ✅ 分支已建立（`1.1.0` 待發佈） | commit 目前所有未提交的變更；建立 `1.x` 分支；`1.x` 的 parent 改為 3.5.16 正式版，發佈 `1.1.0`（含 Step 9 的 bug 修正） | [升級設計 §6 步驟 0](boot4-migration-design.md#6-實施步驟) | `1.1.0` 可被外部專案引入 |
+| **M1 升級** ✅ 已實施（待合併） | `main` 升級到 Boot 4.1.1，**不改結構** | [升級設計](boot4-migration-design.md) | 全部測試通過；行為回歸檢查通過 |
 | **M2 重構** | 自有 parent + flatten、模組搬移與改名、core、BOM、relocation、enforcer、CI、破壞性清理 | [Repo 設計 §9](repo-structure-design.md#9-重構實施步驟) | 外部空專案可透過 BOM 引入 `2.0.0-M2` |
 | **M3 2.0** | 文件重組、升級說明 | [Repo 設計 §6](repo-structure-design.md#6-文件結構) | 發佈 `2.0.0` |
 | **M4 AS MVP** | AS starter、帳號密碼 + Google 登入、BFF 範例、E2E | [AS 設計 §11 第 1 階段](auth-server-design.md#11-分階段實作計畫) | 瀏覽器 → BFF → AS → RS 全流程成功 |
@@ -96,7 +96,7 @@ flowchart LR
 |---|---|
 | 需要 Spring Boot 4.1 以上 | 升級應用程式 |
 | 測試依賴改為 `spring-boot-starter-security-test`、`spring-boot-starter-webmvc-test` | 改 POM |
-| `permit-all-patterns` 的 `**` 只能放在結尾 | 檢查設定 |
+| `permit-all-patterns` 的 `**` 只能放在開頭或結尾 | 檢查設定 |
 | 錯誤回應 JSON 改用應用程式的 Jackson 3 設定 | 通常不需要處理；有自訂 `spring.jackson.*` 時確認輸出格式 |
 
 ### 4.2 建議一併處理（待確認）

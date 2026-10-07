@@ -1,7 +1,5 @@
 package jacky917.demo.authorizationserver.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -15,6 +13,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -58,10 +57,8 @@ public class JwtIssuerService {
     @PostConstruct
     void init() throws Exception {
         ClassPathResource resource = new ClassPathResource("demo/jwk/demo-hs256.jwk.json");
-        ObjectMapper mapper = new ObjectMapper();
         try (InputStream inputStream = resource.getInputStream()) {
-            JsonNode node = mapper.readTree(inputStream);
-            this.signingKey = OctetSequenceKey.parse(node.toString());
+            this.signingKey = OctetSequenceKey.parse(new String(inputStream.readAllBytes(), StandardCharsets.UTF_8));
         }
     }
 

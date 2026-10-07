@@ -17,6 +17,8 @@
 - [🟢] Step 9: 程式碼審查、Bug 修正、雙語 JavaDoc 與完整使用文件
 - [🟡] Step 10: Authorization Server 設計（方案 C，支援第三方登入）— 設計草案完成，待決策
 - [🟡] Step 11: 2.0 設計（Spring Boot 4.1 升級 + Repo 拆分）— 設計草案完成，待決策
+- [🟢] Step 12: 建立 `1.x` 維護分支（M0；`1.1.0` 待發佈）
+- [🟢] Step 13: 升級到 Spring Boot 4.1.1（M1；待合併）
 
 ---
 
@@ -379,3 +381,32 @@
   - **DEC-039**（建議，待確認）：單一 repo、多模組、統一版本；以 enforcer 禁止 Resource Server 模組依賴 Authorization Server 模組。
 - **Next TODO**:
   - 取得 `docs/v2-overview.md` §7 的答覆，優先處理 M0 前需要決定的兩項（commit 目前變更、1.x 維護期）。
+
+---
+## Step 12: 建立 `1.x` 維護分支（M0）
+- **Status**: 🟢 Completed（尚未發佈）
+- 詳細紀錄見 `1.x` 分支的 `docs/PROGRESS.md`：parent 改為 `3.5.16`、版本 `1.1.0`、37 個測試通過。
+
+---
+## Step 13: 升級到 Spring Boot 4.1.1（M1）
+- **Status**: 🟢 Completed（分支 `claude/spring-boot-4.1-upgrade`，待合併）
+- **Acceptance Criteria**:
+  - [x] parent `3.5.10-SNAPSHOT` → `4.1.1`，版本 `2.0.0-SNAPSHOT`，移除 Spring Snapshot repository。
+  - [x] Starter 改用新名稱：`spring-boot-starter-webmvc`、`spring-boot-starter-security-oauth2-resource-server`；測試改用 `spring-boot-starter-security-test`、`spring-boot-starter-webmvc-test`。
+  - [x] 自動配置改用 `beforeName`（Boot 4 的新類別位置），新增 `AutoConfigurationOrderingIntegrationTest` 鎖住排序。
+  - [x] 錯誤回應改用應用程式的 Jackson 3 `JsonMapper`，新增 `ErrorResponseJsonMapperIntegrationTest`。
+  - [x] `@AutoConfigureMockMvc` 改為 `org.springframework.boot.webmvc.test.autoconfigure`。
+  - [x] Demo 移除 Jackson 2（JWK 直接以字串交給 Nimbus 解析）；springdoc `3.1.1`；`exec-maven-plugin` 明確指定 `3.6.4`。
+  - [x] 手動 E2E：兩個 demo 以 Boot 4.1.1 啟動，14 個請求結果符合預期（Resource Server 以 H2 執行）。
+  - [x] 文件更新：相容性、版本線、依賴名稱、`WWW-Authenticate`、`FACTOR_BEARER`、路徑樣式規則、Jackson 行為。
+- **Commands Run & Results**:
+  - `mvn -B clean verify`：第一次 **FAILURE**（2 個測試：`WWW-Authenticate` 多了 `resource_metadata`；authority 多了 `FACTOR_BEARER`），確認為 Spring Security 7 的預期行為後調整測試；之後 **SUCCESS**，41 個測試全數通過。
+  - `mvn -B -q validate`：修正 `exec-maven-plugin` 版本警告後無警告。
+  - 路徑樣式探測：`/api/**/admin`、`/files/**/*.png` 啟動失敗（`PatternParseException`），`/public/**` 正常。
+- **Decision Log**:
+  - **DEC-041**: 錯誤回應採用 `ObjectProvider<JsonMapper>.getIfUnique`，有多個 `JsonMapper` 時退回預設 mapper，避免因 bean 不唯一而失敗。
+  - **DEC-042**: 接受 Spring Security 7 新增的 `FACTOR_BEARER` authority 與 RFC 9728 `resource_metadata`，不加以移除；於文件中說明。
+- **Next TODO**:
+  - 在有 Docker 的環境驗證 MySQL（Connector/J 9.7.0）。
+  - PR #1 合併後，將本分支以 PR 合併到 `main`，並發佈 `2.0.0-M1`。
+

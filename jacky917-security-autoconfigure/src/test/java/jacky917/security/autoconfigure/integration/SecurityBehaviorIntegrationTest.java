@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -45,14 +46,24 @@ class SecurityBehaviorIntegrationTest {
     private MockMvc mockMvc;
 
     @Test
-    @DisplayName("未帶 token：401 JSON + WWW-Authenticate: Bearer")
+    @DisplayName("未帶 token：401 JSON + WWW-Authenticate: Bearer（Spring Security 7 另帶 resource_metadata）")
     void missingTokenReturnsJson401() throws Exception {
         mockMvc.perform(get("/secure"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(header().string("WWW-Authenticate", "Bearer"))
+                .andExpect(header().string("WWW-Authenticate", startsWith("Bearer")))
+                .andExpect(header().string("WWW-Authenticate", containsString("resource_metadata=")))
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.errorCode").value("Unauthorized"))
                 .andExpect(jsonPath("$.path").value("/secure"));
+    }
+
+    @Test
+    @DisplayName("Spring Security 7：RFC 9728 protected resource metadata 端點可匿名存取")
+    void protectedResourceMetadataIsPublic() throws Exception {
+        mockMvc.perform(get("/.well-known/oauth-protected-resource"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resource").exists())
+                .andExpect(jsonPath("$.bearer_methods_supported[0]").value("header"));
     }
 
     @Test

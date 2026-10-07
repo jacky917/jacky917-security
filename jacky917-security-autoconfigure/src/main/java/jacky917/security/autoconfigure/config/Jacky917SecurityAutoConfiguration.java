@@ -1,18 +1,16 @@
 package jacky917.security.autoconfigure.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import jacky917.security.autoconfigure.authentication.JwtAuthoritiesExtractor;
 import jacky917.security.autoconfigure.methodsecurity.Jacky917AuthorityEvaluator;
 import jacky917.security.autoconfigure.properties.Jacky917SecurityProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
-import org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration;
-import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,6 +24,7 @@ import org.springframework.security.core.annotation.AnnotationTemplateExpression
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -60,12 +59,25 @@ import java.util.Map;
  * 設定 {@code jacky917.security.enabled=false} 時整個配置停用。此配置會在
  * Spring Boot 內建的安全性自動配置之前執行，確保其 filter chain 與 JWT
  * 轉換器優先於 Boot 的預設值。
+ * <p>
+ * Error bodies are serialized with the application's Jackson
+ * {@code JsonMapper} bean when exactly one exists, so {@code spring.jackson.*}
+ * settings apply; otherwise a default mapper is used.
+ * <p>
+ * 錯誤回應以應用程式唯一的 Jackson {@code JsonMapper} bean 序列化，因此
+ * {@code spring.jackson.*} 設定會生效；若沒有或不只一個，則使用預設的 mapper。
  *
  * @author Jacky
  * @since 0.0.1
  */
 @Slf4j
-@AutoConfiguration(before = {SecurityAutoConfiguration.class, OAuth2ResourceServerAutoConfiguration.class})
+// 以字串指定，類別不存在時會被忽略而不是啟動失敗；排序是否生效由 AutoConfigurationOrderingIntegrationTest 檢查
+@AutoConfiguration(beforeName = {
+        "org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration",
+        "org.springframework.boot.security.autoconfigure.web.servlet.ServletWebSecurityAutoConfiguration",
+        "org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration",
+        "org.springframework.boot.security.oauth2.server.resource.autoconfigure.web.OAuth2ResourceServerWebSecurityAutoConfiguration"
+})
 @RequiredArgsConstructor
 @EnableWebSecurity
 @EnableConfigurationProperties(Jacky917SecurityProperties.class)
@@ -73,8 +85,10 @@ import java.util.Map;
 @ConditionalOnProperty(name = "jacky917.security.enabled", havingValue = "true", matchIfMissing = true)
 public class Jacky917SecurityAutoConfiguration {
 
+    private static final JsonMapper DEFAULT_JSON_MAPPER = JsonMapper.builder().build();
+
     private final Jacky917SecurityProperties properties;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectProvider<JsonMapper> jsonMapperProvider;
 
     /**
      * Creates the default stateless JWT security filter chain.
@@ -240,7 +254,8 @@ public class Jacky917SecurityAutoConfiguration {
         body.put("message", message);
         body.put("path", path);
 
-        response.getWriter().write(objectMapper.writeValueAsString(body));
+        JsonMapper jsonMapper = jsonMapperProvider.getIfUnique(() -> DEFAULT_JSON_MAPPER);
+        response.getWriter().write(jsonMapper.writeValueAsString(body));
     }
 
     /**
