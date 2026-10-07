@@ -141,7 +141,7 @@ public ResponseEntity<Void> publishArticle(@PathVariable String id) { ... }
 
 ### Demo 範例
 
-`demo-resource-server` 以 Clip 為例實作了 ABAC：
+`example-resource-server` 以 Clip 為例實作了 ABAC：
 
 - [`AuthzService`](../../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/authz/AuthzService.java)：判斷介面
 - [`DemoAuthzConfiguration`](../../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/authz/DemoAuthzConfiguration.java)：以 `clip.ownerId == JWT sub` 判斷，找不到資料時拒絕

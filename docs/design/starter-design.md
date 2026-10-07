@@ -1,6 +1,6 @@
 # Starter 設計理念與架構
 
-本文件說明 `jacky917-security-starter` 的設計原則、模組結構、自動配置的實際運作方式，以及每個元件的擴充點。使用方式見 [使用指南](../resource-server/getting-started.md)。
+本文件說明 Resource Server starter（`jacky917-security-resource-server-starter`）的設計原則、模組結構、自動配置的實際運作方式，以及每個元件的擴充點。使用方式見 [使用指南](../resource-server/getting-started.md)。
 
 ---
 
@@ -17,21 +17,28 @@
 ## 模組結構
 
 ```
-jacky917-security-starter          ← 業務專案引入這個（只有 pom，無程式碼）
-├── jacky917-security-autoconfigure
-│   ├── config/Jacky917SecurityAutoConfiguration        自動配置入口
-│   ├── authentication/JwtAuthoritiesExtractor          claims → authorities
-│   ├── methodsecurity/Jacky917AuthorityEvaluator       @RequireAny / @RequireAll 的判斷邏輯
-│   └── properties/Jacky917SecurityProperties           jacky917.security.* 屬性
+resource-server/
+├── jacky917-security-resource-server-starter         ← 業務專案引入這個（只有 pom，無程式碼）
+├── jacky917-security-resource-server-autoconfigure
+│   └── jacky917.security.resourceserver.autoconfigure
+│       ├── config/Jacky917SecurityAutoConfiguration       自動配置入口
+│       ├── authentication/JwtAuthoritiesExtractor         claims → authorities
+│       ├── methodsecurity/Jacky917AuthorityEvaluator      @Require* 的判斷邏輯
+│       └── properties/Jacky917SecurityProperties          jacky917.security.* 屬性
 └── jacky917-security-annotations
     └── @RequireRole / @RequirePerm / @RequireScope / @RequireAny / @RequireAll
+core/
+└── jacky917-security-core                             ← claim 名稱、權限前綴、TrustLevel（純 Java）
 ```
 
 | 模組 | 依賴 | 說明 |
 |---|---|---|
 | `jacky917-security-annotations` | `spring-security-core` | 只有註解定義，可單獨引入到不想帶入自動配置的模組（例如共用的 API interface 模組） |
-| `jacky917-security-autoconfigure` | `spring-boot-starter-security-oauth2-resource-server`、Jackson 3（`tools.jackson.core:jackson-databind`）；`spring-boot-starter-webmvc`、Lombok 為 optional | 自動配置與執行期邏輯 |
-| `jacky917-security-starter` | 上面兩個 | 聚合依賴 |
+| `jacky917-security-resource-server-autoconfigure` | `jacky917-security-core`、`spring-boot-starter-security-oauth2-resource-server`、Jackson 3（`tools.jackson.core:jackson-databind`）；`spring-boot-starter-webmvc`、Lombok 為 optional | 自動配置與執行期邏輯 |
+| `jacky917-security-resource-server-starter` | 上面兩個 | 聚合依賴 |
+| `jacky917-security-core` | **無** | 與 Authorization Server 共用的 claim 契約 |
+
+依賴方向由 `maven-enforcer-plugin` 檢查：Resource Server 模組不得依賴 Authorization Server 模組；`core` 不得有任何依賴（[Repo 拆分設計 §3](repo-structure-design.md#3-目標結構)）。
 
 自動配置透過 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 註冊。
 
@@ -103,9 +110,9 @@ sequenceDiagram
 | `jacky917SecurityFilterChain` | `SecurityFilterChain` | 沒有任何 `SecurityFilterChain` Bean | HTTP 安全規則 |
 | `jwtAuthoritiesExtractor` | `JwtAuthoritiesExtractor` | 沒有同型別 Bean | claims → authorities |
 | `jwtAuthenticationConverter` | `JwtAuthenticationConverter` | 沒有同型別 Bean | 把 `Jwt` 轉成 `JwtAuthenticationToken` |
-| `jacky917AuthorityEvaluator` | `Jacky917AuthorityEvaluator` | 沒有**同名稱** Bean | 供 `@RequireAny` / `@RequireAll` 的 SpEL 呼叫 |
+| `jacky917AuthorityEvaluator` | `Jacky917AuthorityEvaluator` | 沒有**同名稱** Bean | 供所有 `@Require*` 註解的 SpEL 呼叫；使用 `jwt.prefix.*` 設定的前綴 |
 | `annotationTemplateExpressionDefaults` | `AnnotationTemplateExpressionDefaults` | 沒有同型別 Bean | 讓 `@Require*` 中的 `{value}` 佔位符生效；宣告為 `static` |
-| （內部設定類別） | `MethodSecurityConfiguration` | `jacky917.security.method-security.enabled` 不為 `false` | `@EnableMethodSecurity(prePostEnabled = true, securedEnabled = true)` |
+| （內部設定類別） | `MethodSecurityConfiguration` | 無（Starter 啟用即生效；2.0 移除了關閉開關） | `@EnableMethodSecurity(securedEnabled = true)` |
 
 Starter 另外在自動配置類別上標註了 `@EnableWebSecurity`，並以 `@EnableConfigurationProperties` 註冊 `Jacky917SecurityProperties`。
 
@@ -127,18 +134,20 @@ Starter 另外在自動配置類別上標註了 `@EnableWebSecurity`，並以 `@
 
 ## 自訂註解的實作原理
 
-`@Require*` 是以 Spring Security 6.3 起支援的**註解樣板（annotation template）**實作。以 `@RequireRole` 為例：
+`@Require*` 是以 Spring Security 6.3 起支援的**註解樣板（annotation template）**實作，全部呼叫 `jacky917AuthorityEvaluator` Bean。以 `@RequireRole` 為例：
 
 ```java
-@PreAuthorize("hasAuthority('ROLE_{value}')")
+@PreAuthorize("@jacky917AuthorityEvaluator.hasRole(authentication, '{value}')")
 public @interface RequireRole {
     String value();
 }
 ```
 
-`AnnotationTemplateExpressionDefaults` Bean 存在時，Spring Security 會把 `{value}` 替換成註解屬性值，`@RequireRole("ADMIN")` 因此等同於 `@PreAuthorize("hasAuthority('ROLE_ADMIN')")`。
+`AnnotationTemplateExpressionDefaults` Bean 存在時，Spring Security 會把 `{value}` 替換成註解屬性值。`hasRole` 會加上 `jacky917.security.jwt.prefix.role` 設定的前綴（預設 `ROLE_`），所以 `@RequireRole("ADMIN")` 在預設設定下等同於 `@PreAuthorize("hasAuthority('ROLE_ADMIN')")`。
 
-`@RequireAny` / `@RequireAll` 則呼叫 `jacky917AuthorityEvaluator` Bean：
+> 1.x 直接寫成 `@PreAuthorize("hasAuthority('ROLE_{value}')")`，前綴因此固定，修改設定後註解永遠 403（舊版限制 §3）。2.0 改為呼叫 evaluator，前綴與 claim 映射一致。
+
+`@RequireAny` / `@RequireAll` 使用完整 authority 名稱：
 
 ```java
 @PreAuthorize("@jacky917AuthorityEvaluator.hasAllAuthorities(authentication, '{value}')")
@@ -148,7 +157,6 @@ public @interface RequireAll { String value(); }
 這個設計帶來的限制：
 
 - 因為底層是 `@PreAuthorize`，同一個方法無法疊加多個（見 [限制 §1](../resource-server/limitations.md#1-同一個方法只能有一個授權註解)）。
-- 前綴寫在註解字串中，不會跟著設定檔改變（見 [限制 §3](../resource-server/limitations.md#3-單一條件註解的前綴固定)）。
 - 屬性值直接插入 SpEL 字串常值中，不可包含單引號。
 
 ---
@@ -161,6 +169,6 @@ public @interface RequireAll { String value(); }
 | 讀取巢狀 claim、加入額外 authority | 定義 `JwtAuthoritiesExtractor` 子類別 Bean | [使用指南 §8.2](../resource-server/getting-started.md#82-自訂-authority-映射例如-keycloak-的-realm_accessroles) |
 | 改 principal 名稱 | 定義 `JwtAuthenticationConverter` Bean | [使用指南 §8.1](../resource-server/getting-started.md#81-改用-email-作為-principal-名稱) |
 | HTTP method 規則、多條 chain、自訂錯誤格式 | 定義 `SecurityFilterChain` Bean | [使用指南 §8.3](../resource-server/getting-started.md#83-自訂-securityfilterchain) |
-| 改 `@RequireAny` / `@RequireAll` 判斷邏輯 | 定義名為 `jacky917AuthorityEvaluator` 的 Bean | |
+| 改 `@Require*` 判斷邏輯 | 定義名為 `jacky917AuthorityEvaluator` 的 Bean（需提供 `hasRole`、`hasPerm`、`hasScope`、`hasAnyAuthority`、`hasAllAuthorities`） | |
 | 資源層級授權（ABAC） | 自訂 Bean + `@PreAuthorize("@bean.method(...)")` | [授權模型 — ABAC](../resource-server/authorization-model.md#abac資源屬性授權) |
 | Token 驗證規則（aud、黑名單、多 issuer） | 自訂 `JwtDecoder` 與 `OAuth2TokenValidator` | [使用指南 §2](../resource-server/getting-started.md#2-提供-jwtdecoder必要) |

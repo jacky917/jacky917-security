@@ -1,6 +1,6 @@
 # 限制與注意事項
 
-本文件列出 `jacky917-security-starter` 已知的限制，以及容易誤用的行為。每一項都附上「會發生什麼事」與「該怎麼做」。
+本文件列出 `jacky917-security-resource-server-starter`（2.x）已知的限制，以及容易誤用的行為。每一項都附上「會發生什麼事」與「該怎麼做」。
 
 標示 🧪 的項目已有自動化測試驗證，見 [`SecurityBehaviorIntegrationTest`](../../resource-server/jacky917-security-resource-server-autoconfigure/src/test/java/jacky917/security/resourceserver/autoconfigure/integration/SecurityBehaviorIntegrationTest.java)。
 
@@ -12,7 +12,7 @@
 |---|---|---|---|
 | 1 | [同一個方法只能有一個授權註解](#1-同一個方法只能有一個授權註解) | 🔴 高 | 請求進來時（HTTP 500） |
 | 2 | [類別與方法的註解不會合併](#2-類別與方法的註解不會合併) | 🔴 高 | 不會發現（權限比預期寬鬆） |
-| 3 | [單一條件註解的前綴固定](#3-單一條件註解的前綴固定) | 🟠 中 | 請求進來時（永遠 403） |
+| 3 | [單一條件註解的前綴固定](#3-單一條件註解的前綴固定20-已解決) | ✅ 2.0 已解決 | — |
 | 4 | [必須自行提供 JwtDecoder](#4-必須自行提供-jwtdecoder) | 🟠 中 | 啟動時 |
 | 5 | [Spring Boot 原生的 JWT converter 屬性無效](#5-spring-boot-原生的-jwt-converter-屬性無效) | 🟠 中 | 不會發現（屬性被忽略） |
 | 6 | [Token 無法撤銷](#6-token-無法撤銷) | 🟠 中 | 設計限制 |
@@ -23,7 +23,7 @@
 | 11 | [claims 解析的限制](#11-claims-解析的限制) | 🟡 低 | 不會發現（authority 缺少） |
 | 12 | [錯誤回應的限制](#12-錯誤回應的限制) | 🟡 低 | 設計限制 |
 | 13 | [自訂 SecurityFilterChain 會讓整條 chain 讓位](#13-自訂-securityfilterchain-會讓整條-chain-讓位) | 🟡 低 | 設計限制 |
-| 14 | [停用方法級授權時註解靜默失效](#14-停用方法級授權時註解靜默失效) | 🟡 低 | 不會發現 |
+| 14 | [停用方法級授權時註解靜默失效](#14-停用方法級授權時註解靜默失效20-已解決) | ✅ 2.0 已解決 | — |
 | 15 | [支援範圍](#15-支援範圍) | — | — |
 | 16 | [發佈與依賴](#16-發佈與依賴) | 🟠 中 | 引入依賴時 |
 
@@ -90,9 +90,11 @@ class AdminController {
 
 ---
 
-## 3. 單一條件註解的前綴固定
+## 3. 單一條件註解的前綴固定（2.0 已解決）
 
-**會發生什麼事**
+> ✅ **2.0 起已解決**：這三個註解改為使用 `jacky917.security.jwt.prefix.*` 設定的前綴（[設定參考](configuration.md#jwt-claim-與前綴)）。以下內容只適用於 **1.x**。
+
+**會發生什麼事（1.x）**
 
 `@RequireRole`、`@RequirePerm`、`@RequireScope` 的前綴寫死在註解定義中：
 
@@ -104,9 +106,9 @@ class AdminController {
 
 若你修改了 `jacky917.security.jwt.prefix.*`，Token 映射出的 authority 會用新前綴，但這三個註解仍檢查舊前綴，結果是**永遠 403**。
 
-**該怎麼做**
+**該怎麼做（1.x）**
 
-修改前綴時，改用 `@RequireAny` / `@RequireAll`（參數寫完整 authority 名稱），或使用 `@PreAuthorize("hasAuthority('...')")`。
+修改前綴時，改用 `@RequireAny` / `@RequireAll`（參數寫完整 authority 名稱），或使用 `@PreAuthorize("hasAuthority('...')")`；或升級到 2.0。
 
 ---
 
@@ -183,7 +185,8 @@ Token 的驗證規則完全由你提供的 `JwtDecoder` 決定。Starter 不會�
 | 放行路徑，不帶 Token | 200 |
 | 放行路徑，帶**無效或過期**的 Token | **401**（不會當作匿名放行） |
 | 放行路徑，方法上有 `@Require*` 且未帶 Token | 401 |
-| 自訂 `permit-all-patterns` | **取代**預設清單（Swagger、health check 不再放行） |
+| 自訂 `permit-all-patterns` | **取代**預設清單（`/actuator/health` 不再放行） |
+| 預設清單 | 只有 `/actuator/health`；Swagger／OpenAPI 需自行加入（1.x 預設會放行） |
 | 想要「GET 放行、POST 需驗證」 | 無法用 `permit-all-patterns` 表達 |
 | `**` 放在路徑中間（例如 `/api/**/admin`） | `2.x`：**啟動失敗**（Spring Security 7 的路徑比對規則） |
 
@@ -275,17 +278,19 @@ Token 的驗證規則完全由你提供的 `JwtDecoder` 決定。Starter 不會�
 
 ---
 
-## 14. 停用方法級授權時註解靜默失效
+## 14. 停用方法級授權時註解靜默失效（2.0 已解決）
 
-**會發生什麼事**
+> ✅ **2.0 起已解決**：`jacky917.security.method-security.enabled` 已移除，方法級授權在 Starter 啟用時一律開啟。以下內容只適用於 **1.x**。
+
+**會發生什麼事（1.x）**
 
 設定 `jacky917.security.method-security.enabled=false` 後，`@PreAuthorize`、`@Require*` 等註解**不會報錯，也不會檢查**，所有已驗證的使用者都能存取。
 
 反過來說，業務專案若自行加了 `@EnableMethodSecurity`，即使該屬性為 `false`，方法級授權仍會啟用。
 
-**該怎麼做**
+**該怎麼做（1.x）**
 
-除非你很確定，否則不要停用方法級授權。
+除非你很確定，否則不要停用方法級授權；或升級到 2.0。
 
 ---
 
@@ -311,7 +316,8 @@ Token 的驗證規則完全由你提供的 `JwtDecoder` 決定。Starter 不會�
 
 - 套件發佈在 GitHub Packages，**即使是公開套件也必須以 PAT 認證**才能下載。
 - `1.0.0` 的 parent POM 繼承自 `spring-boot-starter-parent:3.5.10-SNAPSHOT`，解析依賴時需要存取 Spring Snapshot repository，在企業 Maven mirror 或離線環境中常會失敗。`1.1.0` 起改為 `3.5.16` 正式版，`2.x` 為 `4.1.1` 正式版。
-- `jacky917-security-parent` 必須和三個模組一起發佈。若發佈流程漏掉 parent，消費端會遇到 `jacky917-security-parent:pom` 找不到的錯誤（目前的 `publish.yml` 已包含 parent）。
+- 1.x 的模組依賴 `jacky917-security-parent`，若發佈流程漏掉 parent，消費端會遇到 `jacky917-security-parent:pom` 找不到的錯誤。2.x 發佈的是不含 parent 的獨立 POM（`flatten-maven-plugin`），沒有這個問題。
+- 2.x 的座標改為 `io.github.jacky917`（見 [升級到 2.0](../guides/upgrade-to-2.0.md)）。
 
 **該怎麼做**
 

@@ -1,6 +1,6 @@
 # 使用指南
 
-本文件說明如何在業務專案（Resource Server）中使用 `jacky917-security-starter`，從引入依賴、設定 Token 驗證、撰寫授權規則，到覆寫預設元件與撰寫測試。
+本文件說明如何在業務專案（Resource Server）中使用 `jacky917-security-resource-server-starter`，從引入依賴、設定 Token 驗證、撰寫授權規則，到覆寫預設元件與撰寫測試。
 
 上線前請務必一併閱讀 [限制與注意事項](limitations.md)。
 
@@ -17,7 +17,7 @@
 7. [錯誤回應](#7-錯誤回應)
 8. [覆寫預設元件](#8-覆寫預設元件)
 9. [CORS](#9-cors)
-10. [停用 Starter 或部分功能](#10-停用-starter-或部分功能)
+10. [停用 Starter](#10-停用-starter)
 11. [撰寫測試](#11-撰寫測試)
 12. [上線檢查清單](#12-上線檢查清單)
 
@@ -31,22 +31,40 @@
 > **2.x（Spring Boot 4.1）尚未發佈。** GitHub Packages 上目前只有 `1.0.0`（Spring Boot 3.5），使用方式見 [`1.x` 分支](https://github.com/jacky917/jacky917-security-starter/tree/1.x)。
 > 要先試用 2.x，請 clone 本 repo 後執行 `mvn -DskipTests install`，即可在本機使用 `2.0.0-SNAPSHOT`。
 
+建議以 BOM 管理版本：
+
 ```xml
-<dependency>
-    <groupId>com.github.jacky917</groupId>
-    <artifactId>jacky917-security-starter</artifactId>
-    <version>2.0.0-SNAPSHOT</version>   <!-- 尚未發佈，需先在本機 mvn install；見上方說明 -->
-</dependency>
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-webmvc</artifactId>
-</dependency>
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.github.jacky917</groupId>
+            <artifactId>jacky917-security-bom</artifactId>
+            <version>2.0.0-SNAPSHOT</version>   <!-- 尚未發佈，需先在本機 mvn install；見上方說明 -->
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <dependency>
+        <groupId>io.github.jacky917</groupId>
+        <artifactId>jacky917-security-resource-server-starter</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-webmvc</artifactId>
+    </dependency>
+</dependencies>
 ```
 
-`jacky917-security-starter` 會帶入：
+> 從 1.x 升級？座標已改名（`com.github.jacky917:jacky917-security-starter` → `io.github.jacky917:jacky917-security-resource-server-starter`），見 [升級到 2.0](../guides/upgrade-to-2.0.md)。
 
-- `jacky917-security-autoconfigure`（自動配置）
+`jacky917-security-resource-server-starter` 會帶入：
+
+- `jacky917-security-resource-server-autoconfigure`（自動配置）
 - `jacky917-security-annotations`（`@Require*` 註解）
+- `jacky917-security-core`（claim 名稱等共用常數）
 - `spring-boot-starter-security-oauth2-resource-server`（內含 `spring-boot-starter-security`）
 
 `spring-boot-starter-webmvc`（Spring Boot 3.5 為 `spring-boot-starter-web`）在 Starter 中是 optional，**業務專案必須自行引入**。Starter 只在 Servlet Web 應用中啟用；若應用不是 Servlet（例如 WebFlux 或非 Web 的批次程式），自動配置會直接略過且不會報錯，Starter 的任何規則（含 `@Require*` 註解）都不會套用。
@@ -136,7 +154,7 @@ class JwtDecoderConfig {
 > [!CAUTION]
 > HS256 的金鑰同時可以「驗證」與「簽發」Token。任何拿到這把金鑰的服務都能偽造任意身分的 Token。多服務架構建議改用 RS256 / ES256 等非對稱演算法。HS256 金鑰長度至少需 256 bits（32 bytes）。
 
-`demo-resource-server` 的 [`DemoJwtDecoderConfiguration`](../../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/config/DemoJwtDecoderConfiguration.java) 是一個從 JWK 檔載入 HS256 金鑰的實際範例（僅驗證 issuer，未驗證 audience，僅供示範）。
+`example-resource-server` 的 [`DemoJwtDecoderConfiguration`](../../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/config/DemoJwtDecoderConfiguration.java) 是一個從 JWK 檔載入 HS256 金鑰的實際範例（僅驗證 issuer，未驗證 audience，僅供示範）。
 
 ---
 
@@ -144,7 +162,7 @@ class JwtDecoderConfig {
 
 除了 `jacky917.security.permit-all-patterns` 列出的路徑，**所有請求都需要有效的 JWT**。
 
-預設值：
+預設值**只有** `/actuator/health`。需要公開 Swagger／OpenAPI 時，請自行加入：
 
 ```yaml
 jacky917:
@@ -155,11 +173,12 @@ jacky917:
       - /v3/api-docs/**
       - /swagger-ui/**
       - /swagger-ui.html
-      - /swagger-ui/index.html
 ```
 
 > [!IMPORTANT]
-> 自訂此屬性會**整個取代**預設清單，不會合併。若你仍需要 Swagger 與 health check，請把它們一起列出。
+> 自訂此屬性會**整個取代**預設清單，不會合併。若你仍需要 health check，請把它一起列出。
+>
+> 1.x 的預設清單包含 Swagger 路徑；2.0 起移除，避免正式環境意外公開 API 文件。
 
 撰寫規則：
 
@@ -218,9 +237,9 @@ String me2(@AuthenticationPrincipal Jwt jwt) {
 
 | 註解 | 檢查內容 | 參數格式 | 範例 | 等同於 |
 |---|---|---|---|---|
-| `@RequireRole` | 單一角色 | 不含前綴 | `@RequireRole("ADMIN")` | `hasAuthority('ROLE_ADMIN')` |
-| `@RequirePerm` | 單一權限 | 不含前綴 | `@RequirePerm("order:read")` | `hasAuthority('PERM_order:read')` |
-| `@RequireScope` | 單一 scope | 不含前綴 | `@RequireScope("profile.read")` | `hasAuthority('SCOPE_profile.read')` |
+| `@RequireRole` | 單一角色 | 不含前綴 | `@RequireRole("ADMIN")` | `hasAuthority('ROLE_ADMIN')`（預設前綴） |
+| `@RequirePerm` | 單一權限 | 不含前綴 | `@RequirePerm("order:read")` | `hasAuthority('PERM_order:read')`（預設前綴） |
+| `@RequireScope` | 單一 scope | 不含前綴 | `@RequireScope("profile.read")` | `hasAuthority('SCOPE_profile.read')`（預設前綴） |
 | `@RequireAny` | 任一符合（OR） | **含前綴**，以 `\|` 分隔 | `@RequireAny("ROLE_ADMIN\|PERM_order:read")` | 擁有其中任一個 |
 | `@RequireAll` | 全部符合（AND） | **含前綴**，以 `\|` 分隔 | `@RequireAll("ROLE_ADMIN\|PERM_order:write")` | 同時擁有全部 |
 
@@ -353,7 +372,7 @@ Order get(@PathVariable String orderId) { ... }
 - SpEL 中以 `@beanName` 參照 Bean，以 `#參數名` 參照方法參數。參數名稱需要編譯時保留（Spring Boot 的 Maven parent 預設已開啟 `-parameters`）。
 - 判斷方法請**預設回傳 `false`**，任何例外狀況（找不到資料、參數為 `null`）都應拒絕。
 - 資源不存在時回傳 `false` 會得到 403 而不是 404，這可以避免洩漏「資源是否存在」，但若你的 API 需要 404，請在 Controller 內自行判斷。
-- 完整範例見 `demo-resource-server` 的 [`DemoAuthzConfiguration`](../../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/authz/DemoAuthzConfiguration.java)。
+- 完整範例見 `example-resource-server` 的 [`DemoAuthzConfiguration`](../../examples/example-resource-server/src/main/java/jacky917/demo/resourceserver/authz/DemoAuthzConfiguration.java)。
 
 更多授權模型說明見 [授權模型](authorization-model.md)。
 
@@ -412,7 +431,7 @@ Starter 的每個 Bean 都有 `@ConditionalOnMissingBean`：只要你定義同�
 | claims → authorities 的規則 | `JwtAuthoritiesExtractor`（子類別） | 只替換 authority 映射 |
 | principal 名稱、authority 來源 | `JwtAuthenticationConverter` | 取代 Starter 的 converter；預設的 `JwtAuthoritiesExtractor` 仍存在但不會被使用，除非你自行注入 |
 | 整個 HTTP 安全規則 | `SecurityFilterChain` | Starter 的 filter chain 完全不建立（放行路徑、JSON 錯誤處理都要自己設） |
-| `@RequireAny` / `@RequireAll` 的判斷邏輯 | 名為 `jacky917AuthorityEvaluator` 的 Bean | 以 Bean 名稱判斷，型別可以不同，但要有相同簽章的 `hasAnyAuthority` / `hasAllAuthorities` 方法 |
+| `@Require*` 的判斷邏輯 | 名為 `jacky917AuthorityEvaluator` 的 Bean | 以 Bean 名稱判斷，型別可以不同，但要有相同簽章的 `hasRole`、`hasPerm`、`hasScope`、`hasAnyAuthority`、`hasAllAuthorities` 方法 |
 
 ### 8.1 改用 email 作為 principal 名稱
 
@@ -488,19 +507,16 @@ Starter **不設定 CORS**。瀏覽器前端直接呼叫 API 時，需要提供 
 
 ---
 
-## 10. 停用 Starter 或部分功能
+## 10. 停用 Starter
 
 ```yaml
 jacky917:
   security:
     enabled: false               # 停用整個自動配置
-    method-security:
-      enabled: false             # 只停用方法級授權（@PreAuthorize、@Require* 都不會生效）
 ```
 
 - `enabled: false` 時，Starter 的 filter chain、converter、evaluator 都不會建立，應用回到 Spring Boot 原生行為（若有設定 `spring.security.oauth2.resourceserver.jwt.*`，Boot 會建立它自己的 Resource Server 設定）。
-- `method-security.enabled: false` 時，若業務專案自己另外加了 `@EnableMethodSecurity`，方法級授權仍會啟用。
-- 停用方法級授權後，`@Require*` 註解**不會報錯，而是靜默失效**，請確認這是你要的結果。
+- 2.0 起**沒有**「只停用方法級授權」的設定（1.x 的 `method-security.enabled` 已移除）：關閉後所有授權註解都會靜默失效，風險遠大於用途。
 
 ---
 
@@ -598,7 +614,6 @@ class TestJwtConfig {
 - [ ] `permit-all-patterns` 只包含真正公開的路徑；正式環境是否仍需放行 Swagger
 - [ ] 沒有任何方法同時放了兩個授權註解（見 [限制 §1](limitations.md#1-同一個方法只能有一個授權註解)）
 - [ ] 類別層級與方法層級的註解沒有錯誤地期待「合併」（見 §5.2）
-- [ ] 若修改過 `jacky917.security.jwt.prefix.*`，沒有使用 `@RequireRole` / `@RequirePerm` / `@RequireScope`（見 [限制 §3](limitations.md#3-單一條件註解的前綴固定)）
 - [ ] 全域例外處理器沒有吞掉 `AccessDeniedException`
 - [ ] 瀏覽器前端需要時，已設定 CORS
-- [ ] `jacky917.security.debug-log` 在正式環境為 `false`
+- [ ] 正式環境沒有把 `logging.level.jacky917.security` 設為 `DEBUG`

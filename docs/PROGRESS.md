@@ -488,3 +488,32 @@
   - `mvn -B -o clean verify`：**SUCCESS**，42 個測試全數通過。
   - 文件連結、錨點、YAML 檢查：無錯誤。
 
+
+---
+## Step 18: Repo 重構與 2.0 行為清理（M2）
+- **Status**: 🟢 Completed（只剩 GitHub repo 改名，需使用者最後確認）
+- **使用者決定**：先做 M2 再實作 AS；groupId 改為 `io.github.jacky917`；artifactId 與 repo 名稱都改（repo → `jacky917-security`）；AS 第 1 階段採推薦範圍（只做 Google、不開放註冊、不支援行動 App、不匯入使用者）。
+- **Acceptance Criteria**:
+  - [x] 目錄改為 `core/`、`resource-server/`、`examples/`、`relocation/`，新增 `jacky917-security-core`（無依賴的 claim 契約）與 `jacky917-security-bom`。
+  - [x] 座標改為 `io.github.jacky917`；自動配置套件改為 `jacky917.security.resourceserver.autoconfigure`。
+  - [x] `${revision}` + flatten-maven-plugin：發佈的 POM 不含 parent；BOM 以 bom 模式發佈並以外部專案驗證可匯入。
+  - [x] 舊座標 `com.github.jacky917:jacky917-security-starter` 以 relocation POM 導向新 starter，實測 Maven 會顯示改名提示。
+  - [x] maven-enforcer：Resource Server 模組不得依賴 AS 模組；core 不得有任何依賴。實測違反時建置失敗並顯示自訂訊息。
+  - [x] 2.0 行為清理：單一條件註解跟隨 `jwt.prefix.*`；`permit-all-patterns` 預設只放行 `/actuator/health`；移除 `debug-log`、`method-security.enabled`；401／403 日誌改為 DEBUG。
+  - [x] CI（Java 21／25 + 文件連結檢查）；發佈流程改為部署整個 reactor 並檢查 tag 與 `revision` 一致。
+  - [x] 文件改為 `docs/resource-server/`、`docs/design/`、`docs/guides/`，新增升級指南 `docs/guides/upgrade-to-2.0.md`。
+- **Commands Run & Results**:
+  - `mvn -B -o clean verify`：**SUCCESS**，51 個測試全數通過（Resource Server 42、example-resource-server 7、example-authorization-server 2）。
+  - enforcer 兩條規則的破壞實驗：都會失敗並顯示訊息；還原後通過。
+  - 外部專案匯入 BOM 與舊座標：依賴解析正確，舊座標顯示 relocation 提示。
+  - 文件連結、錨點、YAML 檢查：無錯誤。
+- **Decision Log**:
+  - **DEC-054**: 根 POM 仍繼承 `spring-boot-starter-parent`，以 flatten 產生不含 parent 的發佈 POM（偏離 R-D7 原本「不繼承 Boot parent」的設計，理由見 `docs/design/repo-structure-design.md` §11）。
+  - **DEC-055**: 保留 `@Secured` 支援。原計畫在 2.0 移除，但移除後既有的 `@Secured` 會變成**完全不檢查**（fail-open），風險高於維護成本。
+  - **DEC-056**: 屬性預設值維持字串常值（configuration metadata 才讀得到預設值），以單元測試確保與 core 常數一致。
+  - **DEC-057**: BOM 內以 `${project.version}` 表示版本，flatten 後由使用端解析，已以外部專案驗證。
+  - **DEC-058**: 授權條款尚未決定。發佈的 POM 目前帶有繼承自 Spring Boot parent 的 Apache License 2.0，**正式發佈 2.0.0 前必須決定**（根 POM 有 TODO）。
+- **Next TODO**:
+  - GitHub repo 改名為 `jacky917-security`（執行前再確認一次），之後更新 POM 的 `url`／`scm`／`distributionManagement` 與文件中的 repo 連結。
+  - 待使用者決定：授權條款、1.1.0 發佈時間、`.cursor/rules` 是否更新為 Spring Boot 4.1。
+  - 依 `docs/design/auth-server-detailed-design.md` §11 開始 AS 第 1 階段。

@@ -9,10 +9,6 @@
 排查前先打開 Starter 與 Spring Security 的日誌：
 
 ```yaml
-jacky917:
-  security:
-    debug-log: true
-
 logging:
   level:
     jacky917.security: DEBUG
@@ -25,7 +21,7 @@ logging:
 Extracted authorities: [PERM_order:read, ROLE_USER, SCOPE_profile]
 ```
 
-> 排查完畢後請關閉，見 [設定參考 — debug-log](configuration.md#debug-log-的作用)。
+> 排查完畢後請關閉，見 [設定參考 — 日誌](configuration.md#日誌)。
 
 ---
 
@@ -59,7 +55,7 @@ PatternParseException: {*...} or ** pattern elements should be placed at the sta
    java -jar app.jar --debug 2>&1 | grep -A3 Jacky917SecurityAutoConfiguration
    ```
 
-4. 註解沒作用時，確認 `jacky917.security.method-security.enabled` 不是 `false`，且方法是從 Bean 外部呼叫的 `public` 方法（見 [限制 §10](limitations.md#10-方法級授權只對-spring-bean-的外部呼叫生效)）。
+4. 註解沒作用時，確認方法是從 Bean 外部呼叫的 `public` 方法（見 [限制 §10](limitations.md#10-方法級授權只對-spring-bean-的外部呼叫生效)）。
 
 ---
 
@@ -104,7 +100,7 @@ Token 有效，但沒有通過方法級授權。
 |---|---|
 | authorities 是空的 | claim 名稱不符（例如 IdP 用 `authorities` 而不是 `roles`），或 claim 在巢狀結構中（例如 `realm_access.roles`）。見 [設定參考](configuration.md#jwt-claim-與前綴) |
 | authorities 有值，但前綴不同（例如 `ROLE_ROLE_ADMIN`） | Token 中的值已經帶了前綴，Starter 又加一次。把 `jwt.prefix.role` 設為空字串，或請 IdP 移除前綴 |
-| 修改過 `jwt.prefix.*`，`@RequireRole` 等永遠 403 | 註解前綴固定，見 [限制 §3](limitations.md#3-單一條件註解的前綴固定) |
+| 修改過 `jwt.prefix.*`，`@RequireAny`／`@RequireAll` 永遠 403 | 這兩個註解使用完整 authority 名稱，要一併改成新前綴（`@RequireRole` 等會自動跟隨，見 [設定參考](configuration.md#jwt-claim-與前綴)） |
 | `@RequireAny` / `@RequireAll` 永遠 403 | 參數忘了寫前綴，例如寫成 `"ADMIN\|order:read"`，應為 `"ROLE_ADMIN\|PERM_order:read"` |
 | 字串型 claim 解析結果不對 | `roles` / `permissions` / `scp` 以逗號分隔，`scope` 以空白分隔 |
 | ABAC 規則一直拒絕 | 確認 `authentication.getName()` 是 `sub`，且與資料庫中的 owner 欄位使用相同的識別碼 |
@@ -131,7 +127,6 @@ Token 有效，但沒有通過方法級授權。
 ## 權限比預期寬鬆
 
 - 類別與方法都有授權註解時，只會檢查方法上的。見 [限制 §2](limitations.md#2-類別與方法的註解不會合併)。
-- `jacky917.security.method-security.enabled=false` 時，註解靜默失效。
 - 其他服務的 Token 也能存取：沒有驗證 `aud`。見 [限制 §7](limitations.md#7-starter-本身不驗證-aud)。
 - 已登出或已停權的使用者仍能存取：JWT 無法撤銷。見 [限制 §6](limitations.md#6-token-無法撤銷)。
 
@@ -156,7 +151,7 @@ Token 有效，但沒有通過方法級授權。
 
 ### Could not find artifact ... jacky917-security-parent
 
-業務專案能找到 `jacky917-security-starter`，卻找不到它的 parent POM。代表該版本發佈時沒有一併發佈 parent（例如 `mvn deploy` 的 `-pl` 漏掉了 `.`）。請聯繫維護者以新版本號重新發佈。見 [限制 §16](limitations.md#16-發佈與依賴)。
+只會發生在 1.x：業務專案能找到 `jacky917-security-starter`，卻找不到它的 parent POM。代表該版本發佈時沒有一併發佈 parent。2.x 發佈的是不含 parent 的獨立 POM，不會有此問題。見 [限制 §16](limitations.md#16-發佈與依賴)。
 
 ### Could not find artifact org.springframework.boot:spring-boot-starter-parent:pom:3.5.10-SNAPSHOT
 
@@ -172,7 +167,7 @@ Lombok 沒有執行。JDK 23 起不再自動探索 annotation processor，本專
 
 ### Demo 啟動時連不到 MySQL
 
-`demo-resource-server` 預設連線 `localhost:3307/demo_db`（帳密 `root` / `root`）。可用 Docker 啟動：
+`example-resource-server` 預設連線 `localhost:3307/demo_db`（帳密 `root` / `root`）。可用 Docker 啟動：
 
 ```bash
 docker run -d --name jacky917-demo-mysql -p 3307:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=demo_db mysql:8.4

@@ -41,12 +41,12 @@
 **注意**：
 - 所有從 claims 提取的權限/角色字串，在轉換為 `GrantedAuthority` 後會進行**合併、去重、排序**，確保輸出穩定。
 - 每個值會先去除前後空白，空字串與陣列中的 `null` 元素會被略過；陣列中的非字串元素（例如數字）會以 `toString()` 轉換。
-- 當 claim 值型態不是 `String` 或 `Collection`（例如物件／`Map`）時，會**忽略該 claim** 並輸出一行 WARN 日誌（與 `debug-log` 設定無關），不會中斷驗證流程。
+- 當 claim 值型態不是 `String` 或 `Collection`（例如物件／`Map`）時，會**忽略該 claim** 並輸出一行 WARN 日誌，不會中斷驗證流程。
 - 只讀取**頂層** claim，不支援 `realm_access.roles` 這類巢狀路徑。
 - `principal`（`authentication.getName()`）固定取自 `sub`。
 - Spring Security 7 會在 `Authentication` 中另外加入 `FACTOR_BEARER`（代表以 Bearer Token 驗證）。下方範例列出的「解析後的 Authorities」只包含由 claims 映射出的部分。
 - 預設前綴：`ROLE_` / `PERM_` / `SCOPE_`，可透過 `jacky917.security.jwt.prefix.*` 覆寫；claim 名稱可透過 `jacky917.security.jwt.claims.*` 覆寫。見 [設定參考](configuration.md#jwt-claim-與前綴)。
-- 修改前綴後，`@RequireRole` / `@RequirePerm` / `@RequireScope` 會失效，見 [限制 §3](limitations.md#3-單一條件註解的前綴固定)。
+- 修改前綴後，`@RequireRole` / `@RequirePerm` / `@RequireScope` 會跟著使用新前綴（2.0 起）；`@RequireAny` / `@RequireAll` 使用完整名稱，需自行調整。
 
 ### 給 Authorization Server 的建議
 

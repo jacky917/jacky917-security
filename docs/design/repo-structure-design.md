@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 📝 設計草案 |
+| 狀態 | ✅ 已實施（M2，分支 `claude/m2-restructure`）。與設計的差異見 [§11 實施紀錄](#11-實施紀錄) |
 | 日期 | 2026-10-07 |
 | 目標 | 在同時存在 Resource Server 與 Authorization Server 兩類 starter 的前提下，決定 repo 怎麼拆、模組怎麼命名、版本怎麼管、怎麼發佈 |
 | 上層文件 | [2.0 總設計](v2-overview.md) |
@@ -365,13 +365,44 @@ AS 用小版本號推進，因為它是**新增**的 artifact，不會破壞既�
 
 | # | 決策 | 推薦 | 狀態 |
 |---|---|---|---|
-| R-D1 | Repo 數量 | 單一 repo、多模組 | 待確認 |
-| R-D2 | Repo 名稱 | 依 R-D6 決定 | ⚠️ 待確認 |
-| R-D3 | artifactId | 依角色命名 + relocation | 待確認 |
-| R-D4 | Java 套件 | annotations 不變；RS autoconfigure 搬到 `resourceserver` | 待確認 |
-| R-D5 | 設定屬性前綴 | RS 不變；AS 用 `jacky917.security.authorization-server` | 待確認 |
-| R-D6 | groupId | 改為 `io.github.jacky917` | ⚠️ 待確認 |
-| R-D7 | Parent 策略 | 自有 parent + BOM import + flatten | 待確認 |
-| R-D8 | 版本號 | 所有模組統一版本 | 待確認 |
-| R-D9 | 分支 | `main` = 2.x；`1.x` 維護 6 個月 | 待確認 |
-| R-D10 | 範例與 E2E | 放在同一 repo，不發佈 | 待確認 |
+| R-D1 | Repo 數量 | 單一 repo、多模組 | ✅ 已實施 |
+| R-D2 | Repo 名稱 | 依 R-D6 決定 | ✅ 決定改為 `jacky917-security`（M2 最後一步執行） |
+| R-D3 | artifactId | 依角色命名 + relocation | ✅ 已實施 |
+| R-D4 | Java 套件 | annotations 不變；RS autoconfigure 搬到 `resourceserver` | ✅ 已實施 |
+| R-D5 | 設定屬性前綴 | RS 不變；AS 用 `jacky917.security.authorization-server` | ✅ 已決定 |
+| R-D6 | groupId | 改為 `io.github.jacky917` | ✅ 已實施 |
+| R-D7 | Parent 策略 | 自有 parent + BOM import + flatten | ✅ 已實施（調整：仍繼承 Spring Boot parent，見 §11） |
+| R-D8 | 版本號 | 所有模組統一版本 | ✅ 已實施（`${revision}`） |
+| R-D9 | 分支 | `main` = 2.x；`1.x` 維護 6 個月 | ✅ `1.x` 分支已建立 |
+| R-D10 | 範例與 E2E | 放在同一 repo，不發佈 | ✅ 已實施（`examples/`；`e2e-tests/` 於 AS 第 1 階段建立） |
+
+---
+
+## 11. 實施紀錄
+
+M2 於分支 `claude/m2-restructure` 依 §9 的步驟實施，每一步都以 `mvn clean verify` 驗證。
+
+### 11.1 與設計不同的地方
+
+| 項目 | 設計 | 實際 | 原因 |
+|---|---|---|---|
+| Parent 策略（R-D7） | 自有 parent，不繼承 `spring-boot-starter-parent` | **仍繼承 `spring-boot-starter-parent`**，發佈時以 `flatten-maven-plugin`（`ossrh` 模式）移除 parent | 達到相同目標（使用者不需要 parent 鏈），又能沿用 Spring Boot 管理的外掛版本、`-parameters` 等設定 |
+| 繼承來的 POM 資訊 | — | 覆寫 `url`、`developers`、`scm` | `spring-boot-starter-parent` 會把 Spring 專案的開發者與 SCM 資訊帶進發佈的 POM |
+| 授權條款 | — | **尚未決定**（TODO） | flatten 無法移除繼承來的 `licenses`；在專案宣告自己的授權條款前，發佈的 POM 會帶有 Apache License 2.0。**正式發佈 2.0.0 前必須決定** |
+| `core` 的常數與設定預設值 | 設定類別直接引用 core 常數 | 設定類別保留字串常值，另以測試確認與 core 一致 | configuration processor 無法解析其他模組的常數，引用常數會讓 IDE 看不到預設值 |
+| BOM | `${project.version}` 由 flatten 代換 | bom 模式保留原文；使用者 import 時由 Maven 以 BOM 自己的版本代換 | flatten 的 bom 模式不代換 `dependencyManagement`；已用外部專案實測可正確解析 |
+| `@Secured` | 2.0 移除 | **保留** | 移除會讓既有的 `@Secured` 被靜默忽略（fail-open），見 [2.0 總設計 §4.2](v2-overview.md#42-建議一併處理已決定) |
+| 文件結構（§6） | 另有 `authorization-server/` | 尚未建立 | AS 實作後再建立使用者文件 |
+
+### 11.2 驗證
+
+| 項目 | 方法 | 結果 |
+|---|---|---|
+| 發佈的 POM 不含 parent | 檢查 `.flattened-pom.xml` 與本機安裝的 POM | ✅ |
+| BOM | 另建外部專案 import BOM，不指定版本引入 starter | ✅ 解析到 `2.0.0-SNAPSHOT` 與所有子模組 |
+| 舊座標 relocation | 外部專案只宣告 `com.github.jacky917:jacky917-security-starter` | ✅ 導向新座標並顯示改名提示 |
+| enforcer：RS 依賴 AS | 安裝假的 `jacky917-security-authorization-server-autoconfigure` 並加入依賴 | ✅ 建置失敗並顯示規則訊息 |
+| enforcer：core 依賴 Spring | 對 core 加入 `spring-core` | ✅ 建置失敗並顯示規則訊息 |
+| 文件連結 | `scripts/check-doc-links.py`（CI 也會執行） | ✅ |
+| CI 的版本檢查 | 本機執行 `mvn help:evaluate -Dexpression=revision` | ✅ 回傳 `2.0.0-SNAPSHOT` |
+

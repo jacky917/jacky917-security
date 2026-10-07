@@ -1,6 +1,6 @@
 # 設定參考
 
-本文件列出 `jacky917-security-starter` 的所有設定屬性，以及它們與 Spring Boot 原生 `spring.security.oauth2.resourceserver.*` 屬性的關係。
+本文件列出 `jacky917-security-resource-server-starter` 的所有設定屬性，以及它們與 Spring Boot 原生 `spring.security.oauth2.resourceserver.*` 屬性的關係。
 
 屬性對應的 Java 類別為 [`Jacky917SecurityProperties`](../../resource-server/jacky917-security-resource-server-autoconfigure/src/main/java/jacky917/security/resourceserver/autoconfigure/properties/Jacky917SecurityProperties.java)。IDE（IntelliJ IDEA、VS Code Spring Boot Tools）會依據 configuration metadata 提供自動完成與說明。
 
@@ -12,16 +12,8 @@
 jacky917:
   security:
     enabled: true
-    debug-log: false
     permit-all-patterns:
       - /actuator/health
-      - /v3/api-docs
-      - /v3/api-docs/**
-      - /swagger-ui/**
-      - /swagger-ui.html
-      - /swagger-ui/index.html
-    method-security:
-      enabled: true
     jwt:
       claims:
         roles: roles
@@ -41,40 +33,38 @@ jacky917:
 | 屬性 | 型別 | 預設值 | 說明 |
 |---|---|---|---|
 | `jacky917.security.enabled` | `boolean` | `true` | 是否啟用整個自動配置。設為 `false` 時，Starter 不建立任何 Bean。 |
-| `jacky917.security.debug-log` | `boolean` | `false` | 是否輸出額外的診斷日誌，詳見下方說明。 |
-| `jacky917.security.permit-all-patterns` | `List<String>` | 見上方範例 | 不需驗證即可存取的路徑樣式。**設定後會取代預設清單，而不是附加。** |
-| `jacky917.security.method-security.enabled` | `boolean` | `true` | 是否啟用方法級授權（`@PreAuthorize`、`@PostAuthorize`、`@Secured`、`@Require*`）。 |
+| `jacky917.security.permit-all-patterns` | `List<String>` | `[/actuator/health]` | 不需驗證即可存取的路徑樣式。**設定後會取代預設清單，而不是附加。** |
 
-### `debug-log` 的作用
+方法級授權（`@PreAuthorize`、`@PostAuthorize`、`@Secured`、`@Require*`）在 Starter 啟用時**一律開啟**，沒有關閉的設定。
 
-開啟後會輸出：
+> **2.0 移除的屬性**：`jacky917.security.debug-log`（改用下方的 logger 等級）、`jacky917.security.method-security.enabled`（關閉後所有授權註解都會靜默失效）。Spring Boot 會忽略未知的屬性，留在設定檔中不會報錯，但也不再有作用。見 [升級到 2.0](../guides/upgrade-to-2.0.md)。
+
+### 日誌
+
+以 `jacky917.security` 的 logger 等級控制：
+
+```yaml
+logging:
+  level:
+    jacky917.security: DEBUG
+```
 
 | 時機 | 等級 | 內容 |
 |---|---|---|
-| 建立 filter chain 時 | INFO | `Initializing Jacky917SecurityFilterChain...` |
 | 每次成功解析 Token | DEBUG | `Extracted authorities: [...]` |
-| 每次回傳 401 / 403 | WARN | 狀態碼、訊息、路徑、例外類別名稱 |
+| 每次回傳 401 / 403 | DEBUG | 狀態碼、路徑、例外類別名稱 |
+| claim 型態不支援（例如物件） | WARN | claim 的型別 |
 
-注意事項：
-
-- DEBUG 訊息還需要把 logger 等級調成 DEBUG 才看得到：
-
-  ```yaml
-  logging:
-    level:
-      jacky917.security: DEBUG
-  ```
-
-- 日誌**不會輸出 JWT 原文**，但會輸出 authority 清單與請求路徑。
-- 每次 401 / 403 都會寫一行 WARN，在流量大或遭受掃描時會產生大量日誌，**正式環境請保持 `false`**。
-- 「claim 型態不支援」的 WARN 與此設定無關，一律會輸出。
+- 日誌**不會輸出 JWT 原文**，但 DEBUG 會輸出 authority 清單與請求路徑。
+- 401 / 403 在流量大或遭受掃描時數量很多，因此只在 DEBUG 輸出。**正式環境請不要長期開啟 DEBUG**。
 
 ### `permit-all-patterns` 的寫法
 
 - 使用 Spring Security `requestMatchers(String...)` 的路徑樣式（Spring Security 7 為 `PathPatternRequestMatcher`）：`*` 比對單一區段，`**` 比對多個區段。
 - **`**` 只能放在路徑的開頭或結尾**。`/api/**/admin` 這類寫法在 `2.x` 會讓應用程式啟動失敗（`1.x` 可用）。需要時改寫成多個明確的路徑，或自訂 `SecurityFilterChain`。
 - 只比對路徑，不區分 HTTP method。
-- 設為空清單（`permit-all-patterns: []`）代表所有路徑都需要驗證，包含 health check 與 Swagger。
+- 設為空清單（`permit-all-patterns: []`）代表所有路徑都需要驗證，包含 health check。
+- 預設**不放行** Swagger／OpenAPI（1.x 會放行）。需要時自行加入 `/v3/api-docs`、`/v3/api-docs/**`、`/swagger-ui/**`、`/swagger-ui.html`。
 
 properties 格式寫法：
 
@@ -138,8 +128,9 @@ jacky917:
         permission: ""     # order:read 會直接變成 authority「order:read」
 ```
 
-> [!WARNING]
-> `@RequireRole`、`@RequirePerm`、`@RequireScope` 的前綴是**寫死在註解上的**（`ROLE_` / `PERM_` / `SCOPE_`），不會跟著 `jwt.prefix.*` 改變。修改前綴後，這三個註解會永遠判定失敗（回傳 403）。請改用 `@RequireAny` / `@RequireAll` 並寫完整 authority 名稱，或使用 `@PreAuthorize("hasAuthority('...')")`。
+`@RequireRole`、`@RequirePerm`、`@RequireScope` 會**跟著** `jwt.prefix.*` 使用相同的前綴（2.0 起；1.x 固定為預設前綴）。例如上面的設定下，`@RequirePerm("order:read")` 檢查的是 authority `order:read`。
+
+`@RequireAny`／`@RequireAll` 與 `@PreAuthorize("hasAuthority('...')")` 使用**完整 authority 名稱**，修改前綴後需自行調整字串。
 
 **不支援的情況**：claim 名稱只能指定「頂層」claim，不支援 `realm_access.roles` 這類巢狀路徑。需要時請擴充 `JwtAuthoritiesExtractor`，見 [使用指南 §8.2](getting-started.md#82-自訂-authority-映射例如-keycloak-的-realm_accessroles)。
 

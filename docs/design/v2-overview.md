@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 📝 設計草案，等待決策（見 [§7](#7-待確認事項)） |
+| 狀態 | 🚧 實施中：M0、M1、M2 已完成（待合併），下一步 M3 與 Auth Server |
 | 日期 | 2026-10-07 |
 | 範圍 | 兩大任務：① 升級到 Spring Boot 4.1；② 實作方案 C（標準 OAuth 2.0／OIDC Authorization Server） |
 
@@ -69,7 +69,7 @@ flowchart LR
 |---|---|---|---|
 | **M0 準備** ✅ 分支已建立（`1.1.0` 待發佈） | commit 目前所有未提交的變更；建立 `1.x` 分支；`1.x` 的 parent 改為 3.5.16 正式版，發佈 `1.1.0`（含 Step 9 的 bug 修正） | [升級設計 §6 步驟 0](boot4-migration-design.md#6-實施步驟) | `1.1.0` 可被外部專案引入 |
 | **M1 升級** ✅ 已實施（待合併） | `main` 升級到 Boot 4.1.1，**不改結構** | [升級設計](boot4-migration-design.md) | 全部測試通過；行為回歸檢查通過 |
-| **M2 重構** | 自有 parent + flatten、模組搬移與改名、core、BOM、relocation、enforcer、CI、破壞性清理 | [Repo 設計 §9](repo-structure-design.md#9-重構實施步驟) | 外部空專案可透過 BOM 引入 `2.0.0-M2` |
+| **M2 重構** ✅ 已實施（分支 `claude/m2-restructure`，待合併） | 自有 parent + flatten、模組搬移與改名、core、BOM、relocation、enforcer、CI、破壞性清理 | [Repo 設計 §9](repo-structure-design.md#9-重構實施步驟) | 外部空專案可透過 BOM 引入 `2.0.0-M2` |
 | **M3 2.0** | 文件重組、升級說明 | [Repo 設計 §6](repo-structure-design.md#6-文件結構) | 發佈 `2.0.0` |
 | **M4 AS MVP** | AS starter、帳號密碼 + Google 登入、BFF 範例、E2E | [AS 設計 §11 第 1 階段](auth-server-design.md#11-分階段實作計畫) | 瀏覽器 → BFF → AS → RS 全流程成功 |
 | **M5 AS 強化** | 重用偵測、登出、帳號連結、GitHub／LINE、金鑰輪換 | AS 設計第 2 階段 | AS 由 preview 轉為正式 |
@@ -99,20 +99,20 @@ flowchart LR
 | `permit-all-patterns` 的 `**` 只能放在開頭或結尾 | 檢查設定 |
 | 錯誤回應 JSON 改用應用程式的 Jackson 3 設定 | 通常不需要處理；有自訂 `spring.jackson.*` 時確認輸出格式 |
 
-### 4.2 建議一併處理（待確認）
+### 4.2 建議一併處理（已決定）
 
-這些來自先前「建議新增或移除的功能」的整理：
+這些來自先前「建議新增或移除的功能」的整理（✅ 為已在 M2 實施）。使用者升級說明見 [升級到 2.0](../guides/upgrade-to-2.0.md)：
 
 | 變更 | 理由 | 使用者要做的事 |
 |---|---|---|
-| artifactId 依角色改名（R-D3） | 名稱清楚；有 relocation 緩衝 | 改 artifactId（不改也能用，會有提示） |
-| groupId 改為 `io.github.jacky917`（R-D6） | 保留上 Maven Central 的可能 | 改 groupId |
-| RS autoconfigure 的 Java 套件搬移（R-D4） | 與 AS 對稱 | 有擴充 `JwtAuthoritiesExtractor` 或注入 properties 的使用者改 import |
-| `permit-all-patterns` 預設**不再放行 Swagger** | 預設安全 | 需要 Swagger 時自行加入 |
-| 移除 `jacky917.security.method-security.enabled` | 關閉後註解靜默失效，風險大於用途 | 移除該設定 |
-| 移除 `jacky917.security.debug-log`，改用標準 logger 等級 | 與 `logging.level` 重複，且容易灌爆日誌 | 改用 `logging.level.jacky917.security` |
-| 移除 `@Secured` 支援 | 只保留一種授權寫法，避免組合錯誤 | 改用 `@PreAuthorize` 或 `@Require*` |
-| `@RequireRole`／`@RequirePerm`／`@RequireScope` 跟隨 `jwt.prefix.*` 設定 | 修正 [限制 §3](../resource-server/limitations.md#3-單一條件註解的前綴固定) | 沒有修改過前綴的使用者不受影響 |
+| ✅ artifactId 依角色改名（R-D3） | 名稱清楚；有 relocation 緩衝 | 改 artifactId（不改也能用，會有提示） |
+| ✅ groupId 改為 `io.github.jacky917`（R-D6） | 保留上 Maven Central 的可能 | 改 groupId |
+| ✅ RS autoconfigure 的 Java 套件搬移（R-D4） | 與 AS 對稱 | 有擴充 `JwtAuthoritiesExtractor` 或注入 properties 的使用者改 import |
+| ✅ `permit-all-patterns` 預設**不再放行 Swagger** | 預設安全 | 需要 Swagger 時自行加入 |
+| ✅ 移除 `jacky917.security.method-security.enabled` | 關閉後註解靜默失效，風險大於用途 | 移除該設定 |
+| ✅ 移除 `jacky917.security.debug-log`，改用標準 logger 等級 | 與 `logging.level` 重複，且容易灌爆日誌 | 改用 `logging.level.jacky917.security` |
+| ~~移除 `@Secured` 支援~~ **實作時撤回** | 移除後，既有的 `@Secured` 會被**靜默忽略**，端點等於失去保護（fail-open）；其他清理項目只會讓行為更嚴格，這一項卻會放寬，因此保留 `@Secured` | 不需要 |
+| ✅ `@RequireRole`／`@RequirePerm`／`@RequireScope` 跟隨 `jwt.prefix.*` 設定 | 修正 [限制 §3](../resource-server/limitations.md#3-單一條件註解的前綴固定20-已解決) | 沒有修改過前綴的使用者不受影響 |
 
 非破壞性的新功能（`CurrentUser`、測試輔助模組、啟動時偵測註解疊加等）可以在 2.x 的小版本陸續加入，不必擠進 2.0。
 
@@ -127,7 +127,7 @@ flowchart LR
 | 升級 | 1.x 維護期 | — | 推薦 2.0.0 發佈後 6 個月 |
 | Repo | [R-D1～R-D10](repo-structure-design.md#10-決策總表) | — | 全部待確認；R-D2、R-D6 影響最大 |
 | AS | [D01～D14](auth-server-design.md#2-決策總表) | ✅ D01（Boot 4.1）、方案 C | D03、D05、D14 等 |
-| 2.0 範圍 | [§4.2 建議一併處理的破壞性變更](#42-建議一併處理待確認) | — | 逐項確認 |
+| 2.0 範圍 | [§4.2 建議一併處理的破壞性變更](#42-建議一併處理已決定) | — | 逐項確認 |
 
 ---
 
@@ -154,7 +154,7 @@ flowchart LR
 | **M2** | 3 | groupId 是否改為 `io.github.jacky917`？（R-D6） | 是 |
 | M2 | 4 | repo 是否改名為 `jacky917-security`？（R-D2） | 若 3 為是，則一併改 |
 | M2 | 5 | artifactId 是否依角色改名？（R-D3） | 是 |
-| M2 | 6 | [§4.2](#42-建議一併處理待確認) 的破壞性清理要納入哪些？ | 全部 |
+| M2 | 6 | [§4.2](#42-建議一併處理已決定) 的破壞性清理要納入哪些？ | 全部 |
 | ~~M4~~ | ~~7~~ | ~~網頁前端是否接受 BFF 架構？~~ ✅ 已決定：採用 BFF | — |
 | M4 | 8 | 第一版的第三方登入提供者？（AS D05） | Google |
 | ~~M4~~ | ~~9~~ | ~~資料庫？~~ ✅ 已決定：預設 SQLite，YAML 切換 PostgreSQL | — |

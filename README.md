@@ -1,6 +1,8 @@
-# jacky917-security-starter
+# jacky917-security
 
-專為 **Resource Server（API 服務）** 設計的 Spring Boot Starter。引入一個依賴、提供一個 `JwtDecoder`，即可得到：
+Spring Boot 的安全性套件，目前提供 **Resource Server（API 服務）** 用的 starter：`jacky917-security-resource-server-starter`。Authorization Server（登入服務）的 starter 正在設計與實作中（見 [Authorization Server 設計](docs/design/auth-server-design.md)）。
+
+業務 API 引入 Resource Server starter、提供一個 `JwtDecoder`，即可得到：
 
 - 無狀態的 JWT Bearer Token 驗證（所有請求預設需驗證，可設定放行路徑）
 - JWT claims（`roles` / `permissions` / `scope` / `scp`）自動轉換為 Spring Security authority
@@ -39,7 +41,8 @@ class OrderController {
 | [Starter 設計](docs/design/starter-design.md) | 自動配置架構、Bean 清單、啟用條件與擴充點 |
 | [E2E 測試指南](docs/guides/e2e-testing.md) | 同時啟動兩個 Demo 服務，走完取 Token → 呼叫 API 的流程 |
 | [GitHub Packages](docs/guides/github-packages.md) | 發佈與引用設定 |
-| [2.0 總設計](docs/design/v2-overview.md) | **規劃中**：升級 Spring Boot 4.1 與新增 Authorization Server 的目標、里程碑、破壞性變更與待確認事項 |
+| [升級到 2.0](docs/guides/upgrade-to-2.0.md) | **從 1.x 升級必讀**：座標改名、Spring Boot 4.1、行為變更 |
+| [2.0 總設計](docs/design/v2-overview.md) | **進行中**：升級 Spring Boot 4.1 與新增 Authorization Server 的目標、里程碑、破壞性變更與待確認事項 |
 | [Spring Boot 4.1 升級設計](docs/design/boot4-migration-design.md)、[Repo 拆分設計](docs/design/repo-structure-design.md) | 2.0 的升級影響清單與步驟；repo 結構、命名、建置、版本與 CI |
 | [AS 資料模型](docs/design/auth-server-data-model.md)、[AS 詳細設計](docs/design/auth-server-detailed-design.md) | **規劃中**：Authorization Server 的完整表設計（DDL、索引、狀態機、Flyway），以及元件、流程、Token、威脅模型與測試案例 |
 | [Authorization Server 設計](docs/design/auth-server-design.md) | **規劃中**：以 Spring Authorization Server 建置登入服務（支援第三方登入）的架構、決策、資料表與實作計畫 |
@@ -68,13 +71,20 @@ class OrderController {
 
 ## 模組
 
-| 模組 | 說明 | 是否發佈 |
-|---|---|---|
-| `jacky917-security-starter` | 聚合依賴，**業務專案只需引入這一個** | ✅ |
-| `jacky917-security-autoconfigure` | 自動配置：`SecurityFilterChain`、claims → authorities、401/403 JSON、方法級授權 | ✅ |
-| `jacky917-security-annotations` | `@RequireRole` / `@RequirePerm` / `@RequireScope` / `@RequireAny` / `@RequireAll` | ✅ |
-| `demo-resource-server` | 示範如何使用 Starter（RBAC、AND/OR、資料庫導向 ABAC、Swagger） | ❌ |
-| `demo-authorization-server` | 最小化的測試用 Token 簽發服務 | ❌ |
+groupId 皆為 `io.github.jacky917`（1.x 為 `com.github.jacky917`）。
+
+| 目錄 | 模組 | 說明 | 是否發佈 |
+|---|---|---|---|
+| `resource-server/` | `jacky917-security-resource-server-starter` | **業務 API 只需引入這一個** | ✅ |
+| | `jacky917-security-resource-server-autoconfigure` | 自動配置：`SecurityFilterChain`、claims → authorities、401/403 JSON、方法級授權 | ✅ |
+| | `jacky917-security-annotations` | `@RequireRole` / `@RequirePerm` / `@RequireScope` / `@RequireAny` / `@RequireAll` | ✅ |
+| `core/` | `jacky917-security-core` | 與 Authorization Server 共用的 claim 契約（純 Java，無任何依賴） | ✅ |
+| 根目錄 | `jacky917-security-bom` | 統一管理以上模組的版本 | ✅ |
+| `relocation/` | `jacky917-security-starter`（舊座標） | 只在 2.0.x 發佈：把 1.x 的座標導向新的 starter | ✅ |
+| `examples/` | `example-resource-server` | 示範如何使用 Starter（RBAC、AND/OR、資料庫導向 ABAC、Swagger） | ❌ |
+| | `example-authorization-server` | 最小化的測試用 Token 簽發服務 | ❌ |
+
+業務 API 的模組**不能**依賴 Authorization Server 的模組，`core` 不能依賴任何函式庫；兩者都由建置時的 enforcer 規則檢查。
 
 ---
 
@@ -112,11 +122,27 @@ GitHub Packages **即使是公開套件也需要認證**。在 `~/.m2/settings.x
 > 要先試用 2.x，請 clone 本 repo 後執行 `mvn -DskipTests install`，即可在本機使用 `2.0.0-SNAPSHOT`。
 
 ```xml
-<dependency>
-    <groupId>com.github.jacky917</groupId>
-    <artifactId>jacky917-security-starter</artifactId>
-    <version>2.0.0-SNAPSHOT</version>   <!-- 尚未發佈，需先在本機 mvn install；見上方說明 -->
-</dependency>
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.github.jacky917</groupId>
+            <artifactId>jacky917-security-bom</artifactId>
+            <version>2.0.0-SNAPSHOT</version>   <!-- 尚未發佈，需先在本機 mvn install；見上方說明 -->
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <dependency>
+        <groupId>io.github.jacky917</groupId>
+        <artifactId>jacky917-security-resource-server-starter</artifactId>
+    </dependency>
+</dependencies>
+```
+
+```xml
 <!-- Starter 只支援 Servlet 應用，請確認已引入 Spring MVC -->
 <dependency>
     <groupId>org.springframework.boot</groupId>
@@ -137,10 +163,10 @@ spring:
 
 jacky917:
   security:
-    permit-all-patterns:                             # 注意：設定後會「取代」預設值
+    permit-all-patterns:                             # 預設只有 /actuator/health；設定後會「取代」預設值
       - /public/**
       - /actuator/health
-      - /v3/api-docs/**
+      - /v3/api-docs/**                              # 需要公開 Swagger／OpenAPI 時自行加入
       - /swagger-ui/**
       - /swagger-ui.html
 ```
@@ -148,7 +174,7 @@ jacky917:
 ### 4. 在 Controller 使用註解
 
 ```java
-@RequireRole("ADMIN")              // ROLE_ADMIN
+@RequireRole("ADMIN")              // ROLE_ADMIN（前綴依 jacky917.security.jwt.prefix.role）
 @RequirePerm("order:read")         // PERM_order:read
 @RequireScope("profile.read")      // SCOPE_profile.read
 @RequireAny("ROLE_ADMIN|PERM_order:read")
@@ -167,13 +193,14 @@ jacky917:
 | 項目 | 預設 |
 |---|---|
 | 驗證方式 | `Authorization: Bearer <JWT>` |
+| 放行路徑（`permit-all-patterns`） | 只有 `/actuator/health`；Swagger／OpenAPI 需自行加入 |
 | 未列入 `permit-all-patterns` 的請求 | 全部需要驗證 |
 | Session | `STATELESS`（不建立 HttpSession） |
 | CSRF | 停用 |
 | CORS | 未設定（需自行提供，見 [使用指南](docs/resource-server/getting-started.md#9-cors)） |
 | Principal 名稱（`authentication.getName()`） | JWT 的 `sub` |
-| claims → authority | `roles` → `ROLE_*`、`permissions` → `PERM_*`、`scope` / `scp` → `SCOPE_*` |
-| 方法級授權 | 啟用（`@PreAuthorize`、`@PostAuthorize`、`@Secured`、自訂註解） |
+| claims → authority | `roles` → `ROLE_*`、`permissions` → `PERM_*`、`scope` / `scp` → `SCOPE_*`（前綴可設定，`@Require*` 註解跟著改變） |
+| 方法級授權 | 一律啟用（`@PreAuthorize`、`@PostAuthorize`、`@Secured`、自訂註解）；不提供關閉開關 |
 | 401 / 403 | JSON 回應；401 另帶 RFC 6750 `WWW-Authenticate` 標頭（含 RFC 9728 的 `resource_metadata`） |
 | `Authentication` 中的額外 authority | Spring Security 7 會自動加入 `FACTOR_BEARER`，代表以 Bearer Token 驗證 |
 
@@ -197,7 +224,7 @@ jacky917:
 
 - JDK 21 以上
 - Maven 3.8 以上
-- Docker（或本機 MySQL 8.4），僅執行 `demo-resource-server` 時需要；跑測試不需要（測試使用 H2）
+- Docker（或本機 MySQL 8.4），僅執行 `example-resource-server` 時需要；跑測試不需要（測試使用 H2）
 
 ### 建置與測試
 
@@ -207,7 +234,7 @@ mvn clean verify
 
 ### 執行 Demo
 
-1) 啟動 MySQL（`demo-resource-server` 預設連線 `localhost:3307/demo_db`，帳密 `root` / `root`）
+1) 啟動 MySQL（`example-resource-server` 預設連線 `localhost:3307/demo_db`，帳密 `root` / `root`）
 
 ```bash
 docker run -d --name jacky917-demo-mysql -p 3307:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=demo_db mysql:8.4
@@ -222,13 +249,13 @@ mvn -DskipTests install
 3) 啟動 Resource Server（port 8080）
 
 ```bash
-mvn -pl demo-resource-server spring-boot:run
+mvn -pl examples/example-resource-server spring-boot:run
 ```
 
 4) 另開終端啟動 Authorization Server（port 8081）
 
 ```bash
-mvn -pl demo-authorization-server spring-boot:run
+mvn -pl examples/example-authorization-server spring-boot:run
 ```
 
 5) 取得 Token 並呼叫 API
@@ -244,7 +271,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/secure/me
 不想啟動 Auth Server 時，也可以用 CLI 直接產生測試 JWT：
 
 ```bash
-mvn -pl demo-resource-server -q exec:java -Dexec.mainClass=jacky917.demo.resourceserver.tools.GenerateTestJwtMain -Dexec.args="--sub=alice --roles=A --perms=bb,clip:read --scope=profile.read --minutes=30"
+mvn -pl examples/example-resource-server -q exec:java -Dexec.mainClass=jacky917.demo.resourceserver.tools.GenerateTestJwtMain -Dexec.args="--sub=alice --roles=A --perms=bb,clip:read --scope=profile.read --minutes=30"
 ```
 
 完整流程與預期結果見 [E2E 測試指南](docs/guides/e2e-testing.md)。

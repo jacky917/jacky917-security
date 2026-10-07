@@ -1,17 +1,17 @@
 # E2E 測試指南（Auth Server + Resource Server）
 
-本文件示範如何用 `demo-authorization-server` 簽發 JWT，再呼叫 `demo-resource-server` 受保護端點完成端到端驗證。
+本文件示範如何用 `example-authorization-server` 簽發 JWT，再呼叫 `example-resource-server` 受保護端點完成端到端驗證。
 
 ## 前置需求
 
 - JDK 21 以上
 - Maven 3.8 以上
-- Docker（或本機 MySQL 8.4）：`demo-resource-server` 執行時需要資料庫
+- Docker（或本機 MySQL 8.4）：`example-resource-server` 執行時需要資料庫
 - 專案根目錄已可執行 `mvn clean verify`
 
 ## Step 0：啟動 MySQL
 
-`demo-resource-server` 預設連線 `localhost:3307/demo_db`，帳密 `root` / `root`（見 `demo-resource-server/src/main/resources/application.yml`）。
+`example-resource-server` 預設連線 `localhost:3307/demo_db`，帳密 `root` / `root`（見 `examples/example-resource-server/src/main/resources/application.yml`）。
 
 ```bash
 docker run -d --name jacky917-demo-mysql -p 3307:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=demo_db mysql:8.4
@@ -33,7 +33,7 @@ mvn -DskipTests install
 ## Step 2：啟動 Demo Auth Server（Port 8081）
 
 ```bash
-mvn -pl demo-authorization-server spring-boot:run
+mvn -pl examples/example-authorization-server spring-boot:run
 ```
 
 預設監聽：`http://localhost:8081`
@@ -43,7 +43,7 @@ mvn -pl demo-authorization-server spring-boot:run
 另開一個終端：
 
 ```bash
-mvn -pl demo-resource-server spring-boot:run
+mvn -pl examples/example-resource-server spring-boot:run
 ```
 
 預設監聽：`http://localhost:8080`
@@ -159,7 +159,7 @@ curl -i "http://localhost:8080/secure/me" -H "Authorization: Bearer not-a-jwt"
 ## 常見問題排查
 
 - `401 invalid token`：確認兩個 demo 模組的 `demo-hs256.jwk.json` 內容相同；Token 是否已過期（預設 10 分鐘）。
-- `Could not find artifact com.github.jacky917:...`：先執行 `mvn -DskipTests install`。
+- `Could not find artifact io.github.jacky917:...`：先執行 `mvn -DskipTests install`。
 - `Communications link failure`（Resource Server 啟動失敗）：MySQL 未啟動，或埠號不是 3307。
 - `連線被拒絕`：確認兩個服務都已啟動，且埠號為 8081 / 8080。
 - 其他問題見 [疑難排解](../resource-server/troubleshooting.md)。
