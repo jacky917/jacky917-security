@@ -1,5 +1,8 @@
 # 資料表設計（Database Schema）
 
+> [!NOTE]
+> 本文件是早期的通用參考設計。採用方案 C（Spring Authorization Server）後的正式設計見 [Authorization Server 設計](auth-server-design.md)，其中的資料表與 Refresh Token 重用偵測已依 SAS 的資料模型調整。
+
 本文件提供 Authorization Server 的參考資料表設計，用於支援：
 
 - 多裝置 Session 管理（以 `sid` 為核心）

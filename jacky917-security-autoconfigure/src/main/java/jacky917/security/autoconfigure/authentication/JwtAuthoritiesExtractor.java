@@ -14,10 +14,21 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * 從 JWT Claims 中提取權限資訊的核心轉換器。
+ * Converter that maps JWT claims to Spring Security granted authorities.
  * <p>
- * 支援從多個 claims (roles, permissions, scope, scp) 中提取權限，
- * 並可透過設定檔自訂 claim 名稱與權限前綴。
+ * 將 JWT claims 轉換為 Spring Security granted authority 的核心轉換器。
+ * <p>
+ * Authorities are read from the roles, permissions, {@code scope}, and
+ * {@code scp} claims. Claim names and authority prefixes come from
+ * {@link Jacky917SecurityProperties}. Each claim may be a string or a
+ * collection: role and permission strings are split on commas, and the
+ * {@code scope} string is split on whitespace. Blank values are skipped,
+ * and claims of any other type are ignored with a warning.
+ * <p>
+ * 權限來源為 roles、permissions、{@code scope} 與 {@code scp} 這幾個 claim，
+ * claim 名稱與權限前綴由 {@code Jacky917SecurityProperties} 設定。每個 claim
+ * 可以是字串或集合：roles 與 permissions 的字串以逗號分隔，{@code scope}
+ * 字串以空白分隔。空白值會被略過，其他型別的 claim 則記錄警告後忽略。
  *
  * @author Jacky
  * @since 0.0.1
@@ -28,13 +39,25 @@ public class JwtAuthoritiesExtractor implements Converter<Jwt, Collection<Grante
 
     private final Jacky917SecurityProperties properties;
 
+    /**
+     * Extracts the granted authorities from the given JWT.
+     * <p>
+     * 從指定的 JWT 中提取 granted authority。
+     *
+     * @param jwt  the decoded JWT to read claims from
+     *             <br>要讀取 claims 的已解碼 JWT
+     * @return a mutable set of distinct authorities sorted by name; empty if
+     *         no configured claim yields a value
+     *         <br>依名稱排序、不重複且可修改的 authority 集合；若設定的
+     *         claim 皆無值則為空集合
+     */
     @Override
     public Collection<GrantedAuthority> convert(Jwt jwt) {
         Set<GrantedAuthority> authorities = new TreeSet<>(Comparator.comparing(GrantedAuthority::getAuthority));
 
         authorities.addAll(extractRoles(jwt));
         authorities.addAll(extractPermissions(jwt));
-        
+
         // Scopes are special and need merging from two possible claims
         Set<GrantedAuthority> scopes = new HashSet<>();
         // Handle string-based scope (e.g., "openid profile")
@@ -90,7 +113,9 @@ public class JwtAuthoritiesExtractor implements Converter<Jwt, Collection<Grante
             return Collections.emptySet();
         }
 
-        return getAuthoritiesFromClaim(claimValue, prefix, delimiter);
+        // A null prefix (for example, an empty YAML value) must not become "null"
+        String safePrefix = prefix == null ? "" : prefix;
+        return getAuthoritiesFromClaim(claimValue, safePrefix, delimiter);
     }
 
     private Set<GrantedAuthority> getAuthoritiesFromClaim(Object claimValue, String prefix, String delimiter) {

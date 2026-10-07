@@ -17,12 +17,32 @@ import javax.crypto.spec.SecretKeySpec;
 import java.io.InputStream;
 
 /**
- * Demo 用 JWT Decoder 設定。
- * 這裡使用 resources 內的對稱式 JWK（oct）作為本地驗證金鑰。
+ * Demo configuration of the JWT decoder.
+ * <p>
+ * Demo 用的 JWT decoder 設定。
+ * <p>
+ * Tokens are verified with the symmetric HS256 key in
+ * {@code demo/jwk/demo-hs256.jwk.json}, which the demo authorization server
+ * also uses to sign them.
+ * <p>
+ * 使用 {@code demo/jwk/demo-hs256.jwk.json} 中的對稱式 HS256 金鑰驗證
+ * token，Demo Authorization Server 也使用同一把金鑰簽署。
  */
 @Configuration
 public class DemoJwtDecoderConfiguration {
 
+    /**
+     * Creates a decoder that verifies the HS256 signature, the expiration
+     * time, and the issuer {@code jacky917-demo-auth-server}.
+     * <p>
+     * 建立驗證 HS256 簽章、到期時間與簽發者
+     * {@code jacky917-demo-auth-server} 的 decoder。
+     *
+     * @return the configured JWT decoder
+     *         <br>設定完成的 JWT decoder
+     * @throws Exception if the key file cannot be read or parsed
+     *         <br>若無法讀取或解析金鑰檔
+     */
     @Bean
     public JwtDecoder jwtDecoder() throws Exception {
         ClassPathResource jwkResource = new ClassPathResource("demo/jwk/demo-hs256.jwk.json");

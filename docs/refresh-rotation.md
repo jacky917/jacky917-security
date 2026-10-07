@@ -1,5 +1,8 @@
 # Refresh Token Rotation 設計說明
 
+> [!NOTE]
+> 本文件是早期的通用參考設計。採用方案 C（Spring Authorization Server）後的正式設計見 [Authorization Server 設計](auth-server-design.md)，其中的資料表與 Refresh Token 重用偵測已依 SAS 的資料模型調整。
+
 本文件描述 Authorization Server 端的 Refresh Token 安全流程，重點包含：
 
 - **10 分鐘短效 Access Token**

@@ -68,14 +68,14 @@ PAT 至少需包含：
 
 ---
 
-## 5. GitHub Actions 發佈範例
+## 5. GitHub Actions 發佈流程
+
+實際設定見 [`.github/workflows/publish.yml`](../.github/workflows/publish.yml)。在 GitHub 上**發佈 Release** 時觸發：
 
 ```yaml
-name: Publish package to GitHub Packages
-
 on:
   release:
-    types: [created]
+    types: [published]
 
 jobs:
   publish:
@@ -85,15 +85,37 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
           server-id: github
-      - name: Publish
-        run: mvn -B -U deploy -pl jacky917-security-annotations,jacky917-security-autoconfigure,jacky917-security-starter -am
+          server-username: MAVEN_USERNAME
+          server-password: GITHUB_TOKEN
+      - name: Publish to GitHub Packages
+        run: >
+          mvn --batch-mode deploy
+          -pl .,jacky917-security-starter,jacky917-security-autoconfigure,jacky917-security-annotations
+          -DskipTests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+> [!IMPORTANT]
+> `-pl` 中的 `.` 代表根目錄的 `jacky917-security-parent`。三個模組都繼承這個 parent POM，**必須一起發佈**，否則消費端會出現 `Could not find artifact com.github.jacky917:jacky917-security-parent:pom`。
+
+發佈新版本的步驟：
+
+1. 修改根 `pom.xml` 的 `<version>`（子模組會繼承）。
+2. 在本機執行 `mvn clean verify` 確認通過。
+3. Commit 並 push。
+4. 在 GitHub 建立 tag 與 Release，按下 Publish，等待 workflow 完成。
+
+注意：
+
+- GitHub Packages 的正式版本**不可覆蓋**，同一版本號重複發佈會得到 `409 Conflict` 或 `422`。
+- workflow 使用 `-DskipTests`，發佈前請確保 CI 或本機測試已通過。
+- **發佈出去的版本號由 `pom.xml` 決定，與 Release / tag 名稱無關。** 例如建立 `v1.0.1` Release，但 `pom.xml` 仍是 `1.0.0`，發佈的就是 `1.0.0`（若該版本已存在則會失敗）。請讓 tag 與 `pom.xml` 版本保持一致。
 
 ---
 
@@ -132,3 +154,7 @@ jobs:
 - `404 Not Found`
   - 發佈 URL 或引用 repository URL 錯誤
   - artifact 尚未成功發佈
+- `Could not find artifact com.github.jacky917:jacky917-security-parent:pom`
+  - 該版本發佈時沒有包含 parent POM，見第 5 節
+- `Could not find artifact org.springframework.boot:spring-boot-starter-parent:pom:3.5.10-SNAPSHOT`
+  - parent POM 依賴 Spring Boot SNAPSHOT，消費端無法存取 Spring Snapshot repository，見 [限制 §16](limitations.md#16-發佈與依賴)

@@ -8,9 +8,24 @@ import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Demo OpenAPI configuration that adds a bearer JWT security scheme.
+ * <p>
+ * Demo 用的 OpenAPI 設定，加入 bearer JWT 安全方案。
+ */
 @Configuration
 public class DemoSwaggerConfiguration {
 
+    /**
+     * Creates the OpenAPI document that applies the {@code bearerAuth} scheme
+     * to every operation, so Swagger UI shows an authorize button.
+     * <p>
+     * 建立將 {@code bearerAuth} 方案套用到所有 API 的 OpenAPI 文件，讓
+     * Swagger UI 顯示授權按鈕。
+     *
+     * @return the OpenAPI definition
+     *         <br>OpenAPI 定義
+     */
     @Bean
     public OpenAPI customOpenAPI() {
         final String securitySchemeName = "bearerAuth";

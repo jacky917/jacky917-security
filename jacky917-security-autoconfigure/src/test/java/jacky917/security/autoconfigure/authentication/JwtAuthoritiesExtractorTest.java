@@ -163,6 +163,15 @@ class JwtAuthoritiesExtractorTest {
         assertThat(getAuthoritiesAsStrings(authorities)).containsExactly("SCOPE_read", "SCOPE_write");
     }
 
+    @Test
+    @DisplayName("prefix 為 null 時視為空字串，不可產生 \"null\" 前綴")
+    void nullPrefixShouldBeTreatedAsEmpty() {
+        properties.getJwt().getPrefix().setRole(null);
+        Jwt jwt = createJwt(Map.of("roles", List.of("ADMIN")));
+        Collection<GrantedAuthority> authorities = extractor.convert(jwt);
+        assertThat(getAuthoritiesAsStrings(authorities)).containsExactly("ADMIN");
+    }
+
     private List<String> getAuthoritiesAsStrings(Collection<GrantedAuthority> authorities) {
         return authorities.stream()
                 .map(GrantedAuthority::getAuthority)

@@ -15,6 +15,11 @@
     <description>Demo Authorization Server for jacky917-security</description>
 
     <dependencies>
+        <!--
+          Note: 本 demo 模組在本專案內採本地 Maven Reactor 建置，不依賴從 GitHub Packages 下載 starter。
+          這樣做是為了讓其他開發者 clone 專案後能「開箱即用」，
+          避免因為 GitHub Packages 強制要求配置 PAT 而導致本地編譯失敗 (401 Unauthorized)。
+        -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
