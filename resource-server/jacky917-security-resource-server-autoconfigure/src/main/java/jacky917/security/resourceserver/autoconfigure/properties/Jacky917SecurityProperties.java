@@ -1,4 +1,4 @@
-package jacky917.security.autoconfigure.properties;
+package jacky917.security.resourceserver.autoconfigure.properties;
 
 import lombok.Getter;
 import lombok.Setter;

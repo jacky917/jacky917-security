@@ -1,6 +1,6 @@
-package jacky917.security.autoconfigure.authentication;
+package jacky917.security.resourceserver.autoconfigure.authentication;
 
-import jacky917.security.autoconfigure.properties.Jacky917SecurityProperties;
+import jacky917.security.resourceserver.autoconfigure.properties.Jacky917SecurityProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.convert.converter.Converter;

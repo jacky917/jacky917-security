@@ -1,6 +1,6 @@
-package jacky917.security.autoconfigure.integration;
+package jacky917.security.resourceserver.autoconfigure.integration;
 
-import jacky917.security.autoconfigure.config.Jacky917SecurityAutoConfiguration;
+import jacky917.security.resourceserver.autoconfigure.config.Jacky917SecurityAutoConfiguration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

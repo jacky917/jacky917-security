@@ -1,6 +1,6 @@
-package jacky917.security.autoconfigure.authentication;
+package jacky917.security.resourceserver.autoconfigure.authentication;
 
-import jacky917.security.autoconfigure.properties.Jacky917SecurityProperties;
+import jacky917.security.resourceserver.autoconfigure.properties.Jacky917SecurityProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

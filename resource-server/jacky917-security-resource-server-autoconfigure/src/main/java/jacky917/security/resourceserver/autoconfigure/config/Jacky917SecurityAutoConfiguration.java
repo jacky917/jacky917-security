@@ -1,9 +1,9 @@
-package jacky917.security.autoconfigure.config;
+package jacky917.security.resourceserver.autoconfigure.config;
 
 import jakarta.servlet.http.HttpServletResponse;
-import jacky917.security.autoconfigure.authentication.JwtAuthoritiesExtractor;
-import jacky917.security.autoconfigure.methodsecurity.Jacky917AuthorityEvaluator;
-import jacky917.security.autoconfigure.properties.Jacky917SecurityProperties;
+import jacky917.security.resourceserver.autoconfigure.authentication.JwtAuthoritiesExtractor;
+import jacky917.security.resourceserver.autoconfigure.methodsecurity.Jacky917AuthorityEvaluator;
+import jacky917.security.resourceserver.autoconfigure.properties.Jacky917SecurityProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;

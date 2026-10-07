@@ -1,4 +1,4 @@
-package jacky917.security.autoconfigure.methodsecurity;
+package jacky917.security.resourceserver.autoconfigure.methodsecurity;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

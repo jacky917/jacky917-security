@@ -1,4 +1,4 @@
-package jacky917.security.autoconfigure.methodsecurity;
+package jacky917.security.resourceserver.autoconfigure.methodsecurity;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
