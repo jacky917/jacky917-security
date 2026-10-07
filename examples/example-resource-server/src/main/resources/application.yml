@@ -18,9 +18,6 @@ spring:
 jacky917:
   security:
     enabled: true
-    debug-log: false
-    method-security:
-      enabled: true
     permit-all-patterns:
       - /public/**
       - /actuator/health

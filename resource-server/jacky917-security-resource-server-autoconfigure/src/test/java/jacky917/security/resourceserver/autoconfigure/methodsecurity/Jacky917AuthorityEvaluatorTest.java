@@ -37,6 +37,36 @@ class Jacky917AuthorityEvaluatorTest {
     }
 
     @Test
+    @DisplayName("hasRole／hasPerm／hasScope 加上預設前綴")
+    void prefixedChecksUseDefaultPrefixes() {
+        Authentication user = new TestingAuthenticationToken("u", "n/a", "ROLE_A", "PERM_bb", "SCOPE_profile");
+        assertThat(evaluator.hasRole(user, "A")).isTrue();
+        assertThat(evaluator.hasPerm(user, "bb")).isTrue();
+        assertThat(evaluator.hasScope(user, "profile")).isTrue();
+        assertThat(evaluator.hasRole(user, "B")).isFalse();
+    }
+
+    @Test
+    @DisplayName("hasRole 使用設定的前綴")
+    void prefixedChecksUseConfiguredPrefixes() {
+        var properties = new jacky917.security.resourceserver.autoconfigure.properties.Jacky917SecurityProperties();
+        properties.getJwt().getPrefix().setRole("R_");
+        var custom = new Jacky917AuthorityEvaluator(properties);
+        assertThat(custom.hasRole(new TestingAuthenticationToken("u", "n/a", "R_ADMIN"), "ADMIN")).isTrue();
+        assertThat(custom.hasRole(new TestingAuthenticationToken("u", "n/a", "ROLE_ADMIN"), "ADMIN")).isFalse();
+    }
+
+    @Test
+    @DisplayName("hasRole／hasPerm／hasScope：空白值或 null 驗證一律拒絕")
+    void prefixedChecksFailClosed() {
+        Authentication user = new TestingAuthenticationToken("u", "n/a", "ROLE_");
+        assertThat(evaluator.hasRole(user, "")).isFalse();
+        assertThat(evaluator.hasRole(user, "  ")).isFalse();
+        assertThat(evaluator.hasPerm(null, "bb")).isFalse();
+        assertThat(evaluator.hasScope(user, null)).isFalse();
+    }
+
+    @Test
     @DisplayName("authentication 為 null 時一律拒絕")
     void nullAuthenticationShouldDeny() {
         assertThat(evaluator.hasAllAuthorities(null, "ROLE_A")).isFalse();

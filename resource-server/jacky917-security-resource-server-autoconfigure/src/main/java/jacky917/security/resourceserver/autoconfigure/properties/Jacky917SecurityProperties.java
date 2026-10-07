@@ -37,28 +37,14 @@ public class Jacky917SecurityProperties {
 
     /**
      * Request patterns that are accessible without authentication. Setting
-     * this property replaces the defaults instead of adding to them. The
-     * defaults cover the actuator health endpoint and common Swagger and
-     * OpenAPI paths.
+     * this property replaces the default instead of adding to it. The
+     * default only permits the actuator health endpoint; add Swagger and
+     * OpenAPI paths explicitly when they should be public.
      * <p>
      * 不需驗證即可存取的請求路徑。設定此屬性會取代預設值，而不是附加在後面。
-     * 預設包含 actuator health 與 Swagger／OpenAPI 常用路徑。
+     * 預設只放行 actuator health；需要公開 Swagger／OpenAPI 時請自行加入。
      */
-    private List<String> permitAllPatterns = new ArrayList<>(List.of(
-            "/actuator/health",
-            "/v3/api-docs",
-            "/v3/api-docs/**",
-            "/swagger-ui/**",
-            "/swagger-ui.html",
-            "/swagger-ui/index.html"
-    ));
-
-    /**
-     * Method security settings.
-     * <p>
-     * 方法級授權設定。
-     */
-    private MethodSecurity methodSecurity = new MethodSecurity();
+    private List<String> permitAllPatterns = new ArrayList<>(List.of("/actuator/health"));
 
     /**
      * JWT claim and authority prefix settings.
@@ -66,32 +52,6 @@ public class Jacky917SecurityProperties {
      * JWT claim 與權限前綴設定。
      */
     private Jwt jwt = new Jwt();
-
-    /**
-     * Whether to write detailed diagnostic logs.
-     * <p>
-     * 是否輸出詳細的偵錯日誌。
-     */
-    private boolean debugLog = false;
-
-    /**
-     * Method security settings, bound from
-     * {@code jacky917.security.method-security.*}.
-     * <p>
-     * 方法級授權設定，綁定自 {@code jacky917.security.method-security.*}。
-     */
-    @Getter
-    @Setter
-    public static class MethodSecurity {
-        /**
-         * Whether method security ({@code @PreAuthorize}, {@code @Secured},
-         * and the {@code @Require*} annotations) is enabled.
-         * <p>
-         * 是否啟用方法級授權（{@code @PreAuthorize}、{@code @Secured} 與
-         * {@code @Require*} 註解）。
-         */
-        private boolean enabled = true;
-    }
 
     /**
      * JWT settings, bound from {@code jacky917.security.jwt.*}.
@@ -153,12 +113,12 @@ public class Jacky917SecurityProperties {
 
         /**
          * Prefixes added to extracted authorities. The {@code @RequireRole},
-         * {@code @RequirePerm}, and {@code @RequireScope} annotations always
-         * use the default prefixes, so changing these values breaks them.
+         * {@code @RequirePerm}, and {@code @RequireScope} annotations use the
+         * same prefixes, so they keep working when these values change.
          * <p>
          * 加在提取出的 authority 前面的前綴。{@code @RequireRole}、
-         * {@code @RequirePerm} 與 {@code @RequireScope} 註解固定使用預設前綴，
-         * 因此修改這些值會使它們失效。
+         * {@code @RequirePerm} 與 {@code @RequireScope} 註解使用相同的前綴，
+         * 因此修改這些值後註解仍可正常運作。
          */
         @Getter
         @Setter

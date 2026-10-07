@@ -75,7 +75,7 @@ public class JwtAuthoritiesExtractor implements Converter<Jwt, Collection<Grante
         ));
         authorities.addAll(scopes);
 
-        if (properties.isDebugLog() && !authorities.isEmpty()) {
+        if (log.isDebugEnabled()) {
             log.debug("Extracted authorities: {}", authorities);
         }
 

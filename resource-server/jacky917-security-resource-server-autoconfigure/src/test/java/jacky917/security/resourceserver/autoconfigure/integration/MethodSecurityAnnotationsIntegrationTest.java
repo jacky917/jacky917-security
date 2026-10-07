@@ -29,8 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(
         classes = MethodSecurityAnnotationsIntegrationTest.TestApplication.class,
         properties = {
-                "jacky917.security.enabled=true",
-                "jacky917.security.method-security.enabled=true"
+                "jacky917.security.enabled=true"
         }
 )
 @AutoConfigureMockMvc

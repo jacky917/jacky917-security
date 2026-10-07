@@ -120,10 +120,6 @@ public class Jacky917SecurityAutoConfiguration {
             HttpSecurity http,
             JwtAuthenticationConverter jwtAuthenticationConverter
     ) throws Exception {
-        if (properties.isDebugLog()) {
-            log.info("Initializing Jacky917SecurityFilterChain...");
-        }
-
         // 1. 基本配置：無狀態、禁用 CSRF
         http
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -188,19 +184,19 @@ public class Jacky917SecurityAutoConfiguration {
     }
 
     /**
-     * Creates the evaluator referenced by {@code @RequireAny} and
-     * {@code @RequireAll} as {@code @jacky917AuthorityEvaluator}.
+     * Creates the evaluator referenced by the {@code @Require*}
+     * annotations as {@code @jacky917AuthorityEvaluator}.
      * <p>
-     * 建立供 {@code @RequireAny} 與 {@code @RequireAll} 以
-     * {@code @jacky917AuthorityEvaluator} 參照的判斷工具。
+     * 建立供 {@code @Require*} 註解以 {@code @jacky917AuthorityEvaluator}
+     * 參照的判斷工具。
      *
-     * @return a new authority evaluator
-     *         <br>新的 authority 判斷工具
+     * @return an authority evaluator that uses the configured prefixes
+     *         <br>使用設定前綴的 authority 判斷工具
      */
     @Bean("jacky917AuthorityEvaluator")
     @ConditionalOnMissingBean(name = "jacky917AuthorityEvaluator")
     public Jacky917AuthorityEvaluator jacky917AuthorityEvaluator() {
-        return new Jacky917AuthorityEvaluator();
+        return new Jacky917AuthorityEvaluator(properties);
     }
 
     /**
@@ -240,9 +236,8 @@ public class Jacky917SecurityAutoConfiguration {
     }
 
     private void handleException(HttpServletResponse response, HttpStatus status, String message, String path, Exception ex) throws IOException {
-        if (properties.isDebugLog()) {
-            log.warn("Security exception caught: status={}, message={}, path={}, exception={}", status, message, path, ex.getClass().getSimpleName());
-        }
+        // 以 DEBUG 記錄：大量 401／403（例如被掃描）時不灌爆日誌；需要時以 logging.level 開啟
+        log.debug("Security exception: status={}, path={}, exception={}", status.value(), path, ex.getClass().getSimpleName());
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
@@ -259,19 +254,21 @@ public class Jacky917SecurityAutoConfiguration {
     }
 
     /**
-     * Enables method security unless
-     * {@code jacky917.security.method-security.enabled=false}.
+     * Enables method security ({@code @PreAuthorize}, {@code @PostAuthorize},
+     * {@code @Secured}, and the {@code @Require*} annotations) whenever the
+     * starter is enabled.
      * <p>
-     * 啟用方法級授權，除非設定
-     * {@code jacky917.security.method-security.enabled=false}。
+     * 只要 starter 啟用，就啟用方法級授權（{@code @PreAuthorize}、
+     * {@code @PostAuthorize}、{@code @Secured} 與 {@code @Require*} 註解）。
+     * <p>
+     * There is deliberately no switch to turn it off: disabling it would make
+     * every authorization annotation silently stop checking.
+     * <p>
+     * 刻意不提供關閉的開關：關閉後所有授權註解都會靜默失效。
      */
     @Configuration(proxyBeanMethods = false)
-    @EnableMethodSecurity(prePostEnabled = true, securedEnabled = true)
-    @ConditionalOnProperty(
-            name = "jacky917.security.method-security.enabled",
-            havingValue = "true",
-            matchIfMissing = true
-    )
+    // securedEnabled 保留：若移除，既有的 @Secured 會被靜默忽略，端點等於失去保護
+    @EnableMethodSecurity(securedEnabled = true)
     static class MethodSecurityConfiguration {
     }
 }
