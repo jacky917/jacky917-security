@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, '1.x']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test (Java ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['21', '25']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: temurin
+          cache: maven
+
+      # 包含 enforcer 的依賴方向檢查；之後的 Testcontainers 測試使用 runner 內建的 Docker
+      - name: Build and test
+        run: mvn --batch-mode verify
+
+  docs:
+    name: Documentation links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check links, anchors and YAML examples
+        run: |
+          pip install pyyaml
+          python scripts/check-doc-links.py

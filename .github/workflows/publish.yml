@@ -20,16 +20,38 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: maven
           server-id: github
           server-username: MAVEN_USERNAME
           server-password: GITHUB_TOKEN
 
-      # 執行 Maven deploy，且跳過 demo 模組（因為 demo 不需要被別人當作依賴導入）
-      # 「.」代表根目錄的 parent POM：子模組都繼承它，若不一起發佈，消費端會解析失敗
+      # 發佈的版本號只看 pom.xml 的 revision；tag 不一致時中止，避免「建立 v1.0.1 卻發佈 1.0.0」
+      - name: Verify tag matches project version
+        run: |
+          VERSION=$(mvn --batch-mode --quiet help:evaluate -Dexpression=revision -DforceStdout)
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=${TAG} revision=${VERSION}"
+          if [ "${VERSION}" != "${TAG}" ]; then
+            echo "::error::Release tag ${GITHUB_REF_NAME} does not match revision ${VERSION} in pom.xml"
+            exit 1
+          fi
+
+      # 尚未決定授權條款前禁止發佈：沒有自行宣告時，發佈的 POM 會帶有繼承自 spring-boot-starter-parent 的 Apache License 2.0
+      - name: Verify license is declared
+        run: |
+          if [ ! -f LICENSE ] || ! grep -q '<licenses>' pom.xml; then
+            echo "::error::LICENSE file and <licenses> in pom.xml are required before publishing (see the TODO in pom.xml)"
+            exit 1
+          fi
+
+      # 先完成整個 reactor 的建置與測試，全部通過才部署。
+      # 若直接 mvn deploy，Maven 會逐模組「測試後立即部署」，examples 的測試在函式庫部署之後才執行；
+      # 一旦失敗就會留下發佈一半的版本，而 GitHub Packages 不允許覆蓋正式版本。
+      - name: Build and test
+        run: mvn --batch-mode verify
+
+      # 部署整個 reactor：examples 以 maven.deploy.skip 排除，新增模組時不必修改此處
       - name: Publish to GitHub Packages
-        run: >
-          mvn --batch-mode deploy
-          -pl .,jacky917-security-starter,jacky917-security-autoconfigure,jacky917-security-annotations
-          -DskipTests
+        run: mvn --batch-mode deploy -DskipTests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

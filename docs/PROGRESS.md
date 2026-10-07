@@ -19,6 +19,8 @@
 - [🟡] Step 11: 2.0 設計（Spring Boot 4.1 升級 + Repo 拆分）— 設計草案完成，待決策
 - [🟢] Step 12: 建立 `1.x` 維護分支（M0；`1.1.0` 待發佈）
 - [🟢] Step 13: 升級到 Spring Boot 4.1.1（M1；待合併）
+- [🟡] Step 14: Authorization Server 詳細設計（資料模型 + 元件與流程）— 設計草案完成，待確認
+- [🟢] Step 15: 資料庫抽象（預設 SQLite、YAML 切換 PostgreSQL）設計與實測
 
 ---
 
@@ -410,3 +412,139 @@
   - 在有 Docker 的環境驗證 MySQL（Connector/J 9.7.0）。
   - PR #1 合併後，將本分支以 PR 合併到 `main`，並發佈 `2.0.0-M1`。
 
+---
+## Step 14: Authorization Server 詳細設計（方案 C）
+- **Status**: 🟡 設計草案完成，待確認（尚未實作）
+- **Acceptance Criteria**:
+  - [x] `docs/auth-server-data-model.md`：23 張表的完整 DDL（官方表依 jar 內 schema 檔改為 PostgreSQL 版）、欄位說明、索引與理由、狀態機、關鍵查詢、初始資料、Flyway 規劃、DB 帳號權限、清理規則與容量估算。
+  - [x] `docs/auth-server-detailed-design.md`：D15～D21、套件與元件、與 Spring Security AS 的整合點、SPI、三條 filter chain、Token 有效期與 claim 規則、六個主要流程（含失敗分支）、設定屬性規格、錯誤處理、稽核與 metrics、威脅模型、37 個測試案例、第 1～2 階段工作分解。
+  - [x] `docs/auth-server-design.md`：§5 改為摘要並指向資料模型；`sid` → `asid`；移除表名前綴；新增 D15～D21 索引。
+- **查證（Spring Security 7.1.1、Spring Session 4.1.1 jar）**:
+  - 官方 schema 檔內容與 PostgreSQL 調整說明（`blob`→`text`、`timestamp`→`timestamptz`）；官方表沒有任何索引。
+  - `JdbcOAuth2AuthorizationService` 表名為寫死常數 `TABLE_NAME = "oauth2_authorization"` → 取消表名前綴（D17）。
+  - `TokenSettings` 預設：授權碼與 Access Token 5 分鐘、Refresh Token 60 分鐘、`reuseRefreshTokens=true`。
+  - `OAuth2RefreshTokenGenerator` 不發 Refresh Token 給授權碼流程的 public client；刷新流程支援 DPoP。
+  - `JwtGenerator` 由 `SessionInformation` 產生 ID Token 的 `sid`，`OidcLogoutAuthenticationProvider` 以 `SessionRegistry` 驗證 → Access Token 改用 `asid`（D20）。
+  - Jackson 3 內建 `UserMixin`、`UsernamePasswordAuthenticationTokenMixin` → Principal 標準化不需自訂 mixin（D16）。
+  - `HttpSecurity#oauth2AuthorizationServer`、`OAuth2AuthorizationServerConfigurer`（僅公開建構子）、`tokenEndpoint().authenticationProviders(...)`、`OidcLogoutAuthenticationSuccessHandler#setLogoutHandler`、Pushed Authorization Request configurer 皆存在。
+- **Commands Run & Results**:
+  - 以 embedded PostgreSQL 16.15 執行資料模型全部 DDL，並以 Spring Security 7.1.1 官方 JDBC 類別存取：**40 項檢查全部通過**（見 `docs/auth-server-data-model.md` §16）。第一次執行時有 1 項約束測試的 SQL 本身寫錯，修正後才確認該約束確實生效。
+  - 文件連結、錨點與 YAML 檢查：無錯誤。
+- **Decision Log**:
+  - **DEC-043**: 表設計以 `docs/auth-server-data-model.md` 為唯一權威來源，避免兩份 DDL 逐漸不一致。
+  - **DEC-044**: AS 使用專屬資料庫並取消表名前綴（D17）。
+  - **DEC-045**: Access Token 以 `asid` 表示登入 Session（D20）。
+  - **DEC-046**: Refresh 以列鎖序列化，並設 30 秒寬限期區分併發與重用攻擊（D19）。
+- **Next TODO**:
+  - 取得 `docs/auth-server-detailed-design.md` §12 的答覆。
+  - 完成 M2（repo 重構）後，依詳細設計 §11 開始第 1 階段。
+
+---
+## Step 15: 資料庫抽象（預設 SQLite、YAML 切換 PostgreSQL）
+- **Status**: 🟢 設計完成（尚未實作）
+- **使用者決定**：資料庫預設 SQLite，需抽象化以便在 YAML 無痛切換；允許以 Email 登入。
+- **Acceptance Criteria**:
+  - [x] 詳細設計新增 D22：可攜 SQL + 依資料庫分開的 Flyway migration（`{vendor}`）+ 極小的 `AuthorizationServerDialect`；預設 SQLite 的實作細節（`EnvironmentPostProcessor`、啟動檢查）；支援矩陣（SQLite、PostgreSQL；MySQL 第 5 階段）。
+  - [x] 資料模型改為可攜：ID `VARCHAR(36)`、IP `VARCHAR(45)`、JSON `TEXT`；時間由應用程式寫入；格式驗證移到應用程式；查詢改為兩種資料庫通用的 SQL。
+  - [x] 資料模型新增 §17：SQLite 型別對應、必要連線參數、限制、完整 DDL。
+  - [x] D14 標示為已決定；D10、D19 補上 SQLite 的對應做法；待確認事項更新（資料庫、Email 登入已決定）。
+- **Commands Run & Results**:
+  - 查證：Spring Session 4.1.1 隨附 `schema-sqlite.sql`；Flyway 12.4.0 核心已內建 SQLite；Boot 4.1.1 的 `DatabaseDriver` 含 `SQLITE`，Flyway 自動配置支援 `{vendor}`。
+  - SQLite 3.53.4（xerial 3.53.4.0 + HikariCP + Flyway 12.4.0）：**23 項全部通過**。過程中發現並記錄：`SQLiteDataSource` 不會套用 URL 中的 `transaction_mode`；xerial 在 `IMMEDIATE` 模式下 commit 後會立刻開始新交易並持有寫入鎖（連線池必須維持 `auto-commit=true`）；未設定 `foreign_keys=true` 時孤兒資料會被接受。
+  - PostgreSQL 16.15（改為可攜型別後重新驗證）：**40 項全部通過**；每一項約束測試都確認由目標約束擋下。
+  - 文件連結、錨點、YAML 檢查：無錯誤。
+- **Decision Log**:
+  - **DEC-047**: 預設 SQLite、YAML 切換 PostgreSQL（使用者決定，D14／D22）。
+  - **DEC-048**: 不使用 JPA；以可攜 SQL + 依資料庫分開的 DDL + dialect 介面實作資料庫抽象。
+  - **DEC-049**: 資料表只使用可攜型別，時間一律由應用程式寫入，格式驗證在應用程式。
+  - **DEC-050**: SQLite 以 `transaction_mode=IMMEDIATE` 取代 `FOR UPDATE`，並強制檢查必要連線參數。
+  - **DEC-051**: 允許以已驗證的 Email 登入（使用者決定）。
+
+---
+## Step 16: 記錄使用者決策（BFF、client_credentials）
+- **Status**: 🟢 Completed
+- **Decision Log**:
+  - **DEC-052**: 網頁前端採用 BFF（AS D03）。
+  - **DEC-053**: 第 1 階段即支援 `client_credentials`（AS D15），工作分解第 8 項納入。
+- **Files Changed**: `docs/auth-server-design.md`、`docs/auth-server-detailed-design.md`、`docs/v2-overview.md`、`docs/PROGRESS.md`
+- **Next TODO**:
+  - AS 剩餘待確認：第三方登入提供者（推薦第 1 階段只做 Google）、行動 App、第一版是否開放註冊、既有使用者匯入、網域規劃。
+  - M2 前需決定：groupId、artifactId 改名、repo 改名、2.0 破壞性清理範圍。
+
+---
+## Step 17: PR #2 review 修正
+- **Status**: 🟢 Completed
+- **Review 結果**：8 項中 7 項屬實；第 6 項（每次錯誤回應查一次 `JsonMapper`）成本可忽略，不修改。
+- **修正內容**:
+  - #1 排序測試：實驗證實原測試在 `beforeName` 打錯、甚至完全移除時都會通過（Spring Boot 先依字母順序排序，`jacky917.…` 本來就在 `org.springframework.…` 之前）。新增「`beforeName` 列出的類別都存在」的測試，並實測打錯字時會失敗；測試應用程式改為只用 `@EnableAutoConfiguration`。
+  - #2 README 與使用指南的依賴範例：標示 2.x 尚未發佈、目前只有 `1.0.0`。
+  - #3 資料模型：全部 23 張表統一在 V1 建立，消除 §2、§13.1、§17.4 的矛盾。
+  - #4 demo 測試改用 Jackson 3，不再依賴 springdoc 間接帶入的 Jackson 2。
+  - #5 401 斷言：未帶 token 時 `WWW-Authenticate` 不得包含 `error=`。
+  - #7 demo 讀取 JWK 改用 `Resource#getContentAsString`。
+  - #8 ShedLock 一律使用；Spring Session JDBC 只在 PostgreSQL 啟用。
+- **Commands Run & Results**:
+  - 原排序測試的四種破壞實驗：全部 PASS（證實測不到）。新測試：名稱正確 PASS、打錯 FAIL 並指出類別、還原後 PASS。
+  - `mvn -B -o clean verify`：**SUCCESS**，42 個測試全數通過。
+  - 文件連結、錨點、YAML 檢查：無錯誤。
+
+
+---
+## Step 18: Repo 重構與 2.0 行為清理（M2）
+- **Status**: 🟢 Completed
+- **使用者決定**：先做 M2 再實作 AS；groupId 改為 `io.github.jacky917`；artifactId 與 repo 名稱都改（repo → `jacky917-security`）；AS 第 1 階段採推薦範圍（只做 Google、不開放註冊、不支援行動 App、不匯入使用者）。
+- **Acceptance Criteria**:
+  - [x] 目錄改為 `core/`、`resource-server/`、`examples/`、`relocation/`，新增 `jacky917-security-core`（無依賴的 claim 契約）與 `jacky917-security-bom`。
+  - [x] 座標改為 `io.github.jacky917`；自動配置套件改為 `jacky917.security.resourceserver.autoconfigure`。
+  - [x] `${revision}` + flatten-maven-plugin：發佈的 POM 不含 parent；BOM 以 bom 模式發佈並以外部專案驗證可匯入。
+  - [x] 舊座標 `com.github.jacky917:jacky917-security-starter` 以 relocation POM 導向新 starter，實測 Maven 會顯示改名提示。
+  - [x] maven-enforcer：Resource Server 模組不得依賴 AS 模組；core 不得有任何依賴。實測違反時建置失敗並顯示自訂訊息。
+  - [x] 2.0 行為清理：單一條件註解跟隨 `jwt.prefix.*`；`permit-all-patterns` 預設只放行 `/actuator/health`；移除 `debug-log`、`method-security.enabled`；401／403 日誌改為 DEBUG。
+  - [x] CI（Java 21／25 + 文件連結檢查）；發佈流程改為部署整個 reactor 並檢查 tag 與 `revision` 一致。
+  - [x] 文件改為 `docs/resource-server/`、`docs/design/`、`docs/guides/`，新增升級指南 `docs/guides/upgrade-to-2.0.md`。
+  - [x] GitHub repo 改名為 `jacky917-security`（使用者確認後執行），POM 的 `url`／`scm`／`distributionManagement` 與文件連結已更新。
+- **Commands Run & Results**:
+  - `mvn -B -o clean verify`：**SUCCESS**，51 個測試全數通過（Resource Server 42、example-resource-server 7、example-authorization-server 2）。
+  - enforcer 兩條規則的破壞實驗：都會失敗並顯示訊息；還原後通過。
+  - 外部專案匯入 BOM 與舊座標：依賴解析正確，舊座標顯示 relocation 提示。
+  - 文件連結、錨點、YAML 檢查：無錯誤。
+- **Decision Log**:
+  - **DEC-054**: 根 POM 仍繼承 `spring-boot-starter-parent`，以 flatten 產生不含 parent 的發佈 POM（偏離 R-D7 原本「不繼承 Boot parent」的設計，理由見 `docs/design/repo-structure-design.md` §11）。
+  - **DEC-055**: 保留 `@Secured` 支援。原計畫在 2.0 移除，但移除後既有的 `@Secured` 會變成**完全不檢查**（fail-open），風險高於維護成本。
+  - **DEC-056**: 屬性預設值維持字串常值（configuration metadata 才讀得到預設值），以單元測試確保與 core 常數一致。
+  - **DEC-057**: BOM 內以 `${project.version}` 表示版本，flatten 後由使用端解析，已以外部專案驗證。
+  - **DEC-058**: 授權條款尚未決定。發佈的 POM 目前帶有繼承自 Spring Boot parent 的 Apache License 2.0，**正式發佈 2.0.0 前必須決定**（根 POM 有 TODO）。
+- **Next TODO**:
+  - 以舊的 GitHub Packages URL 實際下載 `1.0.0`（需要有 `read:packages` 的 token）。
+  - 待使用者決定：授權條款、1.1.0 發佈時間、`.cursor/rules` 是否更新為 Spring Boot 4.1。
+  - 依 `docs/design/auth-server-detailed-design.md` §11 開始 AS 第 1 階段。
+
+---
+## Step 19: PR #3 review 修正
+- **Status**: 🟢 Completed
+- **Review 結果**：10 項中 8 項修正、2 項記錄為已知限制（使用者決定全部採用推薦方案）。
+- **修正內容**:
+  - 發佈流程：改為先 `mvn verify` 再 `mvn deploy -DskipTests`。原本直接 `mvn deploy` 會逐模組「測試後立即部署」，範例模組的測試失敗時，函式庫已經發佈出去。
+  - 發佈流程：沒有 `LICENSE` 檔或 `<licenses>` 時拒絕發佈（授權條款尚未決定）。
+  - `@Require*` 所需的 Bean 移到新的 `Jacky917AuthorityEvaluatorAutoConfiguration`，沒有任何條件。`enabled=false` 或非 Servlet 應用程式自行啟用方法級授權時，註解照常運作；原本會因找不到 `jacky917AuthorityEvaluator` 而回傳 500。
+  - 文件連結檢查：重複標題依 GitHub 規則加 `-1`、`-2`；支援帶標題與 `<...>` 的連結。
+  - `PROGRESS.md` Step 2～9 中 12 行被批次替換改錯的歷史路徑還原。
+  - 自訂前綴的負向測試補上 `@RequireScope`。
+  - 超過 80 欄的 Javadoc 換行（`AuthzService` 的 `{@code @PreAuthorize(...)}` 與 `GenerateTestJwtMain` 的命令列範例無法斷行，保留）。
+  - 限制文件新增 §17（新舊座標同時存在）、§18（無法只關閉 Starter 的方法級授權）；升級指南加入對應提醒與檢查項目。
+- **Commands Run & Results**:
+  - 新測試的破壞實驗：從 `AutoConfiguration.imports` 移除新的自動配置後，2 個註解測試失敗；還原後通過。
+  - 實驗：移除 `AnnotationTemplateExpressionDefaults` Bean 後註解仍正常。查證 Spring Security 7.1.1 的 `SecurityAnnotationScanners.requireUnique(Class)` 預設即帶入 `AnnotationTemplateExpressionDefaults`，因此修正 Javadoc 與設計文件的描述（此 Bean 改為「明確宣告並可替換」）。
+  - 連結檢查的實驗：`#欄位說明-1` 通過、`#欄位說明-2` 回報缺少；帶標題與 `<...>` 的失效連結都會回報。
+  - 授權條款檢查：目前沒有 `LICENSE`，檢查會中止發佈（符合預期）。
+  - `mvn -B -o clean verify`：**SUCCESS**，56 個測試全數通過（Resource Server 47、example-resource-server 7、example-authorization-server 2）。
+  - 文件連結、錨點、YAML 檢查：無錯誤。
+- **Decision Log**:
+  - **DEC-059**: `@Require*` 所需的 Bean 一律註冊，不受 `jacky917.security.enabled` 與應用程式類型影響（只負責判斷，不改變安全設定）。
+  - **DEC-060**: 發佈前必須完成整個 reactor 的測試，並已宣告授權條款。
+  - **DEC-061**: 不為 annotations／autoconfigure 的舊座標提供 relocation，也不恢復關閉方法級授權的開關；兩者記錄為已知限制（limitations §17、§18）。
+- **Files Changed**:
+  - **New**: `Jacky917AuthorityEvaluatorAutoConfiguration.java`、`StarterDisabledIntegrationTest.java`
+  - **Updated**: `Jacky917SecurityAutoConfiguration.java`、`AutoConfiguration.imports`、`PrefixAndDefaultsIntegrationTest.java`、`AutoConfigurationOrderingIntegrationTest.java`、`Jacky917SecurityProperties.java`、`.github/workflows/publish.yml`、`scripts/check-doc-links.py`、`pom.xml`、`docs/resource-server/{getting-started,configuration,limitations}.md`、`docs/guides/{upgrade-to-2.0,github-packages}.md`、`docs/design/starter-design.md`、`docs/PROGRESS.md`、`docs/PROJECT_STRUCTURE.md`
+- **Next TODO**:
+  - 決定授權條款（新增 `LICENSE` 與 `<licenses>`）後才能發佈 2.0.0。

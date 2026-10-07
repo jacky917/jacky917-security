@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.jacky917</groupId>
+        <artifactId>jacky917-security-parent</artifactId>
+        <version>${revision}</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <!--
+      舊座標 com.github.jacky917:jacky917-security-starter 的 relocation。
+      只升級版本號的 1.x 使用者會被 Maven 導向新座標，並看到改名提示。
+      只在 2.0.x 發佈，3.0 移除。
+    -->
+    <groupId>com.github.jacky917</groupId>
+    <artifactId>jacky917-security-starter</artifactId>
+    <packaging>pom</packaging>
+    <name>jacky917-security-starter (relocated)</name>
+    <description>Relocated to io.github.jacky917:jacky917-security-resource-server-starter</description>
+
+    <distributionManagement>
+        <relocation>
+            <groupId>io.github.jacky917</groupId>
+            <artifactId>jacky917-security-resource-server-starter</artifactId>
+            <message>Renamed in 2.0: use io.github.jacky917:jacky917-security-resource-server-starter (Spring Boot 4.1+).</message>
+        </relocation>
+    </distributionManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <configuration>
+                    <pomElements>
+                        <!-- relocation 位於 distributionManagement，flatten 預設會移除，必須保留 -->
+                        <distributionManagement>keep</distributionManagement>
+                    </pomElements>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
