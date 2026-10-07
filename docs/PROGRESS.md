@@ -623,3 +623,22 @@
   - **DEC-073**: 第一位管理員在第 1 階段即提供（不開放註冊時的唯一入口）。
 - **Next TODO**:
   - 工作 6：登入（filter chain、登入頁、成功／失敗處理、`auth_session`）。
+
+---
+## Step 24: Authorization Server 第 1 階段——工作 6（登入）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] Order 1 filter chain：Spring Authorization Server 端點（OIDC、`/userinfo` 以 Access Token 存取）；未登入的瀏覽器導向 `/login`。
+  - [x] Order 3 filter chain：登入表單（CSRF）、登入後更換 Session ID、`X-Frame-Options: DENY`、CSP。
+  - [x] 登入頁（Thymeleaf）：依請求語言顯示繁體中文或英文；所有錯誤顯示相同訊息；品牌設定（產品名稱、logo、主色）。
+  - [x] `LoginSuccessHandler`：記錄登入、建立 `auth_session`（`PASSWORD`／`local`／`pwd`）、瀏覽器 Session 存放 `asid`。
+  - [x] 自動配置排在 Spring Boot 的安全性與 Authorization Server 自動配置之前（以測試確認類別名稱存在）。
+- **Commands Run & Results**:
+  - 以 MockMvc 模擬瀏覽器與 BFF 走完授權碼 + PKCE 流程（從登入頁 HTML 取得 CSRF token），SQLite 與 PostgreSQL 各一次：Access Token 的 `sub` 為使用者 ID、帶 `kid`、有 Refresh Token 與 ID Token；另驗證無 PKCE 被拒、未註冊的 redirect 回 400、`client_credentials` 的 `sub` 為 client id、停權 client 回 `invalid_client`、discovery 的 issuer、JWKS 只有公鑰。
+  - 測試發現並修正：`?error` 沒有值時，部分容器傳回 null，登入頁因此不顯示錯誤（改為判斷參數是否存在）。
+  - `mvn -B -o clean verify`：**SUCCESS**，131 個測試（Resource Server 47、Authorization Server 75、範例 9）。
+- **Decision Log**:
+  - **DEC-074**: 登入頁使用 starter 自己的訊息檔，不依賴應用程式的 `MessageSource`。
+  - **DEC-075**: 主色以 `/jacky917/theme.css` 提供，只接受色碼。
+- **Next TODO**:
+  - 工作 7：`SessionLinkingAuthorizationService`（授權與 `auth_session` 的連結）。

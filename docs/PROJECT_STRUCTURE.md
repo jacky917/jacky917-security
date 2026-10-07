@@ -292,6 +292,11 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../user/Jacky917UserDetailsService.java` | `as-autoconfigure` | 帳號密碼登入 | username = 使用者 ID（D16）；所有失敗原因相同；登入時自動重新雜湊。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../user/PasswordPolicy.java`、`BootstrapAdminInitializer.java` | `as-autoconfigure` | 密碼政策、第一位管理員 | 12～128 字元；沒有 `AS_ADMIN` 時建立一次。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../support/UuidV7.java` | `as-autoconfigure` | ID 產生 | 依時間排序的 UUID（RFC 9562）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerSecurityConfiguration.java` | `as-autoconfigure` | Web 安全設定 | Order 1：SAS 端點（含 OIDC、`/userinfo`）；Order 3：登入頁、CSRF、更換 Session ID、CSP。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/AuthSessionService.java`、`AuthSession.java` | `as-autoconfigure` | 登入 Session | 建立與查詢 `auth_session`；瀏覽器 Session 屬性存放 `asid`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginSuccessHandler.java` | `as-autoconfigure` | 登入成功 | 記錄登入、建立 `auth_session`、回到授權請求。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/LoginController.java` | `as-autoconfigure` | 登入頁 | 依語言顯示；所有錯誤顯示相同訊息；`/jacky917/theme.css`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/templates/jacky917/`、`static/jacky917/`、`jacky917/authorization-server-messages*.properties` | `as-autoconfigure` | 登入頁資源 | Thymeleaf 範本、樣式、英文與繁體中文訊息。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/db/migration/jacky917-as/{postgresql,sqlite}/` | `as-autoconfigure` | Flyway V1 | 兩種資料庫各 7 個同名檔案：23 張表與內建資料。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/TestDatabases.java` | `as-test` | 測試資料庫 | SQLite 暫存檔；embedded PostgreSQL 16（不需 Docker）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../database/*IntegrationTest.java` | `as-test` | 整合測試 | migration、官方 JDBC 類別相容性、約束、schema 一致性、SQLite 設定檢查、預設 SQLite。 |
@@ -299,6 +304,8 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/KeyEncryptorTest.java` | `as-test` | 單元測試 | 加解密、錯誤主金鑰、竄改、`kid` 綁定。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../client/ClientRegistrationIntegrationTest.java` | `as-test` | 整合測試 | 註冊、重新啟動時更新、secret 輪換、缺少 secret、停權。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../user/UserAccountIntegrationTest.java` | `as-test` | 整合測試 | 帳號或 Email 登入、失敗訊息一致、停用與鎖定、角色過期、唯一性、密碼政策、重新雜湊、第一位管理員。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*AuthorizationFlowIntegrationTest.java` | `as-test` | 整合測試 | 授權碼 + PKCE 完整流程、登入失敗、標頭、無 PKCE、未註冊 redirect、client_credentials、停權 client、discovery 與 JWKS；SQLite 與 PostgreSQL 各一次。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../autoconfigure/AutoConfigurationOrderingTest.java` | `as-test` | 單元測試 | `beforeName` 列出的類別都存在。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/SigningKeyIntegrationTest.java` | `as-test` | 整合測試 | T-KEY-01、T-KEY-03、輪換期間的公開與簽章、ES256。 |
 
 ### core

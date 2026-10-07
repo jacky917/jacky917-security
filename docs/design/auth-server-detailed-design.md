@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 🚧 實作中（第 1 階段）：工作 1～5 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
+| 狀態 | 🚧 實作中（第 1 階段）：工作 1～6 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -987,7 +987,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 3 | 簽章金鑰：`SigningKeyStore`、`KeyEncryptor`（AES-256-GCM）、`RotatingJwkSource`、首次啟動產生金鑰 | ✅ |
 | 4 | Client：官方 JDBC repository + 停權過濾、`client_profile`、設定中宣告的第一方 client | ✅ |
 | 5 | 使用者：`UserAccountService`、`Jacky917UserDetailsService`、密碼政策、第一位管理員 | ✅ |
-| 6～10 | 登入、Session 連結、Token、Google、範例與 E2E | ⏳ |
+| 6 | 登入：兩條 filter chain、登入頁（Thymeleaf，繁中／英文）、`LoginSuccessHandler`、`auth_session`；授權碼 + PKCE 完整流程 | ✅ |
+| 7～10 | Session 連結、Token、Google、範例與 E2E | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1013,5 +1014,10 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | `UserAccountService` 的方法 | §2.3 全部 | 第 1 階段：查詢、`createUser`、`recordLoginSuccess`、`updatePasswordHash`、`loadAuthorities`；`createFederatedUser` 於工作 9、`recordLoginFailure` 於工作 13 加入 | 只實作目前會用到的方法 |
 | AS 頁面用的 authority | — | `ROLE_<角色>` 與 `PERM_<權限>`（前綴取自 core） | 與 Resource Server 的預設前綴一致。Spring Security 7 另外會加入 `FACTOR_PASSWORD` |
 | 第一位管理員 | 第 4 階段強制首次登入後變更密碼 | 第 1 階段即建立（`bootstrap-admin.*`），只在沒有任何 `AS_ADMIN` 時建立一次 | 不開放註冊時，沒有它就無法登入；強制變更密碼仍留待第 4 階段 |
+| 登入失敗處理 | `LoginFailureHandler`：失敗計數、鎖定、稽核 | 第 1 階段一律導向 `/login?error`；計數、鎖定、IP 限流與 `login_audit` 於工作 13 加入 | 依工作分解；暫時鎖定（`locked_until`）在第 1 階段已會擋下登入 |
+| 登入頁的文字 | 應用程式的 `MessageSource`（`messages_zh_TW.properties` 等） | Starter 自己的訊息檔 `jacky917/authorization-server-messages`（英文預設、繁體中文），依請求語言顯示 | 不覆蓋、也不依賴應用程式的 `MessageSource` |
+| 內容安全政策 | `default-src 'self'; frame-ancestors 'none'` | 另加 `img-src 'self' https: data:`（外部 logo）與 `form-action 'self'` | 主色無法以內嵌樣式設定，改由 `/jacky917/theme.css` 提供（只接受色碼，避免注入 CSS） |
+| 直接登入後的頁面 | — | `GET /` 顯示「已登入」 | 直接開啟登入頁並登入時，Spring Security 會導向 `/` |
+| `/userinfo` | — | SAS 端點的 filter chain 以 `oauth2ResourceServer().jwt()` 驗證 Access Token，`JwtDecoder` 由公開的金鑰建立 | OIDC userinfo 需要 Bearer Token |
 | 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
 

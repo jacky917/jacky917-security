@@ -45,9 +45,24 @@ class AuthorizationServerUsersConfiguration {
         return new JdbcUserAccountService(jdbcClient, passwordEncoder, passwordPolicy, clock);
     }
 
+    /**
+     * Loads users for password login. The declared type is the concrete
+     * class so Spring Security also finds it as the
+     * {@code UserDetailsPasswordService} that re-hashes passwords.
+     * <p>
+     * 為帳號密碼登入載入使用者。宣告型別為具體類別，Spring Security 才會同時
+     * 找到它作為重新雜湊密碼的 {@code UserDetailsPasswordService}。
+     *
+     * @param users  the user account service
+     *               <br>使用者帳號服務
+     * @param clock  the clock used for temporary locks
+     *               <br>判斷暫時鎖定所用的時鐘
+     * @return the user details service
+     *         <br>UserDetailsService
+     */
     @Bean
-    @ConditionalOnMissingBean
-    UserDetailsService userDetailsService(UserAccountService users, Clock clock) {
+    @ConditionalOnMissingBean(UserDetailsService.class)
+    Jacky917UserDetailsService userDetailsService(UserAccountService users, Clock clock) {
         return new Jacky917UserDetailsService(users, clock);
     }
 

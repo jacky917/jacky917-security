@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${text['signed-in.title'] + ' · ' + productName}">Signed in</title>
+    <link rel="stylesheet" th:href="@{/jacky917/authorization-server.css}">
+    <link rel="stylesheet" th:href="@{/jacky917/theme.css}">
+</head>
+<body>
+<main class="card">
+    <header>
+        <img th:if="${logoUrl}" th:src="${logoUrl}" alt="" class="logo">
+        <p class="product" th:text="${productName}">jacky917</p>
+        <h1 th:text="${text['signed-in.title']}">Signed in</h1>
+    </header>
+    <p th:text="${text['signed-in.message']}">You are signed in.</p>
+</main>
+</body>
+</html>

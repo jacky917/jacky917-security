@@ -114,6 +114,13 @@ public class AuthorizationServerProperties implements Validator {
      */
     private BootstrapAdmin bootstrapAdmin = new BootstrapAdmin();
 
+    /**
+     * Login page appearance.
+     * <p>
+     * 登入頁外觀。
+     */
+    private Branding branding = new Branding();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -130,6 +137,7 @@ public class AuthorizationServerProperties implements Validator {
         properties.getKeys().validate(errors);
         properties.getPassword().validate(errors);
         properties.getBootstrapAdmin().validate(errors);
+        properties.getBranding().validate(errors);
         properties.getClients().forEach((clientId, client) -> client.validate(clientId, errors));
     }
 
@@ -321,6 +329,51 @@ public class AuthorizationServerProperties implements Validator {
             }
             if (bcryptStrength < 10 || bcryptStrength > 14) {
                 errors.rejectValue("password.bcryptStrength", "range", "password.bcrypt-strength must be between 10 and 14");
+            }
+        }
+    }
+
+    /**
+     * Login page appearance, bound from {@code .branding.*}.
+     * <p>
+     * 登入頁外觀，綁定自 {@code .branding.*}。
+     */
+    @Getter
+    @Setter
+    public static class Branding {
+
+        private static final Pattern COLOR = Pattern.compile("#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?");
+
+        /**
+         * Product name shown above the form.
+         * <p>
+         * 顯示在表單上方的產品名稱。
+         */
+        private String productName = "jacky917";
+
+        /**
+         * Logo URL: an absolute {@code https} URL or a path on this server.
+         * <p>
+         * Logo 網址：絕對的 {@code https} 網址，或本伺服器上的路徑。
+         */
+        private String logoUrl;
+
+        /**
+         * Primary color as {@code #rgb} or {@code #rrggbb}.
+         * <p>
+         * 主色，格式為 {@code #rgb} 或 {@code #rrggbb}。
+         */
+        private String primaryColor = "#2563eb";
+
+        void validate(Errors errors) {
+            // 主色會寫入樣式表：只接受色碼，避免注入任意 CSS
+            if (primaryColor == null || !COLOR.matcher(primaryColor).matches()) {
+                errors.rejectValue("branding.primaryColor", "format", "branding.primary-color must be #rgb or #rrggbb");
+            }
+            if (logoUrl != null && !logoUrl.isBlank() && !logoUrl.startsWith("https://")
+                    && !(logoUrl.startsWith("/") && !logoUrl.startsWith("//"))) {
+                errors.rejectValue("branding.logoUrl", "format",
+                        "branding.logo-url must be an https URL or a path starting with /");
             }
         }
     }
