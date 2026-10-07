@@ -14,6 +14,69 @@
 |       `-- publish.yml
 |-- .gitignore
 |-- README.md
+|-- authorization-server
+|   |-- jacky917-security-authorization-server-autoconfigure
+|   |   |-- pom.xml
+|   |   `-- src
+|   |       |-- main
+|   |       |   |-- java
+|   |       |   |   `-- jacky917
+|   |       |   |       `-- security
+|   |       |   |           `-- authorizationserver
+|   |       |   |               |-- autoconfigure
+|   |       |   |               |   |-- AuthorizationServerAutoConfiguration.java
+|   |       |   |               |   `-- AuthorizationServerDatabaseConfiguration.java
+|   |       |   |               |-- database
+|   |       |   |               |   |-- AuthorizationServerDialect.java
+|   |       |   |               |   |-- AuthorizationServerDialects.java
+|   |       |   |               |   |-- DefaultSqliteEnvironmentPostProcessor.java
+|   |       |   |               |   |-- PostgresqlDialect.java
+|   |       |   |               |   |-- SqliteDialect.java
+|   |       |   |               |   |-- SqliteExceptionTranslator.java
+|   |       |   |               |   `-- SqliteExceptionTranslatorPostProcessor.java
+|   |       |   |               `-- properties
+|   |       |   |                   `-- AuthorizationServerProperties.java
+|   |       |   `-- resources
+|   |       |       |-- META-INF
+|   |       |       |   |-- spring
+|   |       |       |   |   `-- org.springframework.boot.autoconfigure.AutoConfiguration.imports
+|   |       |       |   `-- spring.factories
+|   |       |       `-- db
+|   |       |           `-- migration
+|   |       |               `-- jacky917-as
+|   |       |                   |-- postgresql
+|   |       |                   |   |-- V1_0_0__identity.sql
+|   |       |                   |   |-- V1_0_1__authorization_model.sql
+|   |       |                   |   |-- V1_0_2__oauth2_official.sql
+|   |       |                   |   |-- V1_0_3__oauth2_extensions.sql
+|   |       |                   |   |-- V1_0_4__sessions.sql
+|   |       |                   |   |-- V1_0_5__security.sql
+|   |       |                   |   `-- V1_0_6__seed.sql
+|   |       |                   `-- sqlite
+|   |       |                       |-- V1_0_0__identity.sql
+|   |       |                       |-- V1_0_1__authorization_model.sql
+|   |       |                       |-- V1_0_2__oauth2_official.sql
+|   |       |                       |-- V1_0_3__oauth2_extensions.sql
+|   |       |                       |-- V1_0_4__sessions.sql
+|   |       |                       |-- V1_0_5__security.sql
+|   |       |                       `-- V1_0_6__seed.sql
+|   |       `-- test
+|   |           `-- java
+|   |               `-- jacky917
+|   |                   `-- security
+|   |                       `-- authorizationserver
+|   |                           |-- database
+|   |                           |   |-- DatabaseMigrationIntegrationTest.java
+|   |                           |   |-- DefaultSqliteIntegrationTest.java
+|   |                           |   |-- SchemaConsistencyIntegrationTest.java
+|   |                           |   |-- SchemaIntrospection.java
+|   |                           |   `-- SqliteValidationIntegrationTest.java
+|   |                           |-- properties
+|   |                           |   `-- AuthorizationServerPropertiesTest.java
+|   |                           `-- support
+|   |                               `-- TestDatabases.java
+|   `-- jacky917-security-authorization-server-starter
+|       `-- pom.xml
 |-- core
 |   `-- jacky917-security-core
 |       |-- pom.xml
@@ -186,7 +249,7 @@
 `-- scripts
     `-- check-doc-links.py
 
-98 directories, 80 files
+126 directories, 115 files
 ```
 
 ---
@@ -202,6 +265,23 @@
 | `.github/workflows/ci.yml` | `ci` | 持續整合 | push 到 `main`／`1.x` 與所有 PR：Java 21、25 建置與測試；文件連結檢查。 |
 | `.github/workflows/publish.yml` | `ci` | 發佈流程 | Release 時檢查 tag 等於 `revision`、已宣告授權條款；整個 reactor 測試通過後才部署到 GitHub Packages。 |
 | `scripts/check-doc-links.py` | `tooling` | 文件檢查 | README 與 docs 的相對連結（含標題與 `<...>` 寫法）、錨點（重複標題依 GitHub 規則加 `-1`）、YAML 範例；有問題即非 0 結束。 |
+
+### Authorization Server（🚧 第 1 階段開發中）
+
+| 路徑 (Path) | 模組 (Module) | 用途 (Purpose) | 關鍵說明 (Key Notes) |
+|---|---|---|---|
+| `authorization-server/jacky917-security-authorization-server-starter/` | `as-starter` | 登入服務引入的 starter | 聚合 AS autoconfigure。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerAutoConfiguration.java` | `as-autoconfigure` | 自動配置入口 | `enabled=false` 時停用；在 DataSource 之後執行。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerDatabaseConfiguration.java` | `as-autoconfigure` | 資料庫配置（D22） | 選擇並驗證 dialect；SQLite 例外轉換。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../properties/AuthorizationServerProperties.java` | `as-autoconfigure` | 設定屬性 | `jacky917.security.authorization-server.*`；實作 `Validator`，設定錯誤時啟動失敗。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/AuthorizationServerDialect.java` | `as-autoconfigure` | 資料庫方言 SPI | `PostgresqlDialect`、`SqliteDialect`；`AuthorizationServerDialects` 依 URL 選擇。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/SqliteDialect.java` | `as-autoconfigure` | SQLite 方言 | 檢查必要連線參數、PRAGMA、Hikari 自動提交；缺少即啟動失敗。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/DefaultSqliteEnvironmentPostProcessor.java` | `as-autoconfigure` | 預設值 | Flyway 位置；未設定 datasource 時使用 SQLite（建立權限 600 的檔案）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/SqliteExceptionTranslator.java` | `as-autoconfigure` | SQLite 例外轉換 | 約束違反轉為 `DuplicateKeyException` 等；由 `SqliteExceptionTranslatorPostProcessor` 套用到 `JdbcTemplate`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/db/migration/jacky917-as/{postgresql,sqlite}/` | `as-autoconfigure` | Flyway V1 | 兩種資料庫各 7 個同名檔案：23 張表與內建資料。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/TestDatabases.java` | `as-test` | 測試資料庫 | SQLite 暫存檔；embedded PostgreSQL 16（不需 Docker）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../database/*IntegrationTest.java` | `as-test` | 整合測試 | migration、官方 JDBC 類別相容性、約束、schema 一致性、SQLite 設定檢查、預設 SQLite。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../properties/AuthorizationServerPropertiesTest.java` | `as-test` | 單元測試 | 預設值、issuer 與有效期驗證。 |
 
 ### core
 

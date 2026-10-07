@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 📝 詳細設計草案 |
+| 狀態 | 🚧 實作中（第 1 階段）：工作 1、2 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -973,3 +973,27 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 6 | 稽核紀錄保留期（`login_audit` 180 天、`admin_audit_log` 2 年）是否符合法規？ | 清理排程 | 符合 |
 | 7 | 是否需要多語系登入頁？ | §7.2 | 繁體中文 + 英文 |
 | 8 | AS 預計的網域與 BFF、前端是否同一主網域？ | Cookie `SameSite`、CORS | 同一主網域（例如 `auth.example.com`、`app.example.com`） |
+
+---
+
+## 13. 實施紀錄
+
+### 13.1 進度
+
+| # | 工作 | 狀態 |
+|---|---|---|
+| 1 | 模組骨架、`AuthorizationServerProperties`（啟動時自我驗證） | ✅ |
+| 2 | 資料庫：dialect、預設 SQLite、啟動檢查、Flyway V1（PostgreSQL 與 SQLite 各 7 個檔案） | ✅ |
+| 3～10 | 金鑰、client、使用者、登入、Session 連結、Token、Google、範例與 E2E | ⏳ |
+
+### 13.2 與設計不同的地方
+
+| 項目 | 設計 | 實際 | 原因 |
+|---|---|---|---|
+| 設定屬性的驗證 | `@Validated` + 自訂驗證器 | 屬性類別實作 Spring 的 `Validator`，由 Spring Boot 在綁定時呼叫 | 不需要額外引入 Bean Validation；錯誤同樣在啟動時出現 |
+| 設定屬性範圍 | §6 的全部屬性 | 只加入已實作功能使用的屬性（`enabled`、`issuer`、`database.*`、`token.*`） | 未實作的屬性會出現在 IDE 提示中，卻沒有任何作用；其餘屬性隨各工作加入 |
+| SQLite 的錯誤轉換 | — | **新增** `SqliteExceptionTranslator`：依延伸結果碼轉成 `DuplicateKeyException`、`DataIntegrityViolationException`、`CannotAcquireLockException`，並套用到所有 `JdbcTemplate` | 實測發現：Spring 沒有 SQLite 的錯誤碼，SQLite 的約束違反只會變成 `UncategorizedSQLException`，攔截 `DuplicateKeyException` 的程式在兩種資料庫上的行為會不同 |
+| PostgreSQL 測試 | Testcontainers | embedded-postgres（真正的 PostgreSQL 16.15 執行檔） | 不需要 Docker，本機與 CI 都能執行；仍是實際的 PostgreSQL |
+| SQLite 驅動版本 | xerial 3.53.4.0（驗證時使用） | Spring Boot 管理的 3.53.2.1 | 與 Spring Boot 的版本管理一致；所需的連線參數兩版皆支援，已以測試確認 |
+| 預設 SQLite 的連線池 | — | 只在使用預設 URL 時把 `maximum-pool-size` 設為 4 | 寫入依序執行，連線再多也只是排隊 |
+

@@ -62,6 +62,8 @@
         <module>resource-server/jacky917-security-annotations</module>
         <module>resource-server/jacky917-security-resource-server-autoconfigure</module>
         <module>resource-server/jacky917-security-resource-server-starter</module>
+        <module>authorization-server/jacky917-security-authorization-server-autoconfigure</module>
+        <module>authorization-server/jacky917-security-authorization-server-starter</module>
         <module>jacky917-security-bom</module>
         <module>relocation/jacky917-security-starter</module>
         <module>examples/example-resource-server</module>
@@ -89,6 +91,16 @@
             <dependency>
                 <groupId>io.github.jacky917</groupId>
                 <artifactId>jacky917-security-annotations</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.jacky917</groupId>
+                <artifactId>jacky917-security-authorization-server-autoconfigure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.jacky917</groupId>
+                <artifactId>jacky917-security-authorization-server-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

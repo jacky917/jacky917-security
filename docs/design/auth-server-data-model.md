@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 📝 詳細設計草案 |
+| 狀態 | ✅ V1 migration 已實作（`authorization-server/.../db/migration/jacky917-as/`），以該處檔案為準 |
 | 日期 | 2026-10-07 |
 | 資料庫 | **預設 SQLite**（零設定即可啟動）；正式環境可在 YAML 切換為 **PostgreSQL 16 以上**（[詳細設計 D22](auth-server-detailed-design.md#d22-資料庫抽象)） |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（內含 Authorization Server）、Spring Session 4.1.1 |
@@ -1120,6 +1120,11 @@ jacky917-security-authorization-server-autoconfigure/src/main/resources/
 ```
 
 之後的版本（`V2_…` 起）只用於**結構變更**（新增欄位、索引等），不再用於「該階段才建立的表」。
+
+> **實作時的調整**（2026-10-08）：
+> - `ix_login_audit_time_brin` 改名為 `ix_login_audit_time`（PostgreSQL 仍為 BRIN），讓兩種資料庫的索引名稱相同。
+> - SQLite 版的 CHECK、UNIQUE 與外鍵約束加上與 PostgreSQL 相同的名稱（`CONSTRAINT ck_…`），一致性測試因此能比對約束名稱。§17.4 的 DDL 為驗證時的版本，實際內容以 migration 檔為準。
+> - 新增 `V1_0_6__seed.sql`：§12.1～§12.3 的內建角色、權限、scope、API resource，ID 為固定值。§12.4 的第一方 client 不寫入 migration（範例網址不應出現在每個安裝中），改由工作 4 處理。
 
 > CI 必須對兩種資料庫都執行 migration 與整合測試（[詳細設計 §10](auth-server-detailed-design.md#10-測試案例)），避免兩份 DDL 不一致。
 

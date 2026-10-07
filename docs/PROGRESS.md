@@ -548,3 +548,27 @@
   - **Updated**: `Jacky917SecurityAutoConfiguration.java`、`AutoConfiguration.imports`、`PrefixAndDefaultsIntegrationTest.java`、`AutoConfigurationOrderingIntegrationTest.java`、`Jacky917SecurityProperties.java`、`.github/workflows/publish.yml`、`scripts/check-doc-links.py`、`pom.xml`、`docs/resource-server/{getting-started,configuration,limitations}.md`、`docs/guides/{upgrade-to-2.0,github-packages}.md`、`docs/design/starter-design.md`、`docs/PROGRESS.md`、`docs/PROJECT_STRUCTURE.md`
 - **Next TODO**:
   - 決定授權條款（新增 `LICENSE` 與 `<licenses>`）後才能發佈 2.0.0。
+
+---
+## Step 20: Authorization Server 第 1 階段——工作 1、2（模組骨架、資料庫）
+- **Status**: 🟢 Completed（分支 `claude/as-phase1`，以 `claude/m2-restructure` 為基礎）
+- **Acceptance Criteria**:
+  - [x] 新增 `authorization-server/jacky917-security-authorization-server-autoconfigure` 與 `-starter`，加入根 POM 與 BOM。
+  - [x] `AuthorizationServerProperties`（`jacky917.security.authorization-server.*`）：`enabled`、`issuer`（必填，非 localhost 必須 https）、`database.*`、`token.*`；設定錯誤時啟動失敗。
+  - [x] D22：`AuthorizationServerDialect`（PostgreSQL、SQLite）、依 JDBC URL 自動選擇；`DefaultSqliteEnvironmentPostProcessor` 在未設定 `spring.datasource.url` 時使用 SQLite，建立資料夾與權限 600 的檔案；SQLite 缺少必要參數或關閉自動提交時啟動失敗。
+  - [x] Flyway V1：PostgreSQL 與 SQLite 各 7 個同名檔案（23 張表 + 內建資料）。
+  - [x] 新增 `SqliteExceptionTranslator`：SQLite 的約束違反轉為 Spring 的 `DuplicateKeyException`／`DataIntegrityViolationException`。
+- **Commands Run & Results**:
+  - AS 模組 26 個測試全數通過，SQLite 與 PostgreSQL 16.15（embedded-postgres）各跑一次：migration 與內建資料、官方 `JdbcRegisteredClientRepository`／`JdbcOAuth2AuthorizationService` 相容性（不需自訂 mixin）、約束、外鍵連帶刪除、兩種資料庫的 schema 一致性（T-DB-04）、SQLite 設定檢查（T-DB-02）、預設 SQLite（T-DB-01）、屬性驗證。
+  - 破壞實驗：只改 SQLite 的一個索引名稱 → 一致性測試失敗；停用例外轉換 → 約束測試失敗；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，82 個測試（Resource Server 47、Authorization Server 26、範例 9）。
+  - 文件連結、錨點、YAML 檢查：無錯誤。
+- **Decision Log**:
+  - **DEC-062**: 實測發現 Spring 沒有 SQLite 的錯誤碼，約束違反會變成 `UncategorizedSQLException`；新增 `SqliteExceptionTranslator` 並套用到所有 `JdbcTemplate`，讓兩種資料庫丟出相同的例外。
+  - **DEC-063**: PostgreSQL 測試改用 embedded-postgres（真正的 PostgreSQL 16.15），不依賴 Docker。
+  - **DEC-064**: 設定屬性只加入已實作功能使用的項目，其餘隨各工作加入。
+  - **DEC-065**: 第一方 client 不寫入 migration，改由工作 4 處理。
+  - **DEC-066**: 兩種資料庫的約束與索引使用相同名稱，以一致性測試防止兩份 migration 逐漸不同。
+- **Files Changed**: `authorization-server/**`（新增）、`pom.xml`、`jacky917-security-bom/pom.xml`、`README.md`、`docs/design/auth-server-detailed-design.md`、`docs/design/auth-server-data-model.md`、`docs/PROGRESS.md`、`docs/PROJECT_STRUCTURE.md`
+- **Next TODO**:
+  - 工作 3：簽章金鑰（`SigningKeyStore`、`KeyEncryptor`、`RotatingJwkSource`）。
