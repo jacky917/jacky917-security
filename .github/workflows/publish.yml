@@ -25,7 +25,11 @@ jobs:
           server-password: GITHUB_TOKEN
 
       # 執行 Maven deploy，且跳過 demo 模組（因為 demo 不需要被別人當作依賴導入）
+      # 「.」代表根目錄的 parent POM：子模組都繼承它，若不一起發佈，消費端會解析失敗
       - name: Publish to GitHub Packages
-        run: mvn deploy -DskipTests
+        run: >
+          mvn --batch-mode deploy
+          -pl .,jacky917-security-starter,jacky917-security-autoconfigure,jacky917-security-annotations
+          -DskipTests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
