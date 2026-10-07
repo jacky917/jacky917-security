@@ -1,5 +1,6 @@
 package jacky917.security.authorizationserver.database;
 
+import jacky917.security.authorizationserver.support.TestDatabases;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -69,9 +70,11 @@ class DefaultSqliteIntegrationTest {
     }
 
     private static ConfigurableApplicationContext start(String... args) {
-        String[] all = new String[args.length + 1];
+        String[] all = new String[args.length + 2];
         System.arraycopy(args, 0, all, 0, args.length);
         all[args.length] = "--jacky917.security.authorization-server.issuer=http://localhost:9000";
+        all[args.length + 1] = "--jacky917.security.authorization-server.keys.encryption-key="
+                + TestDatabases.TEST_ENCRYPTION_KEY;
         return new SpringApplicationBuilder(TestApplication.class).web(WebApplicationType.NONE).run(all);
     }
 

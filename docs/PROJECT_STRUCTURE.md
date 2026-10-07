@@ -278,10 +278,17 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/SqliteDialect.java` | `as-autoconfigure` | SQLite 方言 | 檢查必要連線參數、PRAGMA、Hikari 自動提交；缺少即啟動失敗。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/DefaultSqliteEnvironmentPostProcessor.java` | `as-autoconfigure` | 預設值 | Flyway 位置；未設定 datasource 時使用 SQLite（建立權限 600 的檔案）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/SqliteExceptionTranslator.java` | `as-autoconfigure` | SQLite 例外轉換 | 約束違反轉為 `DuplicateKeyException` 等；由 `SqliteExceptionTranslatorPostProcessor` 套用到 `JdbcTemplate`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerKeysConfiguration.java` | `as-autoconfigure` | 簽章金鑰配置 | 首次啟動產生金鑰；`JWKSource`（只有公鑰）與只用 `ACTIVE` 私鑰的 `JwtEncoder`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/SigningKeyService.java` | `as-autoconfigure` | 金鑰服務 | 產生 RS256／ES256 金鑰、快取 1 分鐘、啟動時確認可解密。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/KeyEncryptor.java` | `as-autoconfigure` | 私鑰加密 | AES-256-GCM，`kid` 為附加驗證資料。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/SigningKeyStore.java`、`JdbcSigningKeyStore.java` | `as-autoconfigure` | 金鑰儲存 SPI | 預設 `signing_key` 表，可換成 KMS。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/RotatingJwkSource.java` | `as-autoconfigure` | JWKS | 公開 `NEXT`、`ACTIVE`、`RETIRING` 的公鑰。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/db/migration/jacky917-as/{postgresql,sqlite}/` | `as-autoconfigure` | Flyway V1 | 兩種資料庫各 7 個同名檔案：23 張表與內建資料。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/TestDatabases.java` | `as-test` | 測試資料庫 | SQLite 暫存檔；embedded PostgreSQL 16（不需 Docker）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../database/*IntegrationTest.java` | `as-test` | 整合測試 | migration、官方 JDBC 類別相容性、約束、schema 一致性、SQLite 設定檢查、預設 SQLite。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../properties/AuthorizationServerPropertiesTest.java` | `as-test` | 單元測試 | 預設值、issuer 與有效期驗證。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../properties/AuthorizationServerPropertiesTest.java` | `as-test` | 單元測試 | 預設值、issuer、有效期與主金鑰驗證。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/KeyEncryptorTest.java` | `as-test` | 單元測試 | 加解密、錯誤主金鑰、竄改、`kid` 綁定。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/SigningKeyIntegrationTest.java` | `as-test` | 整合測試 | T-KEY-01、T-KEY-03、輪換期間的公開與簽章、ES256。 |
 
 ### core
 

@@ -119,7 +119,7 @@ class DatabaseMigrationIntegrationTest {
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {TestDatabases.SQLITE, TestDatabases.POSTGRESQL})
-    @DisplayName("約束：狀態值、只能有一把 ACTIVE 金鑰、REVOKED 必須有 revoked_at、Email 不分大小寫唯一")
+    @DisplayName("約束：狀態值、ACTIVE 與 NEXT 金鑰各只能有一把、REVOKED 必須有 revoked_at、Email 不分大小寫唯一")
     void constraintsRejectInvalidRows(String vendor) {
         TestDatabases.runner(vendor).run(context -> {
             JdbcClient jdbc = context.getBean(JdbcClient.class);
@@ -132,10 +132,14 @@ class DatabaseMigrationIntegrationTest {
             assertThatThrownBy(() -> insertUser(jdbc, "alice@example.com", "ACTIVE", now))
                     .isInstanceOf(DuplicateKeyException.class);
 
-            insertSigningKey(jdbc, "k1", "ACTIVE", now);
+            // 啟動時已自動建立一把 ACTIVE 金鑰（工作 3），第二把 ACTIVE 或 NEXT 都會被唯一索引擋下
             assertThatThrownBy(() -> insertSigningKey(jdbc, "k2", "ACTIVE", now))
                     .isInstanceOf(DuplicateKeyException.class);
-            insertSigningKey(jdbc, "k3", "RETIRED", now);
+            insertSigningKey(jdbc, "k3", "NEXT", now);
+            assertThatThrownBy(() -> insertSigningKey(jdbc, "k4", "NEXT", now))
+                    .isInstanceOf(DuplicateKeyException.class);
+            insertSigningKey(jdbc, "k5", "RETIRED", now);
+            insertSigningKey(jdbc, "k6", "RETIRED", now);
 
             assertThatThrownBy(() -> jdbc.sql("""
                     INSERT INTO auth_session (session_id, user_id, status, login_method, created_at, last_seen_at, expires_at)

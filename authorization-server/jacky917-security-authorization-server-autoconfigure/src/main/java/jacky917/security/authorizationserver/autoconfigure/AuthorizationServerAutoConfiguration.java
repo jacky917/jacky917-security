@@ -24,10 +24,14 @@ import org.springframework.context.annotation.Import;
  * @author Jacky
  * @since 2.1.0
  */
-@AutoConfiguration(after = DataSourceAutoConfiguration.class)
+// 以字串指定 Spring Boot 的 Authorization Server 自動配置：本配置的 JWKSource、JwtEncoder 等必須先註冊
+@AutoConfiguration(after = DataSourceAutoConfiguration.class, beforeName = {
+        "org.springframework.boot.security.oauth2.server.authorization.autoconfigure.servlet.OAuth2AuthorizationServerAutoConfiguration",
+        "org.springframework.boot.security.oauth2.server.authorization.autoconfigure.servlet.OAuth2AuthorizationServerJwtAutoConfiguration"
+})
 @ConditionalOnProperty(prefix = AuthorizationServerProperties.PREFIX, name = "enabled", havingValue = "true",
         matchIfMissing = true)
 @EnableConfigurationProperties(AuthorizationServerProperties.class)
-@Import(AuthorizationServerDatabaseConfiguration.class)
+@Import({AuthorizationServerDatabaseConfiguration.class, AuthorizationServerKeysConfiguration.class})
 public class AuthorizationServerAutoConfiguration {
 }

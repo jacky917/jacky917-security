@@ -10,6 +10,7 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 
@@ -75,6 +76,13 @@ public class AuthorizationServerProperties implements Validator {
      */
     private Token token = new Token();
 
+    /**
+     * Signing key settings.
+     * <p>
+     * 簽章金鑰設定。
+     */
+    private Keys keys = new Keys();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -88,6 +96,7 @@ public class AuthorizationServerProperties implements Validator {
         }
         validateIssuer(properties.getIssuer(), errors);
         properties.getToken().validate(errors);
+        properties.getKeys().validate(errors);
     }
 
     private static void validateIssuer(URI issuer, Errors errors) {
@@ -156,6 +165,96 @@ public class AuthorizationServerProperties implements Validator {
              */
             private Path path = Path.of("./data/jacky917-auth.db");
         }
+    }
+
+    /**
+     * Signing key settings, bound from {@code .keys.*}.
+     * <p>
+     * 簽章金鑰設定，綁定自 {@code .keys.*}。
+     */
+    @Getter
+    @Setter
+    public static class Keys {
+
+        /**
+         * Algorithm of newly generated signing keys.
+         * <p>
+         * 新產生之簽章金鑰的演算法。
+         */
+        private SigningAlgorithm algorithm = SigningAlgorithm.RS256;
+
+        /**
+         * Master key that encrypts the private signing keys in the
+         * database: 32 random bytes in Base64, for example from
+         * {@code openssl rand -base64 32}. Inject it from an environment
+         * variable or a secret manager; never commit it to a
+         * configuration file.
+         * <p>
+         * 加密資料庫中簽章私鑰的主金鑰：Base64 編碼的 32 bytes 隨機值，例如
+         * {@code openssl rand -base64 32} 的輸出。請從環境變數或密鑰管理服務
+         * 注入，不可寫在設定檔中。
+         */
+        private String encryptionKey;
+
+        /**
+         * Id of the master key, stored with each encrypted key. Change it
+         * when the master key changes.
+         * <p>
+         * 主金鑰的識別碼，與每把加密後的金鑰一起儲存。更換主金鑰時一併修改。
+         */
+        private String encryptionKeyId = "v1";
+
+        /**
+         * Returns the decoded master key.
+         * <p>
+         * 回傳解碼後的主金鑰。
+         *
+         * @return the 32-byte master key
+         *         <br>32 bytes 的主金鑰
+         */
+        public byte[] encryptionKeyBytes() {
+            return Base64.getDecoder().decode(encryptionKey.trim());
+        }
+
+        void validate(Errors errors) {
+            if (encryptionKey == null || encryptionKey.isBlank()) {
+                errors.rejectValue("keys.encryptionKey", "required",
+                        "keys.encryption-key is required: 32 random bytes in Base64 (openssl rand -base64 32), "
+                                + "injected from an environment variable");
+            } else {
+                try {
+                    if (encryptionKeyBytes().length != 32) {
+                        errors.rejectValue("keys.encryptionKey", "length",
+                                "keys.encryption-key must decode to 32 bytes (AES-256)");
+                    }
+                } catch (IllegalArgumentException ex) {
+                    errors.rejectValue("keys.encryptionKey", "format", "keys.encryption-key must be Base64");
+                }
+            }
+            if (encryptionKeyId == null || encryptionKeyId.isBlank()) {
+                errors.rejectValue("keys.encryptionKeyId", "required", "keys.encryption-key-id must not be blank");
+            }
+        }
+    }
+
+    /**
+     * Supported signing algorithms.
+     * <p>
+     * 支援的簽章演算法。
+     */
+    public enum SigningAlgorithm {
+        /**
+         * RSA with SHA-256, 3072-bit keys.
+         * <p>
+         * RSA 搭配 SHA-256，金鑰長度 3072 位元。
+         */
+        RS256,
+        /**
+         * ECDSA with P-256 and SHA-256.
+         * <p>
+         * ECDSA 搭配 P-256 與 SHA-256。
+         */
+        ES256
     }
 
     /**

@@ -27,6 +27,8 @@ class AuthorizationServerPropertiesTest {
         assertThat(properties.getToken().getAuthorizationCodeTtl()).isEqualTo(Duration.ofMinutes(1));
         assertThat(properties.getToken().getSessionMaxAge()).isEqualTo(Duration.ofDays(90));
         assertThat(properties.getToken().getAudience()).containsExactly("jacky917-api");
+        assertThat(properties.getKeys().getAlgorithm()).isEqualTo(AuthorizationServerProperties.SigningAlgorithm.RS256);
+        assertThat(properties.getKeys().getEncryptionKeyId()).isEqualTo("v1");
     }
 
     @Test
@@ -70,9 +72,23 @@ class AuthorizationServerPropertiesTest {
         assertThat(validate(properties).hasErrors()).isFalse();
     }
 
+    @Test
+    @DisplayName("主金鑰必填，且必須是 32 bytes 的 Base64")
+    void encryptionKey() {
+        AuthorizationServerProperties properties = withIssuer("https://auth.example.com");
+        properties.getKeys().setEncryptionKey(null);
+        assertThat(validate(properties).getFieldError("keys.encryptionKey").getDefaultMessage())
+                .contains("openssl rand -base64 32");
+        properties.getKeys().setEncryptionKey("c2hvcnQ=");
+        assertThat(validate(properties).getFieldError("keys.encryptionKey").getDefaultMessage()).contains("32 bytes");
+        properties.getKeys().setEncryptionKey("not base64!");
+        assertThat(validate(properties).getFieldError("keys.encryptionKey").getDefaultMessage()).contains("Base64");
+    }
+
     private static AuthorizationServerProperties withIssuer(String issuer) {
         AuthorizationServerProperties properties = new AuthorizationServerProperties();
         properties.setIssuer(URI.create(issuer));
+        properties.getKeys().setEncryptionKey("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
         return properties;
     }
 

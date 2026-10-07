@@ -572,3 +572,20 @@
 - **Files Changed**: `authorization-server/**`（新增）、`pom.xml`、`jacky917-security-bom/pom.xml`、`README.md`、`docs/design/auth-server-detailed-design.md`、`docs/design/auth-server-data-model.md`、`docs/PROGRESS.md`、`docs/PROJECT_STRUCTURE.md`
 - **Next TODO**:
   - 工作 3：簽章金鑰（`SigningKeyStore`、`KeyEncryptor`、`RotatingJwkSource`）。
+
+---
+## Step 21: Authorization Server 第 1 階段——工作 3（簽章金鑰）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `SigningKeyStore` SPI 與 `JdbcSigningKeyStore`；`KeyEncryptor`（AES-256-GCM，`kid` 為附加驗證資料）；`SigningKeyService`（RS256 3072 位元／ES256，快取 1 分鐘）；`RotatingJwkSource`。
+  - [x] 首次啟動自動產生 `ACTIVE` 金鑰；多實例同時建立時由唯一索引擋下並改用對方的金鑰。
+  - [x] 主金鑰（`keys.encryption-key`）必填、必須是 32 bytes 的 Base64；主金鑰錯誤時啟動失敗。
+  - [x] JWKS 只有公鑰；簽章另以只看得到 `ACTIVE` 私鑰的 `JwtEncoder` 進行，header 自動帶 `kid`。
+- **Commands Run & Results**:
+  - AS 模組 39 個測試全數通過：T-KEY-01（首次啟動、密文儲存、以 JWKS 驗證）、T-KEY-03（主金鑰錯誤時啟動失敗）、重新啟動沿用金鑰、輪換期間公開 3 把但只以 `ACTIVE` 簽章、輪換後舊 token 仍可驗證、ES256；SQLite 與 PostgreSQL 各跑一次。
+  - 查證：Spring Security 7.1.1 的 `NimbusJwtEncoder` 在多把 RSA 金鑰符合時拒絕簽章，因此簽章與 JWKS 必須分開。
+- **Decision Log**:
+  - **DEC-067**: JWKS 與簽章使用不同的金鑰來源（公鑰／`ACTIVE` 私鑰）。
+  - **DEC-068**: 私鑰密文以 `kid` 綁定；主金鑰錯誤在啟動時就失敗。
+- **Next TODO**:
+  - 工作 4：client（JDBC repository、`client_profile`、`ClientSecretInitializer`、第一方 client）。

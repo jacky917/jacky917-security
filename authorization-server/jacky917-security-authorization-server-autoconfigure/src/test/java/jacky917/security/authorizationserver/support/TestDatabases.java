@@ -33,6 +33,11 @@ public final class TestDatabases {
     public static final String SQLITE = "sqlite";
     public static final String POSTGRESQL = "postgresql";
 
+    /**
+     * 測試用主金鑰（32 bytes 的 Base64），只用於測試。
+     */
+    public static final String TEST_ENCRYPTION_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
+
     private static final AtomicInteger COUNTER = new AtomicInteger();
     private static EmbeddedPostgres postgres;
 
@@ -56,7 +61,13 @@ public final class TestDatabases {
      * {@code ApplicationContextRunner} 不會執行 {@code EnvironmentPostProcessor}，所以由這裡補上 Flyway 位置。
      */
     public static ApplicationContextRunner runner(String vendor) {
-        String url = newDatabaseUrl(vendor);
+        return runner(vendor, newDatabaseUrl(vendor));
+    }
+
+    /**
+     * 使用指定資料庫的 runner，可用來模擬同一個資料庫上的重新啟動。
+     */
+    public static ApplicationContextRunner runner(String vendor, String url) {
         ApplicationContextRunner runner = new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(
                         DataSourceAutoConfiguration.class,
@@ -68,7 +79,8 @@ public final class TestDatabases {
                 .withPropertyValues(
                         "spring.datasource.url=" + url,
                         "spring.flyway.locations=" + DefaultSqliteEnvironmentPostProcessor.MIGRATION_LOCATION,
-                        "jacky917.security.authorization-server.issuer=http://localhost:9000");
+                        "jacky917.security.authorization-server.issuer=http://localhost:9000",
+                        "jacky917.security.authorization-server.keys.encryption-key=" + TEST_ENCRYPTION_KEY);
         if (POSTGRESQL.equals(vendor)) {
             runner = runner.withPropertyValues("spring.datasource.username=postgres");
         }

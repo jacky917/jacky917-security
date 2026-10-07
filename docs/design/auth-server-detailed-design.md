@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 🚧 實作中（第 1 階段）：工作 1、2 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
+| 狀態 | 🚧 實作中（第 1 階段）：工作 1～3 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -984,7 +984,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 |---|---|---|
 | 1 | 模組骨架、`AuthorizationServerProperties`（啟動時自我驗證） | ✅ |
 | 2 | 資料庫：dialect、預設 SQLite、啟動檢查、Flyway V1（PostgreSQL 與 SQLite 各 7 個檔案） | ✅ |
-| 3～10 | 金鑰、client、使用者、登入、Session 連結、Token、Google、範例與 E2E | ⏳ |
+| 3 | 簽章金鑰：`SigningKeyStore`、`KeyEncryptor`（AES-256-GCM）、`RotatingJwkSource`、首次啟動產生金鑰 | ✅ |
+| 4～10 | client、使用者、登入、Session 連結、Token、Google、範例與 E2E | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -996,4 +997,9 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | PostgreSQL 測試 | Testcontainers | embedded-postgres（真正的 PostgreSQL 16.15 執行檔） | 不需要 Docker，本機與 CI 都能執行；仍是實際的 PostgreSQL |
 | SQLite 驅動版本 | xerial 3.53.4.0（驗證時使用） | Spring Boot 管理的 3.53.2.1 | 與 Spring Boot 的版本管理一致；所需的連線參數兩版皆支援，已以測試確認 |
 | 預設 SQLite 的連線池 | — | 只在使用預設 URL 時把 `maximum-pool-size` 設為 4 | 寫入依序執行，連線再多也只是排隊 |
+| 簽章與 JWKS 分開 | `RotatingJwkSource` 同時供 JWKS 與簽章使用 | `JWKSource` Bean 只回傳公鑰（`NEXT`、`ACTIVE`、`RETIRING`），另以只看得到 `ACTIVE` 私鑰的 `JwtEncoder` 簽章 | 已查證：Spring Security 7.1.1 的 `NimbusJwtEncoder` 在多把 RSA 金鑰符合時拒絕簽章（輪換期間必然如此）；分開後私鑰也不會經由 `JWKSource` 外流。`NimbusJwtEncoder` 會自動在 header 加上 `kid` |
+| 金鑰快取 | — | 讀取後快取 1 分鐘 | 金鑰很少變動；其他實例輪換後最晚 1 分鐘生效，期間仍以已公開為 `RETIRING` 的舊金鑰簽章，token 依然可驗證 |
+| `SigningKeyStore#transition` | 回傳 `void` | 回傳 `boolean`（狀態不是預期值時為 `false`） | 多實例同時輪換時，由呼叫端判斷是否已被其他實例處理 |
+| 私鑰加密格式 | AES-256-GCM | 另以 `kid` 作為附加驗證資料 | 密文被複製到其他列時無法解密 |
+| 時鐘 | — | 新增 `Clock` Bean（使用者已有時沿用） | 測試可控制時間 |
 
