@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration;
 import org.springframework.context.annotation.Import;
 
 /**
@@ -25,13 +26,14 @@ import org.springframework.context.annotation.Import;
  * @since 2.1.0
  */
 // 以字串指定 Spring Boot 的 Authorization Server 自動配置：本配置的 JWKSource、JwtEncoder 等必須先註冊
-@AutoConfiguration(after = DataSourceAutoConfiguration.class, beforeName = {
+@AutoConfiguration(after = {DataSourceAutoConfiguration.class, DataSourceTransactionManagerAutoConfiguration.class}, beforeName = {
         "org.springframework.boot.security.oauth2.server.authorization.autoconfigure.servlet.OAuth2AuthorizationServerAutoConfiguration",
         "org.springframework.boot.security.oauth2.server.authorization.autoconfigure.servlet.OAuth2AuthorizationServerJwtAutoConfiguration"
 })
 @ConditionalOnProperty(prefix = AuthorizationServerProperties.PREFIX, name = "enabled", havingValue = "true",
         matchIfMissing = true)
 @EnableConfigurationProperties(AuthorizationServerProperties.class)
-@Import({AuthorizationServerDatabaseConfiguration.class, AuthorizationServerKeysConfiguration.class})
+@Import({AuthorizationServerDatabaseConfiguration.class, AuthorizationServerKeysConfiguration.class,
+        AuthorizationServerClientsConfiguration.class})
 public class AuthorizationServerAutoConfiguration {
 }

@@ -1,5 +1,6 @@
 package jacky917.security.authorizationserver.properties;
 
+import jacky917.security.core.TrustLevel;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -11,8 +12,12 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Configuration properties for the jacky917-security authorization server,
@@ -44,6 +49,7 @@ public class AuthorizationServerProperties implements Validator {
     public static final String PREFIX = "jacky917.security.authorization-server";
 
     private static final Set<String> LOCAL_HOSTS = Set.of("localhost", "127.0.0.1", "[::1]");
+    private static final Pattern CLIENT_ID = Pattern.compile("[a-z0-9][a-z0-9._-]{1,99}");
 
     /**
      * Whether the authorization server auto-configuration is enabled.
@@ -83,6 +89,23 @@ public class AuthorizationServerProperties implements Validator {
      */
     private Keys keys = new Keys();
 
+    /**
+     * Password hashing settings.
+     * <p>
+     * 密碼雜湊設定。
+     */
+    private Password password = new Password();
+
+    /**
+     * First-party clients, keyed by client id. They are created or updated
+     * at startup to match this configuration; clients removed from it are
+     * left in the database.
+     * <p>
+     * 第一方 client，以 client id 為鍵。啟動時建立或更新為與此設定一致；從
+     * 設定中移除的 client 不會從資料庫刪除。
+     */
+    private Map<String, Client> clients = new LinkedHashMap<>();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -97,6 +120,28 @@ public class AuthorizationServerProperties implements Validator {
         validateIssuer(properties.getIssuer(), errors);
         properties.getToken().validate(errors);
         properties.getKeys().validate(errors);
+        properties.getPassword().validate(errors);
+        properties.getClients().forEach((clientId, client) -> client.validate(clientId, errors));
+    }
+
+    static boolean isAllowedRedirect(String uri) {
+        try {
+            URI parsed = URI.create(uri);
+            if (!parsed.isAbsolute() || parsed.getFragment() != null) {
+                return false;
+            }
+            String scheme = parsed.getScheme();
+            // RFC 8252 §7.1：原生 App 的私有 scheme 必須是反向網域名稱（含 "."），例如 com.example.app:/callback
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
+                return scheme.contains(".");
+            }
+            if (parsed.getHost() == null) {
+                return false;
+            }
+            return "https".equals(scheme) || LOCAL_HOSTS.contains(parsed.getHost());
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
     }
 
     private static void validateIssuer(URI issuer, Errors errors) {
@@ -235,6 +280,214 @@ public class AuthorizationServerProperties implements Validator {
                 errors.rejectValue("keys.encryptionKeyId", "required", "keys.encryption-key-id must not be blank");
             }
         }
+    }
+
+    /**
+     * Password hashing settings, bound from {@code .password.*} (D21).
+     * <p>
+     * 密碼雜湊設定，綁定自 {@code .password.*}（D21）。
+     */
+    @Getter
+    @Setter
+    public static class Password {
+
+        /**
+         * BCrypt strength (log2 of the rounds), between 10 and 14. Also used
+         * for client secrets.
+         * <p>
+         * BCrypt 強度（回合數的 log2），10～14。client secret 也使用此設定。
+         */
+        private int bcryptStrength = 12;
+
+        void validate(Errors errors) {
+            if (bcryptStrength < 10 || bcryptStrength > 14) {
+                errors.rejectValue("password.bcryptStrength", "range", "password.bcrypt-strength must be between 10 and 14");
+            }
+        }
+    }
+
+    /**
+     * A first-party client, bound from {@code .clients.<client-id>.*}.
+     * <p>
+     * 第一方 client，綁定自 {@code .clients.<client-id>.*}。
+     * <p>
+     * Every client must use PKCE, and refresh tokens are rotated on each
+     * use; neither can be turned off. Token lifetimes come from
+     * {@code token.*}.
+     * <p>
+     * 所有 client 一律必須使用 PKCE，Refresh Token 每次使用都會輪換，兩者皆
+     * 無法關閉。Token 有效期取自 {@code token.*}。
+     */
+    @Getter
+    @Setter
+    public static class Client {
+
+        /**
+         * Name shown to users; defaults to the client id.
+         * <p>
+         * 顯示給使用者的名稱，預設為 client id。
+         */
+        private String displayName;
+
+        /**
+         * Trust level. Only {@code first-party} is supported until the
+         * consent screen is available.
+         * <p>
+         * 信任等級。同意畫面完成前只支援 {@code first-party}。
+         */
+        private TrustLevel trustLevel = TrustLevel.FIRST_PARTY;
+
+        /**
+         * How the client authenticates at the token endpoint.
+         * {@code none} declares a public client (for example a mobile
+         * app), which never receives refresh tokens.
+         * <p>
+         * client 在 token 端點的驗證方式。{@code none} 表示 public client
+         * （例如行動 App），不會取得 Refresh Token。
+         */
+        private AuthenticationMethod authenticationMethod = AuthenticationMethod.CLIENT_SECRET_BASIC;
+
+        /**
+         * Client secret. Use a placeholder such as
+         * {@code ${WEB_BFF_SECRET}} instead of writing the value in a file.
+         * It is stored as a BCrypt hash; a value starting with an encoder
+         * prefix such as {@code {bcrypt}} is stored as is. Changing it
+         * replaces the stored secret at the next startup.
+         * <p>
+         * Client secret。請以 {@code ${WEB_BFF_SECRET}} 等佔位符引用環境變數，
+         * 不要把值寫在檔案中。儲存時以 BCrypt 雜湊；以 {@code {bcrypt}} 等前綴
+         * 開頭的值視為已雜湊，原樣儲存。修改後於下次啟動時取代已儲存的 secret。
+         */
+        private String secret;
+
+        /**
+         * Allowed grant types.
+         * <p>
+         * 允許的 grant type。
+         */
+        private Set<GrantType> grantTypes = new LinkedHashSet<>(List.of(GrantType.AUTHORIZATION_CODE, GrantType.REFRESH_TOKEN));
+
+        /**
+         * Exact redirect URIs for the authorization code flow; {@code https}
+         * except on {@code localhost}. Native apps may use a reverse-domain
+         * scheme such as {@code com.example.app:/callback} (RFC 8252).
+         * <p>
+         * 授權碼流程的 redirect URI，必須完全相符；{@code localhost} 以外必須
+         * 使用 {@code https}。原生 App 可使用反向網域名稱的 scheme，例如
+         * {@code com.example.app:/callback}（RFC 8252）。
+         */
+        private List<String> redirectUris = new ArrayList<>();
+
+        /**
+         * Exact URIs allowed as {@code post_logout_redirect_uri}.
+         * <p>
+         * 允許作為 {@code post_logout_redirect_uri} 的網址，必須完全相符。
+         */
+        private List<String> postLogoutRedirectUris = new ArrayList<>();
+
+        /**
+         * Scopes the client may request.
+         * <p>
+         * client 可以要求的 scope。
+         */
+        private Set<String> scopes = new LinkedHashSet<>(List.of("openid"));
+
+        void validate(String clientId, Errors errors) {
+            String path = "clients[" + clientId + "]";
+            if (!CLIENT_ID.matcher(clientId).matches()) {
+                errors.rejectValue("clients", "invalid", path + ": client id must be 2-100 lowercase letters, digits, "
+                        + "'.', '_' or '-'");
+            }
+            if (trustLevel != TrustLevel.FIRST_PARTY) {
+                errors.rejectValue("clients", "unsupported", path + ": only first-party clients are supported");
+            }
+            if (grantTypes == null || grantTypes.isEmpty()) {
+                errors.rejectValue("clients", "required", path + ": grant-types must not be empty");
+                return;
+            }
+            boolean authorizationCode = grantTypes.contains(GrantType.AUTHORIZATION_CODE);
+            boolean publicClient = authenticationMethod == AuthenticationMethod.NONE;
+            if (authorizationCode && redirectUris.isEmpty()) {
+                errors.rejectValue("clients", "required", path + ": authorization_code requires redirect-uris");
+            }
+            redirectUris.stream().filter(uri -> !isAllowedRedirect(uri)).forEach(uri -> errors.rejectValue("clients",
+                    "invalid", path + ": redirect URI " + uri + " must be an absolute https URL without a fragment "
+                            + "(http is allowed only for localhost; native apps may use a reverse-domain scheme such "
+                            + "as com.example.app:/callback)"));
+            postLogoutRedirectUris.stream().filter(uri -> !isAllowedRedirect(uri)).forEach(uri -> errors.rejectValue(
+                    "clients", "invalid", path + ": post-logout redirect URI " + uri + " must be an absolute https URL"));
+            if (grantTypes.contains(GrantType.REFRESH_TOKEN) && !authorizationCode) {
+                errors.rejectValue("clients", "invalid", path + ": refresh_token requires authorization_code");
+            }
+            if (publicClient && grantTypes.contains(GrantType.CLIENT_CREDENTIALS)) {
+                errors.rejectValue("clients", "invalid", path + ": a public client cannot use client_credentials");
+            }
+            if (publicClient && grantTypes.contains(GrantType.REFRESH_TOKEN)) {
+                errors.rejectValue("clients", "invalid", path + ": a public client never receives refresh tokens; "
+                        + "remove refresh_token");
+            }
+            if (scopes.contains("openid") && !authorizationCode) {
+                errors.rejectValue("clients", "invalid", path + ": the openid scope requires authorization_code");
+            }
+            if (secret != null && secret.startsWith("{") && !secret.startsWith("{bcrypt}")) {
+                errors.rejectValue("clients", "invalid", path + ": a pre-encoded secret must use {bcrypt}");
+            }
+            if (publicClient && secret != null && !secret.isBlank()) {
+                errors.rejectValue("clients", "invalid", path + ": a public client must not have a secret");
+            }
+        }
+    }
+
+    /**
+     * Client authentication methods at the token endpoint.
+     * <p>
+     * Token 端點的 client 驗證方式。
+     */
+    public enum AuthenticationMethod {
+        /**
+         * HTTP Basic with the client id and secret.
+         * <p>
+         * 以 HTTP Basic 傳送 client id 與 secret。
+         */
+        CLIENT_SECRET_BASIC,
+        /**
+         * Client id and secret in the form body.
+         * <p>
+         * 在表單內容中傳送 client id 與 secret。
+         */
+        CLIENT_SECRET_POST,
+        /**
+         * No authentication: a public client protected by PKCE only.
+         * <p>
+         * 不驗證：只以 PKCE 保護的 public client。
+         */
+        NONE
+    }
+
+    /**
+     * Supported grant types (D15).
+     * <p>
+     * 支援的 grant type（D15）。
+     */
+    public enum GrantType {
+        /**
+         * Authorization code with PKCE; the only way users log in.
+         * <p>
+         * 授權碼搭配 PKCE，使用者登入的唯一方式。
+         */
+        AUTHORIZATION_CODE,
+        /**
+         * Refresh token, for confidential clients only.
+         * <p>
+         * Refresh Token，只給 confidential client。
+         */
+        REFRESH_TOKEN,
+        /**
+         * Client credentials, for service-to-service calls.
+         * <p>
+         * Client credentials，用於服務對服務呼叫。
+         */
+        CLIENT_CREDENTIALS
     }
 
     /**

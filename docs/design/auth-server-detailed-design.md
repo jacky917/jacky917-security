@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 🚧 實作中（第 1 階段）：工作 1～3 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
+| 狀態 | 🚧 實作中（第 1 階段）：工作 1～4 已完成，見 [§13 實施紀錄](#13-實施紀錄) |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -985,7 +985,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 1 | 模組骨架、`AuthorizationServerProperties`（啟動時自我驗證） | ✅ |
 | 2 | 資料庫：dialect、預設 SQLite、啟動檢查、Flyway V1（PostgreSQL 與 SQLite 各 7 個檔案） | ✅ |
 | 3 | 簽章金鑰：`SigningKeyStore`、`KeyEncryptor`（AES-256-GCM）、`RotatingJwkSource`、首次啟動產生金鑰 | ✅ |
-| 4～10 | client、使用者、登入、Session 連結、Token、Google、範例與 E2E | ⏳ |
+| 4 | Client：官方 JDBC repository + 停權過濾、`client_profile`、設定中宣告的第一方 client | ✅ |
+| 5～10 | 使用者、登入、Session 連結、Token、Google、範例與 E2E | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1002,4 +1003,9 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | `SigningKeyStore#transition` | 回傳 `void` | 回傳 `boolean`（狀態不是預期值時為 `false`） | 多實例同時輪換時，由呼叫端判斷是否已被其他實例處理 |
 | 私鑰加密格式 | AES-256-GCM | 另以 `kid` 作為附加驗證資料 | 密文被複製到其他列時無法解密 |
 | 時鐘 | — | 新增 `Clock` Bean（使用者已有時沿用） | 測試可控制時間 |
+| 第一方 client 的來源 | Migration 建立 client，`ClientSecretInitializer` 從環境變數 `JACKY917_CLIENT_<ID>_SECRET` 寫入 secret | 在設定中宣告（`clients.<client-id>.*`），由 `ClientRegistrationSynchronizer` 於每次啟動建立或更新；secret 以 `${…}` 佔位符引用環境變數 | Migration 中的範例網址不應出現在每個安裝中；redirect URI 等設定改了之後也要能生效。第 3 階段的 Admin API 管理其他 client |
+| Secret 更新 | 只在 `client_secret` 為 `NULL` 時寫入 | 設定的 secret 與已儲存的雜湊不符時更換；相符時沿用（不重新雜湊） | 讓 secret 可以輪換；以 `PasswordEncoder#matches` 判斷，避免每次啟動產生新雜湊 |
+| 第三方 client | 第 3 階段 | 設定中宣告 `third-party` 時啟動失敗 | 同意畫面尚未完成，接受設定卻無法正確運作比直接拒絕更危險 |
+| Redirect URI 規則 | 完全比對 | 另檢查：`https`（`localhost` 可用 `http`）、無 fragment；原生 App 可用反向網域名稱的 scheme（RFC 8252 §7.1） | 設定錯誤在啟動時就發現 |
+| 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
 

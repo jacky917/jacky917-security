@@ -283,11 +283,16 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/KeyEncryptor.java` | `as-autoconfigure` | 私鑰加密 | AES-256-GCM，`kid` 為附加驗證資料。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/SigningKeyStore.java`、`JdbcSigningKeyStore.java` | `as-autoconfigure` | 金鑰儲存 SPI | 預設 `signing_key` 表，可換成 KMS。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/RotatingJwkSource.java` | `as-autoconfigure` | JWKS | 公開 `NEXT`、`ACTIVE`、`RETIRING` 的公鑰。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerClientsConfiguration.java` | `as-autoconfigure` | Client 配置 | `PasswordEncoder`（`{bcrypt}`）、`RegisteredClientRepository`、啟動時同步設定中的 client。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../client/ClientRegistrationSynchronizer.java` | `as-autoconfigure` | Client 同步 | 依 `clients.*` 建立或更新 client；強制 PKCE、輪換 Refresh Token；secret 以 BCrypt 雜湊。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../client/ActiveClientRegisteredClientRepository.java` | `as-autoconfigure` | 停權過濾 | `client_profile` 不是 `ACTIVE` 的 client 對 Spring Security 而言不存在。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../client/ClientProfileRepository.java`、`ClientProfile.java`、`ClientStatus.java` | `as-autoconfigure` | Client 資料 | `client_profile` 的讀寫；信任等級與狀態。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/db/migration/jacky917-as/{postgresql,sqlite}/` | `as-autoconfigure` | Flyway V1 | 兩種資料庫各 7 個同名檔案：23 張表與內建資料。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/TestDatabases.java` | `as-test` | 測試資料庫 | SQLite 暫存檔；embedded PostgreSQL 16（不需 Docker）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../database/*IntegrationTest.java` | `as-test` | 整合測試 | migration、官方 JDBC 類別相容性、約束、schema 一致性、SQLite 設定檢查、預設 SQLite。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../properties/AuthorizationServerPropertiesTest.java` | `as-test` | 單元測試 | 預設值、issuer、有效期與主金鑰驗證。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/KeyEncryptorTest.java` | `as-test` | 單元測試 | 加解密、錯誤主金鑰、竄改、`kid` 綁定。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../client/ClientRegistrationIntegrationTest.java` | `as-test` | 整合測試 | 註冊、重新啟動時更新、secret 輪換、缺少 secret、停權。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/SigningKeyIntegrationTest.java` | `as-test` | 整合測試 | T-KEY-01、T-KEY-03、輪換期間的公開與簽章、ES256。 |
 
 ### core

@@ -10,6 +10,7 @@ import org.springframework.validation.Errors;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -83,6 +84,63 @@ class AuthorizationServerPropertiesTest {
         assertThat(validate(properties).getFieldError("keys.encryptionKey").getDefaultMessage()).contains("32 bytes");
         properties.getKeys().setEncryptionKey("not base64!");
         assertThat(validate(properties).getFieldError("keys.encryptionKey").getDefaultMessage()).contains("Base64");
+    }
+
+    @Test
+    @DisplayName("Client 規則：redirect URI、grant type 組合、public client、client id 格式、第三方")
+    void clientRules() {
+        AuthorizationServerProperties properties = withIssuer("https://auth.example.com");
+        AuthorizationServerProperties.Client noRedirect = new AuthorizationServerProperties.Client();
+        properties.getClients().put("no-redirect", noRedirect);
+        AuthorizationServerProperties.Client insecure = new AuthorizationServerProperties.Client();
+        insecure.setRedirectUris(List.of("http://app.example.com/cb", "https://app.example.com/cb#x", "myapp:/cb"));
+        properties.getClients().put("insecure", insecure);
+        AuthorizationServerProperties.Client publicWithRefresh = new AuthorizationServerProperties.Client();
+        publicWithRefresh.setAuthenticationMethod(AuthorizationServerProperties.AuthenticationMethod.NONE);
+        publicWithRefresh.setRedirectUris(List.of("https://app.example.com/cb"));
+        properties.getClients().put("public-refresh", publicWithRefresh);
+        AuthorizationServerProperties.Client batchWithOpenid = new AuthorizationServerProperties.Client();
+        batchWithOpenid.setGrantTypes(Set.of(AuthorizationServerProperties.GrantType.CLIENT_CREDENTIALS));
+        properties.getClients().put("batch", batchWithOpenid);
+        AuthorizationServerProperties.Client thirdParty = new AuthorizationServerProperties.Client();
+        thirdParty.setTrustLevel(jacky917.security.core.TrustLevel.THIRD_PARTY);
+        thirdParty.setRedirectUris(List.of("https://partner.example.com/cb"));
+        properties.getClients().put("partner", thirdParty);
+        AuthorizationServerProperties.Client noop = new AuthorizationServerProperties.Client();
+        noop.setSecret("{noop}secret");
+        noop.setRedirectUris(List.of("https://app.example.com/cb"));
+        properties.getClients().put("noop", noop);
+        properties.getClients().put("Bad Id", validClient());
+
+        List<String> messages = validate(properties).getAllErrors().stream().map(error -> error.getDefaultMessage()).toList();
+        assertThat(messages).anyMatch(m -> m.startsWith("clients[no-redirect]") && m.contains("requires redirect-uris"));
+        assertThat(messages).anyMatch(m -> m.contains("http://app.example.com/cb must be an absolute https URL"));
+        assertThat(messages).anyMatch(m -> m.contains("https://app.example.com/cb#x"));
+        assertThat(messages).anyMatch(m -> m.contains("redirect URI myapp:/cb"));
+        assertThat(messages).anyMatch(m -> m.startsWith("clients[public-refresh]") && m.contains("never receives refresh tokens"));
+        assertThat(messages).anyMatch(m -> m.startsWith("clients[batch]") && m.contains("openid scope requires authorization_code"));
+        assertThat(messages).anyMatch(m -> m.startsWith("clients[partner]") && m.contains("only first-party"));
+        assertThat(messages).anyMatch(m -> m.startsWith("clients[noop]") && m.contains("{bcrypt}"));
+        assertThat(messages).anyMatch(m -> m.startsWith("clients[Bad Id]") && m.contains("client id"));
+        assertThat(messages).hasSize(9);
+    }
+
+    @Test
+    @DisplayName("合法的 client 設定與 localhost 的 http redirect 可通過")
+    void validClientPasses() {
+        AuthorizationServerProperties properties = withIssuer("https://auth.example.com");
+        properties.getClients().put("web-bff", validClient());
+        AuthorizationServerProperties.Client local = validClient();
+        local.setRedirectUris(List.of("http://localhost:8080/login/oauth2/code/jacky917", "com.example.app:/callback"));
+        properties.getClients().put("local-bff", local);
+        assertThat(validate(properties).hasErrors()).isFalse();
+    }
+
+    private static AuthorizationServerProperties.Client validClient() {
+        AuthorizationServerProperties.Client client = new AuthorizationServerProperties.Client();
+        client.setSecret("${WEB_BFF_SECRET}");
+        client.setRedirectUris(List.of("https://app.example.com/login/oauth2/code/jacky917"));
+        return client;
     }
 
     private static AuthorizationServerProperties withIssuer(String issuer) {

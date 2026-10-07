@@ -589,3 +589,20 @@
   - **DEC-068**: 私鑰密文以 `kid` 綁定；主金鑰錯誤在啟動時就失敗。
 - **Next TODO**:
   - 工作 4：client（JDBC repository、`client_profile`、`ClientSecretInitializer`、第一方 client）。
+
+---
+## Step 22: Authorization Server 第 1 階段——工作 4（Client）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `RegisteredClientRepository`：官方 `JdbcRegisteredClientRepository` + `ActiveClientRegisteredClientRepository`（停權的 client 不存在 → `invalid_client`）。
+  - [x] 第一方 client 在設定中宣告（`clients.<client-id>.*`），每次啟動同步：一律 `requireProofKey=true`、`reuseRefreshTokens=false`、有效期取自 `token.*`、ID Token 演算法與簽章金鑰一致。
+  - [x] Secret 以 `{bcrypt}` 雜湊；設定改變時更換，相同時沿用；confidential client 沒有 secret 時啟動失敗。
+  - [x] 設定驗證：redirect URI（https／localhost／RFC 8252 原生 App scheme、無 fragment）、grant type 組合、public client 限制、client id 格式；第三方 client 在第 3 階段前拒絕。
+- **Commands Run & Results**:
+  - AS 模組 47 個測試全數通過（SQLite 與 PostgreSQL 各跑一次）。
+  - 測試發現並修正 2 個問題：① 原生 App 的 `com.example.app:/callback` 被誤判為不合法（改為允許 RFC 8252 的反向網域 scheme）；② 已停權的 client 在重新啟動時被重複新增而啟動失敗（同步改用未過濾的 repository）。
+- **Decision Log**:
+  - **DEC-069**: 第一方 client 以設定為準，啟動時同步（取代 migration seed 與 `ClientSecretInitializer`）。
+  - **DEC-070**: 第三方 client 在同意畫面完成前直接拒絕。
+- **Next TODO**:
+  - 工作 5：使用者（`UserAccountService`、`UserDetailsService`、密碼政策）。
