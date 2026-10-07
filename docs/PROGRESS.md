@@ -14,6 +14,9 @@
 - [🟢] Step 6: 實作 Demo Auth Server 與 E2E 測試流程
 - [🟢] Step 7: 補齊 Refresh Token Rotation 設計與資料表 Schema
 - [🟢] Step 8: 引入 Swagger UI 與 MySQL 資料庫情境
+- [🟢] Step 9: 程式碼審查、Bug 修正、雙語 JavaDoc 與完整使用文件
+- [🟡] Step 10: Authorization Server 設計（方案 C，支援第三方登入）— 設計草案完成，待決策
+- [🟡] Step 11: 2.0 設計（Spring Boot 4.1 升級 + Repo 拆分）— 設計草案完成，待決策
 
 ---
 
@@ -248,6 +251,7 @@
   - [x] 建立 `Clip` 實體與 `ClipRepository`，ABAC 改為查 DB 比對 `ownerId` 與 JWT `sub`。
   - [x] 測試環境以 H2 驗證，`mvn -U clean verify` 成功。
   - [x] 更新 `README.md`、`docs/PROJECT_STRUCTURE.md`。
+  - [x] 成功發佈 GitHub Packages 並完善 `README.md` 依賴下載與 PAT 驗證說明。
 - **Commands Run & Results**:
   - `mvn -U clean verify`: **SUCCESS**（第二次，第一次修正測試設定後通過）
   - `tree -a -I 'target|.git'`: **SUCCESS**
@@ -265,14 +269,16 @@
   - **New**: `demo-resource-server/src/test/resources/application.yml`
   - **Updated**: `demo-resource-server/src/test/java/jacky917/demo/resourceserver/DemoResourceServerIntegrationTest.java`
   - **Updated**: `README.md`
+  - **Updated**: `docs/github-packages.md`
   - **Updated**: `docs/PROGRESS.md`
   - **Updated**: `docs/PROJECT_STRUCTURE.md`
 - **Decision Log**:
   - **DEC-020**: 將所有模組的 groupId 統一修改為 com.github.jacky917，並移除子模組的自訂 version 標籤以繼承父版本，確保符合 GitHub Packages 發佈規範。
-  - **DEC-021**: Database 依賴僅放在 `demo-resource-server`，確保 Starter 維持 Stateless 與 DB 無關。
-  - **DEC-022**: ABAC 改為資料庫 owner 比對（`clip.ownerId == JWT sub`），比寫死規則更貼近真實業務。
-  - **DEC-023**: 為避免 CI 依賴外部 MySQL，測試改用 H2（`MODE=MySQL`）並在 test `application.yml` 覆蓋資料源。
-  - **DEC-024**: 補上 OpenAPI 註解與 Swagger 路徑放行，確保兩個 demo 服務可直接透過 UI 驗證 API。
+  - **DEC-021**: Demo 模組保持本地 Multi-Module 依賴，不改用 GitHub Packages 上已發佈的版本，以確保開源專案的開箱即用性 (Out-of-the-box) 並降低貢獻門檻。
+  - **DEC-022**: Database 依賴僅放在 `demo-resource-server`，確保 Starter 維持 Stateless 與 DB 無關。
+  - **DEC-023**: ABAC 改為資料庫 owner 比對（`clip.ownerId == JWT sub`），比寫死規則更貼近真實業務。
+  - **DEC-024**: 為避免 CI 依賴外部 MySQL，測試改用 H2（`MODE=MySQL`）並在 test `application.yml` 覆蓋資料源。
+  - **DEC-025**: 補上 OpenAPI 註解與 Swagger 路徑放行，確保兩個 demo 服務可直接透過 UI 驗證 API。
 - **Expected Artifacts**:
   - `Clip.java`
   - `ClipRepository.java`
@@ -280,3 +286,96 @@
   - 更新後的 `README.md`
 - **Next TODO**:
   - 依實際需求擴充 Step 9（若需要：導入 Flyway、正式 migration 與 MySQL docker compose）。
+
+---
+## Step 9: 程式碼審查、Bug 修正、雙語 JavaDoc 與完整使用文件
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] 全專案掃描並修正已確認的 Bug（見 Decision Log）。
+  - [x] 所有 main 原始碼補上中英雙語 JavaDoc。
+  - [x] 新增使用指南、設定參考、限制與注意事項、疑難排解文件。
+  - [x] 修正既有文件中與程式碼不符的內容（類別名稱、Bean 名稱、MySQL 設定、ABAC 規則、錯誤的註解疊加範例）。
+  - [x] 限制文件中的關鍵行為以整合測試驗證（`SecurityBehaviorIntegrationTest`）。
+  - [x] `mvn clean verify` 成功。
+  - [x] 更新 `docs/PROJECT_STRUCTURE.md`。
+- **Commands Run & Results**:
+  - `mvn -o verify`（JDK 23）：修正前 **FAILURE**（Lombok 未執行，編譯失敗）；修正後 **SUCCESS**，37 個測試全數通過。
+  - `JAVA_HOME=<JDK 21> mvn -o verify`：修正前 **SUCCESS**（基準線，25 個測試）。
+  - `javac -Xdoclint:all,-missing`（main 原始碼）：無 JavaDoc 錯誤。
+  - `tree -a -I 'target|.git|.idea|.cursor'`：**SUCCESS**
+- **Files Changed**:
+  - **Updated**: `pom.xml`
+  - **Updated**: `.github/workflows/publish.yml`
+  - **Updated**: `jacky917-security-autoconfigure/.../config/Jacky917SecurityAutoConfiguration.java`
+  - **Updated**: `jacky917-security-autoconfigure/.../methodsecurity/Jacky917AuthorityEvaluator.java`
+  - **Updated**: `jacky917-security-autoconfigure/.../authentication/JwtAuthoritiesExtractor.java`
+  - **Updated**: `jacky917-security-autoconfigure/.../properties/Jacky917SecurityProperties.java`
+  - **Updated**: `jacky917-security-annotations/.../Require*.java`（5 個）
+  - **Updated**: `demo-authorization-server`、`demo-resource-server` 所有 main 原始碼（僅 JavaDoc）
+  - **Updated**: `jacky917-security-autoconfigure/src/test/.../JwtAuthoritiesExtractorTest.java`
+  - **New**: `jacky917-security-autoconfigure/src/test/.../methodsecurity/Jacky917AuthorityEvaluatorTest.java`
+  - **New**: `jacky917-security-autoconfigure/src/test/.../integration/SecurityBehaviorIntegrationTest.java`
+  - **New**: `docs/getting-started.md`、`docs/configuration.md`、`docs/limitations.md`、`docs/troubleshooting.md`
+  - **Updated**: `README.md`、`docs/starter-design.md`、`docs/authorization-model.md`、`docs/jwt-claims.md`、`docs/e2e-testing.md`、`docs/github-packages.md`、`docs/PROJECT_STRUCTURE.md`、`docs/PROGRESS.md`
+- **Decision Log**:
+  - **DEC-026**: `@RequireAll` / `@RequireAny` 參數解析後為空（如 `"|"`）時一律拒絕。原實作 `allMatch` 對空集合回傳 `true`，造成 fail-open。
+  - **DEC-027**: 401 entry point 同時設定在 `oauth2ResourceServer` 與 `exceptionHandling`。原實作只設定後者，Token 無效／過期時回傳空 body，與「未帶 Token」的 JSON 格式不一致；並保留 RFC 6750 `WWW-Authenticate` 標頭。
+  - **DEC-028**: 自動配置明確宣告於 `SecurityAutoConfiguration`、`OAuth2ResourceServerAutoConfiguration` 之前執行，並限定 Servlet Web 應用；原本僅依類別名稱字母順序剛好排在前面。
+  - **DEC-029**: `AnnotationTemplateExpressionDefaults` Bean 改為 `static`，依 Spring Security 建議確保早於方法級授權攔截器建立。
+  - **DEC-030**: 根 POM 明確宣告 `annotationProcessorPaths`（Lombok、configuration-processor），修正 JDK 23+ 不自動執行 annotation processor 導致的編譯失敗。
+  - **DEC-031**: 發佈流程改為以 `-pl` 只部署 starter 相關模組時，必須包含根 parent POM（`-pl .,...`），否則消費端無法解析 `jacky917-security-parent`。（先前已發佈的版本使用根目錄 `mvn deploy`，已包含 parent。）
+  - **DEC-032**: JavaDoc 採中英雙語（英文在前、繁體中文在後），為使用者明確要求，優先於規範中「一律繁體中文」的註解要求；README 與 docs 仍維持繁體中文。
+  - **DEC-033**: 「限制與注意事項」中的行為（註解疊加 500、類別／方法註解不合併、放行路徑帶無效 Token 回 401、Boot converter 屬性被忽略、缺少 JwtDecoder 啟動失敗）皆先以測試實際驗證後才寫入文件。
+- **Next TODO**:
+  - 將 parent 的 `spring-boot-starter-parent` 由 `3.5.10-SNAPSHOT` 改為正式版並重新發佈（消費端目前需能存取 Spring Snapshot repository）。
+  - 評估讓 `@RequireRole` / `@RequirePerm` / `@RequireScope` 的前綴跟隨 `jacky917.security.jwt.prefix.*` 設定。
+  - Demo Resource Server 的 `JwtDecoder` 補上 `aud` 驗證，作為正確示範。
+  - 評估錯誤回應訊息是否需要支援 i18n 或自訂。
+  - 依實際需求擴充（Flyway、正式 migration、MySQL docker compose）。
+
+---
+## Step 10: Authorization Server 設計（方案 C，支援第三方登入）
+- **Status**: 🟡 設計草案完成，等待決策（尚未實作）
+- **背景**：比較 A（外部 IdP）、B（自建登入 API）、C（標準 OAuth 2.0／OIDC）、D（權限中心）四個方案後，決定採用 C，以支援第三方登入（Google 等）。
+- **Acceptance Criteria**:
+  - [x] 撰寫 `docs/auth-server-design.md`：架構、14 項決策（含選項比較與推薦）、模組結構、完整 DDL、Token claim 契約、流程圖、端點、設定與擴充點、安全檢查清單、分階段計畫。
+  - [x] 查證影響決策的外部事實：Spring Boot 3.5 開源支援已於 2026-06-30 結束；SAS 1.5.x 為最後獨立版本並併入 Spring Security 7；SAS 不發 Refresh Token 給 public client；SAS 預設 `aud` 為 client_id。
+  - [x] 更新 `README.md` 文件導覽、`docs/PROJECT_STRUCTURE.md`；在 `database-schema.md`、`refresh-rotation.md` 標註已由新設計取代。
+  - [ ] 使用者確認 `docs/auth-server-design.md` §12 的待確認事項。
+- **Commands Run & Results**:
+  - 文件連結與錨點檢查：無錯誤。
+  - `mvn -o clean verify`：**SUCCESS**，37 個測試全數通過（僅文件變更，程式碼未修改）。
+- **Files Changed**:
+  - **New**: `docs/auth-server-design.md`
+  - **Updated**: `README.md`、`docs/database-schema.md`、`docs/refresh-rotation.md`、`docs/PROJECT_STRUCTURE.md`、`docs/PROGRESS.md`
+- **Decision Log**:
+  - **DEC-034**: 登入服務採方案 C（Spring Authorization Server，標準 OAuth 2.0／OIDC），以支援第三方登入與未來的第三方應用接入。
+  - **DEC-035**: AS 以獨立 starter（`jacky917-auth-server-starter`）交付，僅供建置單一獨立部署的登入服務；業務 API 不得引入。
+  - **DEC-036**（待確認）：建議先將整個 repo 升級至 Spring Boot 4／Spring Security 7，需修改「Spring Boot 3.5.10」硬性決策。
+- **Next TODO**:
+  - 取得 §12 待確認事項的答覆（Boot 版本、第三方登入提供者、資料庫、BFF、行動 App、註冊範圍、既有使用者匯入、網域規劃）。
+  - 依答覆定稿設計，開始第 0 階段。
+
+---
+## Step 11: 2.0 設計（Spring Boot 4.1 升級 + Repo 拆分）
+- **Status**: 🟡 設計草案完成，等待決策（尚未實作）
+- **背景**：使用者決定兩大任務：① 升級到 Spring Boot 4.1；② 實作方案 C（Authorization Server）。先撰寫設計書與 repo 拆分方案。
+- **Acceptance Criteria**:
+  - [x] `docs/v2-overview.md`：目標、執行順序（M0～M6）、2.0 破壞性變更清單、決策索引、風險、依里程碑排序的待確認事項。
+  - [x] `docs/boot4-migration-design.md`：版本對照、逐檔影響清單、`beforeName` 與 Jackson 3 做法、路徑比對變化、步驟、回歸檢查、風險。
+  - [x] `docs/repo-structure-design.md`：4 種拆分方案比較、目標結構、依賴方向規則（enforcer）、flatten／BOM、命名（artifactId、套件、屬性、groupId、repo 名稱）、版本與分支、CI、重構步驟、R-D1～R-D10。
+  - [x] `docs/auth-server-design.md`：D01 標示為已決定（Boot 4.1.1）；模組名稱、屬性前綴、BFF 實作、JDBC schema 注意事項依查證結果更新。
+  - [x] 查證（Maven Central，2026-10-07）：Boot 4.1.1 的 starter 新名稱與舊名稱棄用描述；`SecurityAutoConfiguration`、`OAuth2ResourceServerAutoConfiguration`、`AutoConfigureMockMvc` 的新套件；Boot 4.1.1 管理的版本（Security 7.1.1、Framework 7.0.9、Jackson 3.1.5、Hibernate 7.4.5、JUnit 6.0.3）；Security 7.1.1 仍有 `AnnotationTemplateExpressionDefaults`、`JwtAuthenticationConverter`、`BearerTokenAuthenticationEntryPoint`，已移除 `AntPathRequestMatcher`、`MvcRequestMatcher`；springdoc 3.1.1；Spring Cloud 2026.0 僅有 M1。
+  - [ ] 使用者確認 `docs/v2-overview.md` §7 的待確認事項。
+- **Commands Run & Results**:
+  - 文件連結與錨點檢查：無錯誤。
+  - `mvn -o clean verify`：**SUCCESS**（僅文件變更，程式碼未修改）。
+- **Files Changed**:
+  - **New**: `docs/v2-overview.md`、`docs/boot4-migration-design.md`、`docs/repo-structure-design.md`
+  - **Updated**: `docs/auth-server-design.md`、`README.md`、`docs/PROJECT_STRUCTURE.md`、`docs/PROGRESS.md`
+- **Decision Log**:
+  - **DEC-037**: 平台升級至 Spring Boot 4.1.1（使用者決定）。取代原硬性決策「Spring Boot 3.5.10」；`.cursor/rules` 中的硬性決策需同步更新。DEC-036 結案。
+  - **DEC-038**（建議，待確認）：執行順序為 M0 切 `1.x` → M1 升級（結構不變）→ M2 重構 → M3 發佈 2.0.0 → M4～M6 AS（2.1～2.3）。先升級再重構，讓問題可以分開定位。
+  - **DEC-039**（建議，待確認）：單一 repo、多模組、統一版本；以 enforcer 禁止 Resource Server 模組依賴 Authorization Server 模組。
+- **Next TODO**:
+  - 取得 `docs/v2-overview.md` §7 的答覆，優先處理 M0 前需要決定的兩項（commit 目前變更、1.x 維護期）。
