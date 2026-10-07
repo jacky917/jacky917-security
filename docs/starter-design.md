@@ -30,7 +30,7 @@ jacky917-security-starter          ← 業務專案引入這個（只有 pom，�
 | 模組 | 依賴 | 說明 |
 |---|---|---|
 | `jacky917-security-annotations` | `spring-security-core` | 只有註解定義，可單獨引入到不想帶入自動配置的模組（例如共用的 API interface 模組） |
-| `jacky917-security-autoconfigure` | `spring-boot-starter-security`、`spring-boot-starter-oauth2-resource-server`；`spring-boot-starter-web`、Lombok 為 optional | 自動配置與執行期邏輯 |
+| `jacky917-security-autoconfigure` | `spring-boot-starter-security-oauth2-resource-server`、Jackson 3（`tools.jackson.core:jackson-databind`）；`spring-boot-starter-webmvc`、Lombok 為 optional | 自動配置與執行期邏輯 |
 | `jacky917-security-starter` | 上面兩個 | 聚合依賴 |
 
 自動配置透過 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 註冊。
@@ -50,7 +50,7 @@ sequenceDiagram
 
     C->>F: GET /orders<br/>Authorization: Bearer xxx
     alt 沒有 Token 且路徑不在 permit-all-patterns
-        F-->>C: 401 JSON + WWW-Authenticate: Bearer
+        F-->>C: 401 JSON + WWW-Authenticate: Bearer resource_metadata="…"
     end
     F->>D: decode(token)
     alt 簽章 / 時效 / iss / aud 驗證失敗
@@ -83,7 +83,14 @@ sequenceDiagram
 
 ### 執行順序
 
-宣告為 `@AutoConfiguration(before = {SecurityAutoConfiguration.class, OAuth2ResourceServerAutoConfiguration.class})`，也就是在 Spring Boot 原生的安全性自動配置之前執行。這確保：
+以 `@AutoConfiguration(beforeName = {...})` 宣告在 Spring Boot 4 的下列自動配置之前執行：
+
+- `org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration`
+- `org.springframework.boot.security.autoconfigure.web.servlet.ServletWebSecurityAutoConfiguration`
+- `org.springframework.boot.security.oauth2.server.resource.autoconfigure.OAuth2ResourceServerAutoConfiguration`
+- `org.springframework.boot.security.oauth2.server.resource.autoconfigure.web.OAuth2ResourceServerWebSecurityAutoConfiguration`
+
+使用字串而不是 `Class`，是為了讓類別搬家或不存在時不會直接啟動失敗。代價是名稱打錯時排序會靜默失效，因此由 `AutoConfigurationOrderingIntegrationTest` 驗證排序確實生效。這確保：
 
 - Starter 的 `SecurityFilterChain` 先註冊，Spring Boot 的預設 filter chain（`@ConditionalOnDefaultWebSecurity`）因此不會建立。
 - Starter 的 `JwtAuthenticationConverter` 先註冊，Spring Boot 依 `spring.security.oauth2.resourceserver.jwt.authorit*` / `principal-claim-name` 建立的 converter 因此不會建立（見 [限制 §5](limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效)）。
@@ -114,7 +121,7 @@ Starter 另外在自動配置類別上標註了 `@EnableWebSecurity`，並以 `@
 | 403 處理 | JSON access denied handler | |
 | CORS | 未設定 | 交由業務專案或 Gateway 決定 |
 
-401 entry point 會先呼叫 Spring Security 的 `BearerTokenAuthenticationEntryPoint` 寫入 RFC 6750 的 `WWW-Authenticate` 標頭，再寫入 JSON 內容。
+401 entry point 會先呼叫 Spring Security 的 `BearerTokenAuthenticationEntryPoint` 寫入 RFC 6750 的 `WWW-Authenticate` 標頭（Spring Security 7 另帶 RFC 9728 的 `resource_metadata`），再以應用程式的 Jackson 3 `JsonMapper` 寫入 JSON 內容。
 
 ---
 

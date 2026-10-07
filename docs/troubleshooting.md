@@ -37,11 +37,21 @@ Extracted authorities: [PERM_order:read, ROLE_USER, SCOPE_profile]
 
 **解法**：設定 `spring.security.oauth2.resourceserver.jwt.issuer-uri`（或 `jwk-set-uri`、`public-key-location`），或自訂 `JwtDecoder` Bean。見 [使用指南 §2](getting-started.md#2-提供-jwtdecoder必要)。
 
+### 啟動失敗：`permit-all-patterns` 的路徑樣式錯誤
+
+`2.x`（Spring Security 7）的路徑比對規則中，`**` 只能放在路徑的開頭或結尾。`/api/**/admin` 這類寫法會在啟動時失敗：
+
+```
+PatternParseException: {*...} or ** pattern elements should be placed at the start or end of the pattern
+```
+
+改寫成明確的路徑，或自訂 `SecurityFilterChain`。見 [設定參考](configuration.md#permit-all-patterns-的寫法)。
+
 ### 啟動成功，但所有 API 都沒有被保護 / 註解沒有作用
 
 依序確認：
 
-1. 是否有引入 `spring-boot-starter-web`？Starter 只在 Servlet 應用啟用。
+1. 是否有引入 `spring-boot-starter-webmvc`（Spring Boot 3.5 為 `spring-boot-starter-web`）？Starter 只在 Servlet 應用啟用。
 2. `jacky917.security.enabled` 是否被設為 `false`？
 3. 啟動日誌中是否有 `Jacky917SecurityAutoConfiguration`？可用 `--debug` 啟動並查看 Condition Evaluation Report：
 
@@ -63,7 +73,7 @@ curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8080/secure/me
 
 | `WWW-Authenticate` | 意義 | 排查方向 |
 |---|---|---|
-| `Bearer` | 請求沒有帶 Token | 確認標頭格式是 `Authorization: Bearer <token>`（`Bearer` 後有一個空白） |
+| `Bearer`（`2.x` 另帶 `resource_metadata="…"`） | 請求沒有帶 Token | 確認標頭格式是 `Authorization: Bearer <token>`（`Bearer` 後有一個空白） |
 | `Bearer error="invalid_token", error_description="Jwt expired at ..."` | Token 已過期 | 重新取得 Token；檢查伺服器時鐘是否同步 |
 | `... error_description="... iss claim is not valid"` | issuer 不符 | `issuer-uri` 必須與 Token 的 `iss` **完全一致**（包含結尾斜線） |
 | `... error_description="... aud claim is not valid"` 或類似 | audience 不符 | 確認 `audiences` 設定與 Token 的 `aud` |
@@ -133,7 +143,7 @@ Token 有效，但沒有通過方法級授權。
 |---|---|
 | `spring.security.oauth2.resourceserver.jwt.principal-claim-name` 等 converter 屬性 | 被 Starter 的 converter 取代，見 [限制 §5](limitations.md#5-spring-boot-原生的-jwt-converter-屬性無效) |
 | `jacky917.security.permit-all-patterns` | 有自訂的 `SecurityFilterChain` |
-| `spring.jackson.*` 對錯誤回應沒效果 | 錯誤回應使用 Starter 內部的 `ObjectMapper` |
+| `spring.jackson.*` 對錯誤回應沒效果 | `1.x` 使用 Starter 內部的 `ObjectMapper`；`2.x` 已改用應用程式的 `JsonMapper`，若仍無效，確認應用程式中只有一個 `JsonMapper` bean |
 
 ---
 

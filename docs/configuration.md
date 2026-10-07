@@ -71,7 +71,8 @@ jacky917:
 
 ### `permit-all-patterns` 的寫法
 
-- 使用 Spring Security `requestMatchers(String...)` 的路徑樣式：`*` 比對單一區段，`**` 比對多個區段。
+- 使用 Spring Security `requestMatchers(String...)` 的路徑樣式（Spring Security 7 為 `PathPatternRequestMatcher`）：`*` 比對單一區段，`**` 比對多個區段。
+- **`**` 只能放在路徑的開頭或結尾**。`/api/**/admin` 這類寫法在 `2.x` 會讓應用程式啟動失敗（`1.x` 可用）。需要時改寫成多個明確的路徑，或自訂 `SecurityFilterChain`。
 - 只比對路徑，不區分 HTTP method。
 - 設為空清單（`permit-all-patterns: []`）代表所有路徑都需要驗證，包含 health check 與 Swagger。
 

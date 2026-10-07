@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 📝 設計草案 |
+| 狀態 | ✅ M1 已實施（分支 `claude/spring-boot-4.1-upgrade`），見 [§9 實施結果](#9-實施結果) |
 | 日期 | 2026-10-07 |
 | 目標 | 將全部模組由 Spring Boot `3.5.10-SNAPSHOT` 升級到 **Spring Boot 4.1.1** |
 | 上層文件 | [2.0 總設計](v2-overview.md) |
@@ -72,9 +72,9 @@
 | # | 變更 | 影響檔案 | 說明 |
 |---|---|---|---|
 | S1 | **Starter 改名** | 3 個模組的 `pom.xml` | 舊名稱在 4.1.1 仍存在，但描述已標示「deprecated」：`spring-boot-starter-web` → `spring-boot-starter-webmvc`；`spring-boot-starter-oauth2-resource-server` → `spring-boot-starter-security-oauth2-resource-server` |
-| S2 | **路徑比對器改為 `PathPatternRequestMatcher`** | `permit-all-patterns` 的語意、文件 | Spring Security 7 已移除 `AntPathRequestMatcher` 與 `MvcRequestMatcher`（已確認 7.1.1 的 jar 中不存在）。`**` 只能出現在路徑**結尾**，`/api/**/admin` 這類寫法會在啟動時失敗。預設清單都是結尾 `**`，不受影響，但必須寫進文件與升級說明 |
-| S3 | **移除寫死的外掛版本** | `demo-resource-server/pom.xml` | `exec-maven-plugin` 寫死 `3.5.0`，改由 parent 管理或移除（若依先前建議刪除 `GenerateTestJwtMain`，這個外掛也不再需要） |
-| S4 | **檢查 annotation processor 的版本屬性** | 根 `pom.xml` | `annotationProcessorPaths` 使用 `${spring-boot.version}`，需確認 Boot 4 的 parent 仍提供此屬性 |
+| S2 | **路徑比對器改為 `PathPatternRequestMatcher`** | `permit-all-patterns` 的語意、文件 | Spring Security 7 已移除 `AntPathRequestMatcher` 與 `MvcRequestMatcher`（已確認 7.1.1 的 jar 中不存在）。`**` 只能出現在路徑的**開頭或結尾**，`/api/**/admin` 這類寫法會在啟動時失敗（已實測）。預設清單都是結尾 `**`，不受影響，但必須寫進文件與升級說明 |
+| S3 | **外掛版本** | `demo-resource-server/pom.xml` | ~~改由 parent 管理~~ 實測發現 **Spring Boot 4 不再管理 `exec-maven-plugin` 的版本**，改為明確指定 `3.6.4` |
+| S4 | **檢查 annotation processor 的版本屬性** | 根 `pom.xml` | 已確認：Boot 4.1.1 的 parent 仍提供 `${spring-boot.version}` 與 `${lombok.version}`，不需修改 |
 | S5 | **CI 與發佈流程** | `.github/workflows/` | 加上 Java 21 與 25 的測試矩陣（見 [Repo 拆分設計](repo-structure-design.md#8-ci-與發佈)） |
 
 ### 3.3 已確認不受影響
@@ -236,7 +236,47 @@ main ─── (目前 1.0.0) ──┬── 升級 Boot 4.1 ── 2.0.0-M1 �
 
 1. 需要 Spring Boot 4.1 以上、Java 21 以上。
 2. 依賴改名（見 [Repo 拆分設計 §5](repo-structure-design.md#5-命名規則)）。
-3. `permit-all-patterns` 中，`**` 只能放在路徑結尾。
+3. `permit-all-patterns` 中，`**` 只能放在路徑的開頭或結尾。
 4. 錯誤回應 JSON 改由應用程式的 Jackson 設定序列化，`spring.jackson.*` 將會生效。
 5. 測試請改用 `spring-boot-starter-security-test` 與 `spring-boot-starter-webmvc-test`。
 6. 2.0 一併納入的其他破壞性變更，見 [2.0 總設計 §4](v2-overview.md#4-20-的破壞性變更清單)。
+
+---
+
+## 9. 實施結果
+
+| 項目 | 結果 |
+|---|---|
+| 分支 | `claude/spring-boot-4.1-upgrade`（自 PR #1 的分支切出） |
+| 版本 | `2.0.0-SNAPSHOT`，parent `spring-boot-starter-parent:4.1.1` |
+| 建置 | `mvn clean verify`：**41 個測試全數通過**（原 37 個 + 新增 4 個） |
+| 手動 E2E | 兩個 demo 以 Boot 4.1.1 啟動，依 [E2E 測試指南](e2e-testing.md) 的 14 個請求結果全部符合預期。因本機 Docker 未啟動，Resource Server 改以 H2 執行（未驗證 MySQL Connector/J 9.7.0） |
+
+### 新增的測試
+
+| 測試 | 驗證內容 |
+|---|---|
+| `AutoConfigurationOrderingIntegrationTest` | `beforeName` 排序生效：只有 Starter 的 `SecurityFilterChain` 與 `JwtAuthenticationConverter`；即使設定 `principal-claim-name`、`authority-prefix`，也不會使用 Spring Boot 的 converter |
+| `ErrorResponseJsonMapperIntegrationTest` | 錯誤回應使用應用程式的 Jackson 3 `JsonMapper`（`spring.jackson.serialization.indent-output` 生效） |
+| `SecurityBehaviorIntegrationTest#protectedResourceMetadataIsPublic` | RFC 9728 metadata 端點可匿名存取 |
+
+### 升級時才發現的行為差異（設計階段未預期）
+
+| 差異 | 說明 | 處理 |
+|---|---|---|
+| **`FACTOR_BEARER` authority** | Spring Security 7 的 `JwtAuthenticationConverter` 會在 `Authentication` 中額外加入 `FACTOR_BEARER`，代表以 Bearer Token 驗證（多因素驗證功能的一部分）。`/secure/me` 等列出 authority 的地方會多出這一項 | 不影響 `@Require*` 等「是否包含」的判斷；文件中說明不要比對整個 authority 清單 |
+| **`WWW-Authenticate` 多了 `resource_metadata`** | 依 RFC 9728，401 回應的標頭變成 `Bearer resource_metadata="…/.well-known/oauth-protected-resource"`，並自動提供該端點（匿名可存取） | 測試改為檢查以 `Bearer` 開頭；文件更新 |
+| **`exec-maven-plugin` 不再由 Boot 管理** | 移除寫死的版本後出現 Maven 警告 | 明確指定 `3.6.4` |
+| **`**` 在開頭也可以** | 錯誤訊息為「should be placed at the start or end of the pattern」 | 文件改為「只能放在開頭或結尾」 |
+
+### 與設計一致、行為不變的部分
+
+- 註解疊加仍然在呼叫時拋出 `AnnotationConfigurationException`（[限制 §1](limitations.md#1-同一個方法只能有一個授權註解) 不變）。
+- 類別與方法的註解仍然不合併（[限制 §2](limitations.md#2-類別與方法的註解不會合併) 不變）。
+- 放行路徑帶無效 Token 仍回 401；401／403 JSON 格式不變。
+
+### 尚未完成
+
+- MySQL 環境的實際驗證（需要 Docker）。
+- 發佈 `2.0.0-M1`（依計畫在合併後進行）。
+

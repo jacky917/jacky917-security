@@ -31,11 +31,11 @@
 <dependency>
     <groupId>com.github.jacky917</groupId>
     <artifactId>jacky917-security-starter</artifactId>
-    <version>1.0.0</version>
+    <version>2.0.0-SNAPSHOT</version>   <!-- Spring Boot 3.5 請用 1.1.0 -->
 </dependency>
 <dependency>
     <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-web</artifactId>
+    <artifactId>spring-boot-starter-webmvc</artifactId>
 </dependency>
 ```
 
@@ -43,9 +43,9 @@
 
 - `jacky917-security-autoconfigure`（自動配置）
 - `jacky917-security-annotations`（`@Require*` 註解）
-- `spring-boot-starter-security`、`spring-boot-starter-oauth2-resource-server`
+- `spring-boot-starter-security-oauth2-resource-server`（內含 `spring-boot-starter-security`）
 
-`spring-boot-starter-web` 在 Starter 中是 optional，**業務專案必須自行引入**。Starter 只在 Servlet Web 應用中啟用；若應用不是 Servlet（例如 WebFlux 或非 Web 的批次程式），自動配置會直接略過且不會報錯，Starter 的任何規則（含 `@Require*` 註解）都不會套用。
+`spring-boot-starter-webmvc`（Spring Boot 3.5 為 `spring-boot-starter-web`）在 Starter 中是 optional，**業務專案必須自行引入**。Starter 只在 Servlet Web 應用中啟用；若應用不是 Servlet（例如 WebFlux 或非 Web 的批次程式），自動配置會直接略過且不會報錯，Starter 的任何規則（含 `@Require*` 註解）都不會套用。
 
 ---
 
@@ -184,6 +184,9 @@ jacky917:
 - claim 不存在 → 略過，不會報錯。
 - claim 型態不是字串或陣列（例如物件）→ 略過，並輸出一行 WARN 日誌。
 - 陣列中的非字串元素（例如數字）會以 `toString()` 轉成字串。
+
+> [!NOTE]
+> Spring Security 7 會在 `Authentication` 中**另外加入 `FACTOR_BEARER`**，代表「以 Bearer Token 完成驗證」。它不是由 Starter 的 claims 映射產生，所以列出 `authentication.getAuthorities()` 時會多出這一項。請以「是否包含某個 authority」判斷權限，不要比對整個 authority 清單是否相等。
 
 claim 名稱與前綴都可以修改，見 [設定參考](configuration.md#jwt-claim-與前綴)。完整的 Token 格式約定見 [JWT Claims 契約](jwt-claims.md)。
 
@@ -380,12 +383,14 @@ Order get(@PathVariable String orderId) { ... }
 
 | 情境 | 狀態碼 | `WWW-Authenticate` 標頭 |
 |---|---|---|
-| 沒有帶 `Authorization` 標頭 | 401 | `Bearer` |
+| 沒有帶 `Authorization` 標頭 | 401 | `Bearer resource_metadata="…/.well-known/oauth-protected-resource"` |
 | Token 格式錯誤、簽章錯誤、過期、`iss` / `aud` 不符 | 401 | `Bearer error="invalid_token", error_description="..."` |
 | Token 有效，但不符合方法級授權條件 | 403 | 無 |
-| 匿名存取放行路徑上有授權註解的方法 | 401 | `Bearer` |
+| 匿名存取放行路徑上有授權註解的方法 | 401 | 同第一列 |
 
 `WWW-Authenticate` 的 `error_description` 包含驗證失敗的原因（例如 `Jwt expired at ...`），可用於除錯。
+
+`resource_metadata` 是 Spring Security 7 依 RFC 9728 加入的參數，指向 `/.well-known/oauth-protected-resource`。這個端點由 Spring Security 提供、**不需要 Token 即可存取**，內容是資源伺服器的描述（例如 `resource` 網址、支援的 Bearer 傳遞方式），不包含敏感資料。
 
 ### 7.3 限制
 
@@ -498,6 +503,21 @@ jacky917:
 ## 11. 撰寫測試
 
 加入測試依賴：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security-test</artifactId>
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-webmvc-test</artifactId>   <!-- 提供 @AutoConfigureMockMvc -->
+    <scope>test</scope>
+</dependency>
+```
+
+Spring Boot 4 的 `@AutoConfigureMockMvc` 位於 `org.springframework.boot.webmvc.test.autoconfigure`（Spring Boot 3.5 為 `org.springframework.boot.test.autoconfigure.web.servlet`）。Spring Boot 3.5 的測試依賴則是：
 
 ```xml
 <dependency>

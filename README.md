@@ -50,11 +50,18 @@ class OrderController {
 
 | 項目 | 版本 / 條件 |
 |---|---|
-| Java | 21 以上（建置已在 JDK 21 與 JDK 23 驗證） |
-| Spring Boot | 3.5.x（本專案以 3.5.10 建置） |
-| Spring Security | 6.5.x（由 Spring Boot 管理） |
+| Java | 21 以上（`2.x` 已在 JDK 23 建置驗證） |
+| Spring Boot | **4.1.x**（`2.x`，本分支以 4.1.1 建置） |
+| Spring Security | 7.1.x（由 Spring Boot 管理） |
 | 應用程式類型 | **僅支援 Servlet（Spring MVC）**，不支援 WebFlux |
 | Token 格式 | JWT（JWS）。不支援 Opaque Token / Token Introspection |
+
+### 版本線
+
+| Starter 版本 | Spring Boot | 狀態 |
+|---|---|---|
+| `1.x`（`1.x` 分支） | 3.5.x | 只提供安全修補；Spring Boot 3.5 的開源支援已於 2026-06-30 結束 |
+| `2.x`（`main`） | 4.1.x | 開發中，尚未發佈正式版 |
 
 ---
 
@@ -103,12 +110,12 @@ GitHub Packages **即使是公開套件也需要認證**。在 `~/.m2/settings.x
 <dependency>
     <groupId>com.github.jacky917</groupId>
     <artifactId>jacky917-security-starter</artifactId>
-    <version>1.0.0</version>
+    <version>2.0.0-SNAPSHOT</version>   <!-- Spring Boot 3.5 請用 1.1.0 -->
 </dependency>
-<!-- Starter 只支援 Servlet 應用，請確認已引入 web -->
+<!-- Starter 只支援 Servlet 應用，請確認已引入 Spring MVC -->
 <dependency>
     <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-web</artifactId>
+    <artifactId>spring-boot-starter-webmvc</artifactId>   <!-- Spring Boot 3.5 為 spring-boot-starter-web -->
 </dependency>
 ```
 
@@ -162,7 +169,8 @@ jacky917:
 | Principal 名稱（`authentication.getName()`） | JWT 的 `sub` |
 | claims → authority | `roles` → `ROLE_*`、`permissions` → `PERM_*`、`scope` / `scp` → `SCOPE_*` |
 | 方法級授權 | 啟用（`@PreAuthorize`、`@PostAuthorize`、`@Secured`、自訂註解） |
-| 401 / 403 | JSON 回應；401 另帶 RFC 6750 `WWW-Authenticate` 標頭 |
+| 401 / 403 | JSON 回應；401 另帶 RFC 6750 `WWW-Authenticate` 標頭（含 RFC 9728 的 `resource_metadata`） |
+| `Authentication` 中的額外 authority | Spring Security 7 會自動加入 `FACTOR_BEARER`，代表以 Bearer Token 驗證 |
 
 401 回應範例：
 
@@ -259,7 +267,7 @@ Demo 內建資料：`demo-001`（owner：`alice`）、`private-001`（owner：`b
 
 ## FAQ
 
-**Q：這個 Starter 和 Spring Boot 原生的 `spring-boot-starter-oauth2-resource-server` 有什麼差別？**
+**Q：這個 Starter 和 Spring Boot 原生的 `spring-boot-starter-security-oauth2-resource-server` 有什麼差別？**
 
 本 Starter 建立在原生 Resource Server 之上（JWT 驗證本身仍由 Spring Security 完成），額外提供：多 claim 來源的 authority 映射、`@Require*` 註解、`@RequireAny` / `@RequireAll` 的 AND/OR 語法、統一的 JSON 錯誤格式，以及預設全部需驗證的 filter chain。它不取代 JWT 驗證邏輯，也不支援 Opaque Token。
 

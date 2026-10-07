@@ -185,6 +185,7 @@ Token 的驗證規則完全由你提供的 `JwtDecoder` 決定。Starter 不會�
 | 放行路徑，方法上有 `@Require*` 且未帶 Token | 401 |
 | 自訂 `permit-all-patterns` | **取代**預設清單（Swagger、health check 不再放行） |
 | 想要「GET 放行、POST 需驗證」 | 無法用 `permit-all-patterns` 表達 |
+| `**` 放在路徑中間（例如 `/api/**/admin`） | `2.x`：**啟動失敗**（Spring Security 7 的路徑比對規則） |
 
 **該怎麼做**
 
@@ -245,7 +246,7 @@ Token 的驗證規則完全由你提供的 `JwtDecoder` 決定。Starter 不會�
 🧪 **會發生什麼事**
 
 - `message` 文字固定為繁體中文（`未經驗證，無法存取資源` / `權限不足，禁止存取`），不支援 i18n 或自訂。
-- 回應 JSON 使用 Starter 內部的 `ObjectMapper`，不受 `spring.jackson.*` 設定影響。
+- `1.x`：回應 JSON 使用 Starter 內部的 `ObjectMapper`，不受 `spring.jackson.*` 設定影響。`2.x` 起改用應用程式的 Jackson 3 `JsonMapper`，`spring.jackson.*` 會生效（有多個 `JsonMapper` bean 時使用預設設定）。
 - 回應不包含失敗原因（例如「Token 已過期」）。401 的原因只會出現在 `WWW-Authenticate` 標頭的 `error_description`。
 - 若業務專案的 `@RestControllerAdvice` 攔截了 `AccessDeniedException` 或 `Exception`，方法級授權失敗會被它處理，**不會**回傳 Starter 的 403 JSON。
 
@@ -309,7 +310,7 @@ Token 的驗證規則完全由你提供的 `JwtDecoder` 決定。Starter 不會�
 **會發生什麼事**
 
 - 套件發佈在 GitHub Packages，**即使是公開套件也必須以 PAT 認證**才能下載。
-- 目前的 parent POM 繼承自 `spring-boot-starter-parent:3.5.10-SNAPSHOT`。業務專案解析依賴時，Maven 必須能下載這個 SNAPSHOT 版本。parent POM 雖然宣告了 Spring Snapshot repository，但在使用企業 Maven mirror（`<mirrorOf>*</mirrorOf>`）或離線環境時常會被擋下，出現 parent POM 無法解析的錯誤。SNAPSHOT 內容也可能隨時變動，建議改為正式版號後重新發佈。
+- `1.0.0` 的 parent POM 繼承自 `spring-boot-starter-parent:3.5.10-SNAPSHOT`，解析依賴時需要存取 Spring Snapshot repository，在企業 Maven mirror 或離線環境中常會失敗。`1.1.0` 起改為 `3.5.16` 正式版，`2.x` 為 `4.1.1` 正式版。
 - `jacky917-security-parent` 必須和三個模組一起發佈。若發佈流程漏掉 parent，消費端會遇到 `jacky917-security-parent:pom` 找不到的錯誤（目前的 `publish.yml` 已包含 parent）。
 
 **該怎麼做**

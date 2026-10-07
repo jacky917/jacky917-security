@@ -135,6 +135,8 @@
 |                           |-- authentication
 |                           |   `-- JwtAuthoritiesExtractorTest.java
 |                           |-- integration
+|                           |   |-- AutoConfigurationOrderingIntegrationTest.java
+|                           |   |-- ErrorResponseJsonMapperIntegrationTest.java
 |                           |   |-- MethodSecurityAnnotationsIntegrationTest.java
 |                           |   `-- SecurityBehaviorIntegrationTest.java
 |                           `-- methodsecurity
@@ -157,7 +159,7 @@
 
 | 路徑 (Path) | 模組 (Module) | 用途 (Purpose) | 關鍵說明 (Key Notes) |
 |---|---|---|---|
-| `pom.xml` | `parent` | 根 POM (Parent) | 定義所有子模組、共享依賴版本與建置策略；宣告 Lombok 與 configuration-processor 的 `annotationProcessorPaths`（JDK 23+ 必要）。 |
+| `pom.xml` | `parent` | 根 POM (Parent) | 繼承 `spring-boot-starter-parent:4.1.1`；定義所有子模組、共享依賴版本與建置策略；宣告 Lombok 與 configuration-processor 的 `annotationProcessorPaths`（JDK 23+ 必要）。 |
 | `.github/workflows/publish.yml` | `ci` | 發佈流程 | Release 發佈時將 parent 與三個 starter 模組部署到 GitHub Packages。 |
 | `jacky917-security-starter/pom.xml` | `starter` | 聚合依賴模組 | 對外提供單一 starter 依賴入口，無程式碼。 |
 | `jacky917-security-annotations/` | `annotations` | 自訂授權註解模組 | 提供 `@RequireRole/@RequirePerm/@RequireAny/@RequireAll/@RequireScope`，底層皆為 `@PreAuthorize` 樣板。 |
@@ -169,6 +171,8 @@
 | `.../JwtAuthoritiesExtractorTest.java` | `autoconfigure-test` | 單元測試 | claims 型態、去重、排序、prefix 覆寫與 `null` 前綴。 |
 | `.../Jacky917AuthorityEvaluatorTest.java` | `autoconfigure-test` | 單元測試 | AND/OR 判斷與「空參數不可放行」回歸測試。 |
 | `.../MethodSecurityAnnotationsIntegrationTest.java` | `autoconfigure-test` | 整合測試 | 四種自訂註解的 200/403。 |
+| `.../AutoConfigurationOrderingIntegrationTest.java` | `autoconfigure-test` | 整合測試 | 確認 `beforeName` 排序生效：只有 Starter 的 filter chain 與 JWT converter。 |
+| `.../ErrorResponseJsonMapperIntegrationTest.java` | `autoconfigure-test` | 整合測試 | 錯誤回應使用應用程式的 Jackson 3 `JsonMapper`。 |
 | `.../SecurityBehaviorIntegrationTest.java` | `autoconfigure-test` | 整合測試 | 驗證 `docs/limitations.md` 描述的行為：401/403 JSON、`WWW-Authenticate`、放行路徑、註解覆蓋與疊加限制。 |
 | `demo-resource-server/pom.xml` | `demo-resource` | Resource Demo 建置設定 | 含 Web、JPA、MySQL、H2（測試）、Swagger；不發佈。 |
 | `.../DemoResourceServerApplication.java` | `demo-resource` | Resource Demo 啟動入口 | port 8080。 |
