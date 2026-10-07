@@ -7,17 +7,17 @@
         <groupId>io.github.jacky917</groupId>
         <artifactId>jacky917-security-parent</artifactId>
         <version>${revision}</version>
-        <relativePath>../pom.xml</relativePath>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>jacky917-security-starter</artifactId>
-    <name>jacky917-security-starter</name>
-    <description>Aggregator starter for jacky917-security</description>
+    <artifactId>jacky917-security-resource-server-starter</artifactId>
+    <name>jacky917-security-resource-server-starter</name>
+    <description>Resource Server starter for jacky917-security: JWT validation and authorization for APIs</description>
 
     <dependencies>
         <dependency>
             <groupId>io.github.jacky917</groupId>
-            <artifactId>jacky917-security-autoconfigure</artifactId>
+            <artifactId>jacky917-security-resource-server-autoconfigure</artifactId>
         </dependency>
         <dependency>
             <groupId>io.github.jacky917</groupId>

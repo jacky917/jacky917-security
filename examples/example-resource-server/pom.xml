@@ -7,11 +7,11 @@
         <groupId>io.github.jacky917</groupId>
         <artifactId>jacky917-security-parent</artifactId>
         <version>${revision}</version>
-        <relativePath>../pom.xml</relativePath>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>demo-resource-server</artifactId>
-    <name>demo-resource-server</name>
+    <artifactId>example-resource-server</artifactId>
+    <name>example-resource-server</name>
     <description>Demo Resource Server for jacky917-security</description>
 
     <dependencies>
@@ -40,7 +40,7 @@
         -->
         <dependency>
             <groupId>io.github.jacky917</groupId>
-            <artifactId>jacky917-security-starter</artifactId>
+            <artifactId>jacky917-security-resource-server-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>io.github.jacky917</groupId>

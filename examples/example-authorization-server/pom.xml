@@ -7,11 +7,11 @@
         <groupId>io.github.jacky917</groupId>
         <artifactId>jacky917-security-parent</artifactId>
         <version>${revision}</version>
-        <relativePath>../pom.xml</relativePath>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>demo-authorization-server</artifactId>
-    <name>demo-authorization-server</name>
+    <artifactId>example-authorization-server</artifactId>
+    <name>example-authorization-server</name>
     <description>Demo Authorization Server for jacky917-security</description>
 
     <dependencies>

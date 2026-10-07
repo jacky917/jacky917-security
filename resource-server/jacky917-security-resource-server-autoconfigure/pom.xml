@@ -7,12 +7,12 @@
         <groupId>io.github.jacky917</groupId>
         <artifactId>jacky917-security-parent</artifactId>
         <version>${revision}</version>
-        <relativePath>../pom.xml</relativePath>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>jacky917-security-autoconfigure</artifactId>
-    <name>jacky917-security-autoconfigure</name>
-    <description>Autoconfiguration for jacky917-security</description>
+    <artifactId>jacky917-security-resource-server-autoconfigure</artifactId>
+    <name>jacky917-security-resource-server-autoconfigure</name>
+    <description>Resource Server auto-configuration for jacky917-security</description>
 
     <dependencies>
         <!-- Spring Boot -->

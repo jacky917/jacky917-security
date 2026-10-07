@@ -7,7 +7,7 @@
         <groupId>io.github.jacky917</groupId>
         <artifactId>jacky917-security-parent</artifactId>
         <version>${revision}</version>
-        <relativePath>../pom.xml</relativePath>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
     <artifactId>jacky917-security-annotations</artifactId>
