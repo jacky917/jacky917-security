@@ -309,7 +309,8 @@ Token 的驗證規則完全由你提供的 `JwtDecoder` 決定。Starter 不會�
 **會發生什麼事**
 
 - 套件發佈在 GitHub Packages，**即使是公開套件也必須以 PAT 認證**才能下載。
-- 目前的 parent POM 繼承自 `spring-boot-starter-parent:3.5.10-SNAPSHOT`。業務專案解析依賴時，Maven 必須能下載這個 SNAPSHOT 版本。parent POM 雖然宣告了 Spring Snapshot repository，但在使用企業 Maven mirror（`<mirrorOf>*</mirrorOf>`）或離線環境時常會被擋下，出現 parent POM 無法解析的錯誤。SNAPSHOT 內容也可能隨時變動，建議改為正式版號後重新發佈。
+- `1.0.0` 的 parent POM 繼承自 `spring-boot-starter-parent:3.5.10-SNAPSHOT`，解析依賴時需要存取 Spring Snapshot repository，在企業 Maven mirror 或離線環境中常會失敗。**`1.1.0` 起改為 `3.5.16` 正式版，請升級到 `1.1.0` 以上。**
+- Spring Boot 3.5 的開源支援已於 2026-06-30 結束，`1.x` 只提供安全修補。新專案請使用 `2.x`（Spring Boot 4.1）。
 - `jacky917-security-parent` 必須和三個模組一起發佈。若發佈流程漏掉 parent，消費端會遇到 `jacky917-security-parent:pom` 找不到的錯誤（目前的 `publish.yml` 已包含 parent）。
 
 **該怎麼做**

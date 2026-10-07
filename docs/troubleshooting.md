@@ -150,7 +150,7 @@ Token 有效，但沒有通過方法級授權。
 
 ### Could not find artifact org.springframework.boot:spring-boot-starter-parent:pom:3.5.10-SNAPSHOT
 
-parent POM 依賴 Spring Boot 的 SNAPSHOT 版本，而你的環境無法存取 Spring Snapshot repository。見 [限制 §16](limitations.md#16-發佈與依賴)。
+只有 `1.0.0` 會發生：它的 parent POM 依賴 Spring Boot 的 SNAPSHOT 版本。請升級到 `1.1.0` 以上。見 [限制 §16](limitations.md#16-發佈與依賴)。
 
 ---
 

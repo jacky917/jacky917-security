@@ -8,7 +8,7 @@
 
 - `groupId`: `com.github.jacky917`
 - `artifactId`: `jacky917-security-starter`（以及其他子模組，皆為小寫 + 連字號）
-- `version`: `1.0.0`（由父模組統一管理）
+- `version`: `1.1.0`（`1.x` 分支；由父模組統一管理）
 
 > 重點：子模組不自行定義專案版本，全部繼承父模組版本。
 
@@ -125,7 +125,7 @@ jobs:
 <dependency>
     <groupId>com.github.jacky917</groupId>
     <artifactId>jacky917-security-starter</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
@@ -157,4 +157,4 @@ jobs:
 - `Could not find artifact com.github.jacky917:jacky917-security-parent:pom`
   - 該版本發佈時沒有包含 parent POM，見第 5 節
 - `Could not find artifact org.springframework.boot:spring-boot-starter-parent:pom:3.5.10-SNAPSHOT`
-  - parent POM 依賴 Spring Boot SNAPSHOT，消費端無法存取 Spring Snapshot repository，見 [限制 §16](limitations.md#16-發佈與依賴)
+  - 只有 `1.0.0` 會發生（parent 依賴 Spring Boot SNAPSHOT），請升級到 `1.1.0` 以上，見 [限制 §16](limitations.md#16-發佈與依賴)

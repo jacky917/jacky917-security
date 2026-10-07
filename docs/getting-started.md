@@ -31,7 +31,7 @@
 <dependency>
     <groupId>com.github.jacky917</groupId>
     <artifactId>jacky917-security-starter</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 <dependency>
     <groupId>org.springframework.boot</groupId>

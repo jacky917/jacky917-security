@@ -51,7 +51,7 @@ class OrderController {
 | 項目 | 版本 / 條件 |
 |---|---|
 | Java | 21 以上（建置已在 JDK 21 與 JDK 23 驗證） |
-| Spring Boot | 3.5.x（本專案以 3.5.10 建置） |
+| Spring Boot | 3.5.x（`1.x` 以 3.5.16 建置；Spring Boot 4.1 請使用 `2.x`，開發中） |
 | Spring Security | 6.5.x（由 Spring Boot 管理） |
 | 應用程式類型 | **僅支援 Servlet（Spring MVC）**，不支援 WebFlux |
 | Token 格式 | JWT（JWS）。不支援 Opaque Token / Token Introspection |
@@ -103,7 +103,7 @@ GitHub Packages **即使是公開套件也需要認證**。在 `~/.m2/settings.x
 <dependency>
     <groupId>com.github.jacky917</groupId>
     <artifactId>jacky917-security-starter</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 <!-- Starter 只支援 Servlet 應用，請確認已引入 web -->
 <dependency>

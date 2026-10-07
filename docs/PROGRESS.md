@@ -379,3 +379,17 @@
   - **DEC-039**（建議，待確認）：單一 repo、多模組、統一版本；以 enforcer 禁止 Resource Server 模組依賴 Authorization Server 模組。
 - **Next TODO**:
   - 取得 `docs/v2-overview.md` §7 的答覆，優先處理 M0 前需要決定的兩項（commit 目前變更、1.x 維護期）。
+
+---
+## Step 12: 建立 `1.x` 維護分支（M0）
+- **Status**: 🟢 Completed（尚未發佈）
+- **Acceptance Criteria**:
+  - [x] 自 PR #1 分支建立 `1.x`，包含 Step 9 的 bug 修正。
+  - [x] parent 由 `3.5.10-SNAPSHOT` 改為 `3.5.16`（3.x 最終版），移除 Spring Snapshot repository。
+  - [x] 版本改為 `1.1.0`；README 與相關文件的版本號同步更新。
+  - [ ] 發佈 `1.1.0`（待使用者決定時機）。
+- **Commands Run & Results**:
+  - `mvn -B clean verify`：**SUCCESS**，37 個測試全數通過。
+- **Decision Log**:
+  - **DEC-040**: `1.x` 自 PR #1 分支切出，而非 `main`，讓 `1.1.0` 包含 fail-open 等安全修正。
+
