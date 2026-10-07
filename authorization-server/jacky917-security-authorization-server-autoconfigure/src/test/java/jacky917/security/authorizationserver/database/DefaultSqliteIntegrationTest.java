@@ -69,6 +69,40 @@ class DefaultSqliteIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("應用程式自己的 Flyway migration（V1）照常執行；兩邊的歷史表分開，版本號不衝突")
+    void applicationMigrationsRunAlongside() {
+        Path database = dir.resolve("shared.db");
+        try (ConfigurableApplicationContext context = start(
+                "--jacky917.security.authorization-server.database.sqlite.path=" + database,
+                "--spring.flyway.locations=classpath:app-migrations")) {
+            JdbcClient jdbc = context.getBean(JdbcClient.class);
+            assertThat(jdbc.sql("SELECT COUNT(*) FROM app_note").query(Integer.class).single()).isZero();
+            assertThat(jdbc.sql("SELECT version FROM flyway_schema_history WHERE success = 1 AND version = '1'")
+                    .query(String.class).list()).as("應用程式的 V1 已執行，沒有被當成 baseline 略過").containsExactly("1");
+            assertThat(jdbc.sql("SELECT version FROM jacky917_as_schema_history WHERE version LIKE '1.0.%'")
+                    .query(String.class).list()).hasSize(7);
+        }
+        // 重新啟動：兩邊都沒有新的 migration，正常啟動
+        try (ConfigurableApplicationContext ignored = start(
+                "--jacky917.security.authorization-server.database.sqlite.path=" + database,
+                "--spring.flyway.locations=classpath:app-migrations")) {
+            assertThat(ignored.isActive()).isTrue();
+        }
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    @DisplayName("預設的資料庫檔案已存在且權限較寬時，啟動時改為 600")
+    void existingDatabaseFileIsRestricted() throws Exception {
+        Path database = dir.resolve("loose.db");
+        Files.createFile(database, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-r--r--")));
+        try (ConfigurableApplicationContext ignored = start(
+                "--jacky917.security.authorization-server.database.sqlite.path=" + database)) {
+            assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(database))).isEqualTo("rw-------");
+        }
+    }
+
     private static ConfigurableApplicationContext start(String... args) {
         String[] all = new String[args.length + 2];
         System.arraycopy(args, 0, all, 0, args.length);

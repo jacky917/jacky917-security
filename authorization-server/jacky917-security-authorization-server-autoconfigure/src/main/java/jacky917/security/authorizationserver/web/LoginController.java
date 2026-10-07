@@ -44,6 +44,16 @@ import java.util.Map;
 @Controller
 public class LoginController {
 
+    /**
+     * Page shown after logging in without an authorization request. It is
+     * under {@code /jacky917/} so it never clashes with the application's
+     * own pages.
+     * <p>
+     * 在沒有授權請求的情況下登入後顯示的頁面。放在 {@code /jacky917/} 之下，
+     * 不會與應用程式自己的頁面衝突。
+     */
+    public static final String SIGNED_IN_PATH = "/jacky917/signed-in";
+
     private static final String[] PAGE_KEYS = {"login.title", "login.username", "login.password", "login.submit",
             "login.or", "signed-in.title", "signed-in.message"};
 
@@ -125,7 +135,7 @@ public class LoginController {
      * @return the signed-in view
      *         <br>已登入頁面
      */
-    @GetMapping("/")
+    @GetMapping(SIGNED_IN_PATH)
     public String signedIn(HttpServletRequest request, Model model) {
         populate(model, RequestContextUtils.getLocale(request));
         return "jacky917/signed-in";

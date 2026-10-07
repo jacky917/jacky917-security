@@ -42,6 +42,8 @@
 |   |       |   |               |-- database
 |   |       |   |               |   |-- AuthorizationServerDialect.java
 |   |       |   |               |   |-- AuthorizationServerDialects.java
+|   |       |   |               |   |-- AuthorizationServerMigrations.java
+|   |       |   |               |   |-- AuthorizationServerMigrationsDetector.java
 |   |       |   |               |   |-- DefaultSqliteEnvironmentPostProcessor.java
 |   |       |   |               |   |-- PostgresqlDialect.java
 |   |       |   |               |   |-- SqliteDialect.java
@@ -69,6 +71,7 @@
 |   |       |   |               |   |-- AuthSessionService.java
 |   |       |   |               |   |-- AuthSessionStatus.java
 |   |       |   |               |   |-- LoginMethod.java
+|   |       |   |               |   |-- LoginSessionValidationFilter.java
 |   |       |   |               |   |-- SessionAuthorizationRepository.java
 |   |       |   |               |   `-- SessionLinkingAuthorizationService.java
 |   |       |   |               |-- support
@@ -99,24 +102,23 @@
 |   |       |       |   |   `-- org.springframework.boot.autoconfigure.AutoConfiguration.imports
 |   |       |       |   `-- spring.factories
 |   |       |       |-- db
-|   |       |       |   `-- migration
-|   |       |       |       `-- jacky917-as
-|   |       |       |           |-- postgresql
-|   |       |       |           |   |-- V1_0_0__identity.sql
-|   |       |       |           |   |-- V1_0_1__authorization_model.sql
-|   |       |       |           |   |-- V1_0_2__oauth2_official.sql
-|   |       |       |           |   |-- V1_0_3__oauth2_extensions.sql
-|   |       |       |           |   |-- V1_0_4__sessions.sql
-|   |       |       |           |   |-- V1_0_5__security.sql
-|   |       |       |           |   `-- V1_0_6__seed.sql
-|   |       |       |           `-- sqlite
-|   |       |       |               |-- V1_0_0__identity.sql
-|   |       |       |               |-- V1_0_1__authorization_model.sql
-|   |       |       |               |-- V1_0_2__oauth2_official.sql
-|   |       |       |               |-- V1_0_3__oauth2_extensions.sql
-|   |       |       |               |-- V1_0_4__sessions.sql
-|   |       |       |               |-- V1_0_5__security.sql
-|   |       |       |               `-- V1_0_6__seed.sql
+|   |       |       |   `-- jacky917-as
+|   |       |       |       |-- postgresql
+|   |       |       |       |   |-- V1_0_0__identity.sql
+|   |       |       |       |   |-- V1_0_1__authorization_model.sql
+|   |       |       |       |   |-- V1_0_2__oauth2_official.sql
+|   |       |       |       |   |-- V1_0_3__oauth2_extensions.sql
+|   |       |       |       |   |-- V1_0_4__sessions.sql
+|   |       |       |       |   |-- V1_0_5__security.sql
+|   |       |       |       |   `-- V1_0_6__seed.sql
+|   |       |       |       `-- sqlite
+|   |       |       |           |-- V1_0_0__identity.sql
+|   |       |       |           |-- V1_0_1__authorization_model.sql
+|   |       |       |           |-- V1_0_2__oauth2_official.sql
+|   |       |       |           |-- V1_0_3__oauth2_extensions.sql
+|   |       |       |           |-- V1_0_4__sessions.sql
+|   |       |       |           |-- V1_0_5__security.sql
+|   |       |       |           `-- V1_0_6__seed.sql
 |   |       |       |-- jacky917
 |   |       |       |   |-- authorization-server-messages.properties
 |   |       |       |   `-- authorization-server-messages_zh_TW.properties
@@ -128,37 +130,54 @@
 |   |       |               |-- login.html
 |   |       |               `-- signed-in.html
 |   |       `-- test
-|   |           `-- java
-|   |               `-- jacky917
-|   |                   `-- security
-|   |                       `-- authorizationserver
-|   |                           |-- autoconfigure
-|   |                           |   `-- AutoConfigurationOrderingTest.java
-|   |                           |-- client
-|   |                           |   `-- ClientRegistrationIntegrationTest.java
-|   |                           |-- database
-|   |                           |   |-- DatabaseMigrationIntegrationTest.java
-|   |                           |   |-- DefaultSqliteIntegrationTest.java
-|   |                           |   |-- SchemaConsistencyIntegrationTest.java
-|   |                           |   |-- SchemaIntrospection.java
-|   |                           |   `-- SqliteValidationIntegrationTest.java
-|   |                           |-- flow
-|   |                           |   |-- AbstractAuthorizationFlowIntegrationTest.java
-|   |                           |   |-- AbstractGoogleLoginIntegrationTest.java
-|   |                           |   |-- PostgresqlAuthorizationFlowIntegrationTest.java
-|   |                           |   |-- PostgresqlGoogleLoginIntegrationTest.java
-|   |                           |   |-- SqliteAuthorizationFlowIntegrationTest.java
-|   |                           |   `-- SqliteGoogleLoginIntegrationTest.java
-|   |                           |-- keys
-|   |                           |   |-- KeyEncryptorTest.java
-|   |                           |   `-- SigningKeyIntegrationTest.java
-|   |                           |-- properties
-|   |                           |   `-- AuthorizationServerPropertiesTest.java
-|   |                           |-- support
-|   |                           |   |-- FakeOidcProvider.java
-|   |                           |   `-- TestDatabases.java
-|   |                           `-- user
-|   |                               `-- UserAccountIntegrationTest.java
+|   |           |-- java
+|   |           |   `-- jacky917
+|   |           |       `-- security
+|   |           |           `-- authorizationserver
+|   |           |               |-- authentication
+|   |           |               |   `-- PrincipalNormalizerTest.java
+|   |           |               |-- autoconfigure
+|   |           |               |   `-- AutoConfigurationOrderingTest.java
+|   |           |               |-- client
+|   |           |               |   `-- ClientRegistrationIntegrationTest.java
+|   |           |               |-- database
+|   |           |               |   |-- DatabaseMigrationIntegrationTest.java
+|   |           |               |   |-- DefaultSqliteEnvironmentPostProcessorTest.java
+|   |           |               |   |-- DefaultSqliteIntegrationTest.java
+|   |           |               |   |-- SchemaConsistencyIntegrationTest.java
+|   |           |               |   |-- SchemaIntrospection.java
+|   |           |               |   |-- SqliteExceptionTranslatorTest.java
+|   |           |               |   `-- SqliteValidationIntegrationTest.java
+|   |           |               |-- federation
+|   |           |               |   |-- FederatedLoginSuccessHandlerTest.java
+|   |           |               |   `-- OidcFederatedUserInfoMapperTest.java
+|   |           |               |-- flow
+|   |           |               |   |-- AbstractAuthorizationFlowIntegrationTest.java
+|   |           |               |   |-- AbstractGoogleLoginIntegrationTest.java
+|   |           |               |   |-- PostgresqlAuthorizationFlowIntegrationTest.java
+|   |           |               |   |-- PostgresqlGoogleLoginIntegrationTest.java
+|   |           |               |   |-- SqliteAuthorizationFlowIntegrationTest.java
+|   |           |               |   `-- SqliteGoogleLoginIntegrationTest.java
+|   |           |               |-- keys
+|   |           |               |   |-- KeyEncryptorTest.java
+|   |           |               |   `-- SigningKeyIntegrationTest.java
+|   |           |               |-- properties
+|   |           |               |   `-- AuthorizationServerPropertiesTest.java
+|   |           |               |-- session
+|   |           |               |   |-- LoginSessionValidationFilterTest.java
+|   |           |               |   `-- SessionLinkingAuthorizationServiceTest.java
+|   |           |               |-- support
+|   |           |               |   |-- FakeOidcProvider.java
+|   |           |               |   |-- MutableClock.java
+|   |           |               |   |-- TestDatabases.java
+|   |           |               |   `-- UuidV7Test.java
+|   |           |               |-- token
+|   |           |               |   `-- Jacky917TokenCustomizerTest.java
+|   |           |               `-- user
+|   |           |                   `-- UserAccountIntegrationTest.java
+|   |           `-- resources
+|   |               `-- app-migrations
+|   |                   `-- V1__app_note.sql
 |   `-- jacky917-security-authorization-server-starter
 |       `-- pom.xml
 |-- core
@@ -253,7 +272,8 @@
 |   |               `-- jacky917
 |   |                   `-- demo
 |   |                       `-- bff
-|   |                           `-- BffApplicationTest.java
+|   |                           |-- BffApplicationTest.java
+|   |                           `-- BffControllerProxyTest.java
 |   `-- example-resource-server
 |       |-- pom.xml
 |       `-- src
@@ -357,7 +377,7 @@
 `-- scripts
     `-- check-doc-links.py
 
-161 directories, 188 files
+166 directories, 203 files
 ```
 
 ---
@@ -384,7 +404,7 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../properties/AuthorizationServerProperties.java` | `as-autoconfigure` | 設定屬性 | `jacky917.security.authorization-server.*`；實作 `Validator`，設定錯誤時啟動失敗。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/AuthorizationServerDialect.java` | `as-autoconfigure` | 資料庫方言 SPI | `PostgresqlDialect`、`SqliteDialect`；`AuthorizationServerDialects` 依 URL 選擇。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/SqliteDialect.java` | `as-autoconfigure` | SQLite 方言 | 檢查必要連線參數、PRAGMA、Hikari 自動提交；缺少即啟動失敗。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/DefaultSqliteEnvironmentPostProcessor.java` | `as-autoconfigure` | 預設值 | Flyway 位置；未設定 datasource 時使用 SQLite（建立權限 600 的檔案）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/DefaultSqliteEnvironmentPostProcessor.java` | `as-autoconfigure` | 預設值 | 未設定 datasource 時使用 SQLite；應用程式 Flyway 的 baseline 預設值；預設檔案在寫入機密前設為 600。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/SqliteExceptionTranslator.java` | `as-autoconfigure` | SQLite 例外轉換 | 約束違反轉為 `DuplicateKeyException` 等；由 `SqliteExceptionTranslatorPostProcessor` 套用到 `JdbcTemplate`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerKeysConfiguration.java` | `as-autoconfigure` | 簽章金鑰配置 | 首次啟動產生金鑰；`JWKSource`（只有公鑰）與只用 `ACTIVE` 私鑰的 `JwtEncoder`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/SigningKeyService.java` | `as-autoconfigure` | 金鑰服務 | 產生 RS256／ES256 金鑰、快取 1 分鐘、啟動時確認可解密。 |
@@ -414,7 +434,9 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginSuccessHandler.java` | `as-autoconfigure` | 登入成功 | 記錄登入、建立 `auth_session`、回到授權請求。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/LoginController.java` | `as-autoconfigure` | 登入頁 | 依語言顯示；所有錯誤顯示相同訊息；`/jacky917/theme.css`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/templates/jacky917/`、`static/jacky917/`、`jacky917/authorization-server-messages*.properties` | `as-autoconfigure` | 登入頁資源 | Thymeleaf 範本、樣式、英文與繁體中文訊息。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/db/migration/jacky917-as/{postgresql,sqlite}/` | `as-autoconfigure` | Flyway V1 | 兩種資料庫各 7 個同名檔案：23 張表與內建資料。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/db/jacky917-as/{postgresql,sqlite}/` | `as-autoconfigure` | Flyway V1 | 兩種資料庫各 7 個同名檔案：23 張表與內建資料。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/AuthorizationServerMigrations.java`、`AuthorizationServerMigrationsDetector.java` | `as-autoconfigure` | Migration 執行 | Starter 自己的 Flyway 與歷史表 `jacky917_as_schema_history`；讓依賴資料庫的 Bean 在 migration 之後建立。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/LoginSessionValidationFilter.java` | `as-autoconfigure` | 登入 Session 檢查 | 登入 Session 已失效時結束瀏覽器登入，授權請求回到登入頁。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/TestDatabases.java` | `as-test` | 測試資料庫 | SQLite 暫存檔；embedded PostgreSQL 16（不需 Docker）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../database/*IntegrationTest.java` | `as-test` | 整合測試 | migration、官方 JDBC 類別相容性、約束、schema 一致性、SQLite 設定檢查、預設 SQLite。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../properties/AuthorizationServerPropertiesTest.java` | `as-test` | 單元測試 | 預設值、issuer、有效期與主金鑰驗證。 |
@@ -423,7 +445,10 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../user/UserAccountIntegrationTest.java` | `as-test` | 整合測試 | 帳號或 Email 登入、失敗訊息一致、停用與鎖定、角色過期、唯一性、密碼政策、重新雜湊、第一位管理員。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*AuthorizationFlowIntegrationTest.java` | `as-test` | 整合測試 | 授權碼 + PKCE 完整流程、Token 的 claim（第一方、第三方、client_credentials、ID Token）、刷新反映角色變更、Session 撤銷／停用／鎖定後拒絕刷新、自訂 claim、Session 連結、刷新輪換、沒有 Session 的授權被拒絕並回滾、登入失敗、標頭、無 PKCE、未註冊 redirect、client_credentials、停權 client、discovery 與 JWKS；SQLite 與 PostgreSQL 各一次。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*GoogleLoginIntegrationTest.java` | `as-test` | 整合測試 | T-FED-01／02／04／06、Email 屬於既有帳號時拒絕、登入頁按鈕；SQLite 與 PostgreSQL 各一次。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/FakeOidcProvider.java` | `as-test` | 測試用 OIDC 提供者 | JDK `HttpServer`：token、JWKS、userinfo。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/FakeOidcProvider.java` | `as-test` | 測試用 OIDC 提供者 | JDK `HttpServer`：token、JWKS、userinfo；每個測試類別各自啟動與關閉，每次登入以授權碼區分。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/MutableClock.java` | `as-test` | 可推移的時鐘 | 測試到期行為（Session 90 天、登入 Session 過期）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../{token,session,federation,authentication,database,support}/*Test.java` | `as-test` | 單元測試 | `Jacky917TokenCustomizer`、`SessionLinkingAuthorizationService`、`LoginSessionValidationFilter`、`PrincipalNormalizer`、`OidcFederatedUserInfoMapper`、`FederatedLoginSuccessHandler`、`SqliteExceptionTranslator`、`DefaultSqliteEnvironmentPostProcessor`、`UuidV7`：Mockito、固定時鐘、每個分支一個案例。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/resources/app-migrations/` | `as-test` | 應用程式自己的 migration | 驗證與 Starter 的 migration 並存（歷史表分開）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../autoconfigure/AutoConfigurationOrderingTest.java` | `as-test` | 單元測試 | `beforeName` 列出的類別都存在。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/SigningKeyIntegrationTest.java` | `as-test` | 整合測試 | T-KEY-01、T-KEY-03、輪換期間的公開與簽章、ES256。 |
 
@@ -468,7 +493,8 @@
 | `examples/example-authorization-server/` | `example-as` | 登入服務範例 | 以 AS starter 建立；port 9000；預設 SQLite（`data/`）；Cookie 名稱 `JACKY917_AS_SESSION`。 |
 | `.../DemoDataInitializer.java` | `example-as` | 示範資料 | 角色 `A`（權限 `bb`、`clip:read`）、使用者 alice（角色 A）與 bob。 |
 | `examples/example-bff/` | `example-bff` | BFF 範例 | port 8082；oauth2Login、`/me`、`/api/**` 代理到 Resource Server（自動附帶並刷新 Access Token）、RP-Initiated Logout。 |
-| `.../SerializedAuthorizedClientManager.java` | `example-bff` | 刷新依序執行 | 同一位使用者同時只有一個請求刷新 Token（D19 的 BFF 端）。 |
+| `.../SerializedAuthorizedClientManager.java` | `example-bff` | 刷新依序執行 | 同一位使用者同時只有一個請求刷新 Token（D19 的 BFF 端）；固定 64 個鎖，記憶體不隨使用者增加。 |
+| `.../src/test/.../BffControllerProxyTest.java` | `example-bff` | 代理測試 | 路徑與 query 原樣轉送、拒絕 `//` 開頭的路徑、狀態碼轉回（以本機的假 API 伺服器驗證）。 |
 | `.../src/main/resources/static/` | `example-bff` | 示範頁面 | 登入、呼叫 API、登出（CSRF token 以標頭送出）。 |
 | `e2e-tests/` | `e2e-tests` | 端對端測試 | 同一個 JVM 啟動登入服務、兩個 Resource Server、BFF；模擬瀏覽器走完登入、呼叫 API、audience 檢查、登出。 |
 

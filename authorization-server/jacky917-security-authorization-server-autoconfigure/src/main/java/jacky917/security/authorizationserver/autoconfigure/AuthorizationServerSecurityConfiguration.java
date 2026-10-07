@@ -17,6 +17,7 @@ import jacky917.security.authorizationserver.token.Jacky917TokenCustomizer;
 import jacky917.security.authorizationserver.token.TokenClaimsContributor;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.session.AuthSessionService;
+import jacky917.security.authorizationserver.session.LoginSessionValidationFilter;
 import jacky917.security.authorizationserver.session.SessionAuthorizationRepository;
 import jacky917.security.authorizationserver.session.SessionLinkingAuthorizationService;
 import jacky917.security.authorizationserver.user.UserAccountService;
@@ -49,6 +50,7 @@ import org.springframework.security.oauth2.server.authorization.settings.Authori
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -94,7 +96,8 @@ class AuthorizationServerSecurityConfiguration {
     @Bean
     @Order(1)
     @ConditionalOnMissingBean(name = "authorizationServerSecurityFilterChain")
-    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http, AuthSessionService sessions, Clock clock)
+            throws Exception {
         // 已查證：Spring Security 7.1.1 的 OAuth2AuthorizationServerConfigurer 只有公開建構子
         OAuth2AuthorizationServerConfigurer authorizationServer = new OAuth2AuthorizationServerConfigurer();
         http.securityMatcher(authorizationServer.getEndpointsMatcher())
@@ -103,7 +106,9 @@ class AuthorizationServerSecurityConfiguration {
                 // /userinfo 以 Access Token 存取
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(Customizer.withDefaults()))
                 .exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(
-                        new LoginUrlAuthenticationEntryPoint("/login"), new MediaTypeRequestMatcher(MediaType.TEXT_HTML)));
+                        new LoginUrlAuthenticationEntryPoint("/login"), new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
+                // 登入 Session 已失效時結束瀏覽器登入，授權請求因此回到登入頁，而不是錯誤頁
+                .addFilterBefore(new LoginSessionValidationFilter(sessions, clock), AuthorizationFilter.class);
         return http.build();
     }
 
@@ -122,6 +127,7 @@ class AuthorizationServerSecurityConfiguration {
                     .failureUrl("/login?error=federation"));
         }
         http.authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers(LoginController.SIGNED_IN_PATH).authenticated()
                         .requestMatchers("/login", "/error", "/jacky917/**").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(form -> form

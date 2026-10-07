@@ -6,6 +6,7 @@ import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.session.LoginMethod;
 import jacky917.security.authorizationserver.user.UserAccount;
 import jacky917.security.authorizationserver.user.UserAccountService;
+import jacky917.security.authorizationserver.web.LoginController;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -94,7 +95,7 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
         this.normalizer = normalizer;
         this.authorizedClients = authorizedClients;
         this.clock = clock;
-        setDefaultTargetUrl("/");
+        setDefaultTargetUrl(LoginController.SIGNED_IN_PATH);
     }
 
     @Override
@@ -115,6 +116,11 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
             log.info("Rejected a login through {}: {}", provider, ex.getMessage());
             reject(request, response,
                     ex.reason() == FederatedLoginRejectedException.Reason.ACCOUNT_EXISTS ? "account_exists" : "federation");
+            return;
+        } catch (RuntimeException ex) {
+            // 例如沒有支援此提供者的 mapper、或提供者回傳的資料不完整：登出並回到登入頁，而不是錯誤頁
+            log.error("A login through {} could not be processed", provider, ex);
+            reject(request, response, "federation");
             return;
         } finally {
             // 提供者的 token 只用於取得使用者資料，不保留

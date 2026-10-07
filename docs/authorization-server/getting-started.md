@@ -102,6 +102,7 @@ public class AuthServerApplication {
 | 網址 | 內容 |
 |---|---|
 | `/login` | 登入頁（依瀏覽器語言顯示繁體中文或英文） |
+| `/jacky917/signed-in` | 直接開啟登入頁並登入後的頁面（Starter 的頁面都在 `/jacky917/` 之下，不會與應用程式的頁面衝突） |
 | `/.well-known/openid-configuration` | OIDC discovery |
 | `/oauth2/jwks` | 公鑰（業務 API 以此驗證簽章） |
 | `/oauth2/authorize`、`/oauth2/token`、`/userinfo`、`/connect/logout` | 標準 OAuth 2.0／OIDC 端點 |
@@ -116,6 +117,7 @@ public class AuthServerApplication {
 | 簽章金鑰 | 沒有任何金鑰時產生一把（RS256，3072 位元），私鑰以主金鑰加密後存入資料庫 |
 | Client | 依 `clients.*` 建立或更新 |
 | 第一位管理員 | 依 `bootstrap-admin.*`，沒有任何 `AS_ADMIN` 時建立 |
+| 資料庫檔案權限 | 使用預設的 SQLite 檔案時，在寫入任何機密資料前把權限設為 `600` |
 | 設定檢查 | `issuer`、主金鑰、client 的 redirect URI 等設定錯誤時**啟動失敗**，訊息指出要修改的地方 |
 
 ---
@@ -189,17 +191,13 @@ spring:
     password: ${AS_DB_PASSWORD}
 ```
 
-Flyway 會自動選擇 PostgreSQL 版的 migration。建議使用 Authorization Server 專屬的資料庫（表名固定為 Spring Security 的官方名稱，例如 `oauth2_authorization`）。
+Starter 會自動選擇 PostgreSQL 版的 migration。建議使用 Authorization Server 專屬的資料庫（表名固定為 Spring Security 的官方名稱，例如 `oauth2_authorization`）。
 
 ### 4.3 自己的資料表
 
-Starter 把 `spring.flyway.locations` 預設為 `classpath:db/migration/jacky917-as/{vendor}`。若登入服務也有自己的表，把兩個位置都列出，並使用**可重複執行**的 migration（`R__`）或不會與 `V1_0_x` 衝突的版本號：
+Starter 以**自己的 Flyway 與歷史表**（`jacky917_as_schema_history`）執行它的 migration，不使用、也不改變應用程式的 Flyway 設定。登入服務若有自己的表，照常放在 `src/main/resources/db/migration`，由 Spring Boot 的 Flyway 執行（歷史表 `flyway_schema_history`），兩邊的版本號互不影響。
 
-```yaml
-spring:
-  flyway:
-    locations: classpath:db/migration/jacky917-as/{vendor},classpath:db/migration/my-app
-```
+兩者共用同一個資料庫，因此 Starter 把 `spring.flyway.baseline-on-migrate` 與 `spring.flyway.baseline-version` 預設為 `true` 與 `0`：應用程式的 Flyway 看到 Starter 的表時以版本 0 建立 baseline，`V1` 起的 migration 仍會全部執行。應用程式自行設定這兩個屬性時以應用程式的設定為準。
 
 ---
 

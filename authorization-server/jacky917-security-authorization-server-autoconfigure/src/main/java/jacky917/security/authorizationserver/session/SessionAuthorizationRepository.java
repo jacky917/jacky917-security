@@ -49,10 +49,11 @@ public class SessionAuthorizationRepository {
 
     /**
      * Links an authorization to a login session, only if the session is
-     * active and belongs to the given user. An existing link is kept.
+     * active, not expired, and belongs to the given user. An existing link
+     * is kept.
      * <p>
-     * 將授權連結到登入 Session；只有 Session 為 {@code ACTIVE} 且屬於指定使用者
-     * 時才會建立。已存在的連結維持不變。
+     * 將授權連結到登入 Session；只有 Session 為 {@code ACTIVE}、尚未到期且屬於
+     * 指定使用者時才會建立。已存在的連結維持不變。
      *
      * @param authorizationId     the {@code oauth2_authorization.id}
      *                            <br>{@code oauth2_authorization.id}
@@ -73,7 +74,7 @@ public class SessionAuthorizationRepository {
         jdbc.sql("""
                         INSERT INTO session_authorization (authorization_id, session_id, registered_client_id, created_at)
                         SELECT :authorization, session_id, :client, :now FROM auth_session
-                        WHERE session_id = :session AND user_id = :user AND status = 'ACTIVE'
+                        WHERE session_id = :session AND user_id = :user AND status = 'ACTIVE' AND expires_at > :now
                         ON CONFLICT (authorization_id) DO NOTHING""")
                 .param("authorization", authorizationId)
                 .param("client", registeredClientId)

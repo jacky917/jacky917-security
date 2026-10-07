@@ -716,3 +716,25 @@
 - **Next TODO**:
   - 待使用者決定：授權條款（發佈 2.0.0 的前提）、合併 PR #3 與本分支的 PR、1.1.0 發佈時間。
   - 第 2 階段（工作 11～17）：重用偵測、登出撤銷 Session、登入保護與稽核、帳號連結、排程（金鑰輪換、清理）、Spring Session JDBC、metrics。
+
+---
+## Step 29: PR #4 review 修正（10 項全部修正）
+- **Status**: 🟢 Completed
+- **修正內容**:
+  1. 登入 Session 已撤銷或過期、但瀏覽器仍登入時，授權請求原本以 HTTP 500 結束：新增 `LoginSessionValidationFilter`，結束瀏覽器登入並回到登入頁；建立連結時也檢查到期時間。
+  2. Starter 對應 `GET /` 會與應用程式的首頁衝突：改為 `/jacky917/signed-in`（需要登入）。
+  3. 設定 `spring.flyway.locations` 會讓應用程式在 `db/migration` 的 migration 靜默不執行：改為 Starter 自己的 Flyway 與歷史表（`jacky917_as_schema_history`），migration 移到 `db/jacky917-as/{vendor}`；應用程式的 Flyway 遇到 Starter 的表時以版本 0 建立 baseline。資料庫檔案改為在寫入機密前才設為 600。
+  4. BFF 代理：原樣轉送 query、不當成 URI 樣板、自行拒絕 `//` 開頭的路徑。
+  5. BFF 的鎖改為固定 64 個。
+  6. 新增 9 個單元測試類別（Mockito、固定時鐘、每個分支一個案例），涵蓋原本未測的錯誤路徑；第三方登入無法處理時改為回到登入頁（原本 500）。
+  7. 新增可推移的 `Clock` Bean：T-REFRESH-06（Session 超過 90 天）、登入 Session 過期時回到登入頁。
+  8. 新增 `/userinfo` 測試。
+  9. E2E 只有登入服務事先決定埠號，其餘以 `server.port=0` 啟動；埠號衝突時重試。
+  10. 假的 OIDC 提供者每個測試類別各自啟動與關閉，每次登入以授權碼區分。
+- **Commands Run & Results**:
+  - 破壞實驗：移除 `LoginSessionValidationFilter` → 重現原本的 `IllegalStateException`（500）、過期案例發出授權碼；移除代理的 `//` 檢查 → 代理測試失敗；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，215 個測試（Resource Server 47、Authorization Server 150、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-086**: Starter 的 migration 使用自己的 Flyway 與歷史表，不改變應用程式的 Flyway。
+  - **DEC-087**: 登入 Session 失效時結束瀏覽器登入（重新登入），而不是拒絕授權。
+  - **DEC-088**: Starter 的頁面一律放在 `/jacky917/` 之下。

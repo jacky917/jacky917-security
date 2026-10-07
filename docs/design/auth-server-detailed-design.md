@@ -153,7 +153,7 @@
 
 | 層次 | 是否依資料庫而不同 | 做法 |
 |---|---|---|
-| DDL（Flyway migration） | **是** | `db/migration/jacky917-as/{vendor}`，Spring Boot 依 JDBC URL 自動選擇資料夾 |
+| DDL（Flyway migration） | **是** | `db/jacky917-as/{vendor}`，由 Starter 自己的 Flyway（歷史表 `jacky917_as_schema_history`）依方言選擇資料夾 |
 | Repository 與查詢 | **否** | 只用可攜的 SQL（[資料模型 P8～P11](auth-server-data-model.md#11-原則)）：ID 與 IP 為字串、時間由應用程式以參數傳入、`IN (:list)` 取代陣列、子查詢取代 `DELETE ... USING` |
 | 少數無法共用的行為 | **是**，集中在 `AuthorizationServerDialect` | 見下表 |
 | Spring Security 官方表 | 否 | 官方 JDBC 類別本來就與資料庫無關 |
@@ -1038,6 +1038,12 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | E2E 測試 | — | 四個應用程式（登入服務、兩個 Resource Server、BFF）在同一個 JVM 以隨機埠號啟動；以 `spring.config.name` 指定不存在的名稱，所有設定由參數提供 | 三個範例的 `application.yml` 同名，同一個 classpath 上只會載入其中一個；不需要 Docker |
 | T-E2E-02（Google 的端對端） | E2E | 由 AS 模組的整合測試涵蓋（假的 OIDC 提供者，Spring 實際換 code 與驗證 ID Token） | E2E 已涵蓋 BFF → AS → RS 的串接；第三方登入只影響 AS 內部 |
 | 同主機的 Session Cookie | — | 範例登入服務設定 `server.servlet.session.cookie.name: JACKY917_AS_SESSION`，並寫入使用指南 | 瀏覽器的 Cookie 不區分埠號，與同主機的 BFF 都用 `JSESSIONID` 時互相覆蓋（E2E 實作時確認） |
+| Migration 的執行（PR #4 review） | Spring Boot 的 Flyway + `spring.flyway.locations` | Starter 自己的 Flyway 實例與歷史表 `jacky917_as_schema_history`；以 `DatabaseInitializerDetector` 讓 `JdbcTemplate` 等在 migration 之後建立 | 設定 `spring.flyway.locations` 會取代 Boot 的預設位置，應用程式的 migration 靜默不執行；共用歷史表時版本號會衝突 |
+| 資料庫檔案權限 | `EnvironmentPostProcessor` 建立權限 600 的檔案 | 只建立資料夾；在 migration 之前（寫入任何機密資料前）把預設檔案設為 600 | 之後的 property source（例如測試）仍可能取代 URL，提前建立會留下多餘的檔案 |
+| 登入 Session 失效但瀏覽器仍登入（PR #4 review） | 儲存授權時拋出例外 | `LoginSessionValidationFilter` 在授權端點檢查：登入 Session 已撤銷、過期或不屬於該使用者時結束瀏覽器登入，請求回到登入頁；連結時也檢查到期時間 | 原本會以 HTTP 500 結束，使用者只能清除 Cookie |
+| 直接登入後的頁面 | `GET /` | `GET /jacky917/signed-in`（需要登入） | Starter 對應 `/` 會與應用程式自己的首頁衝突而啟動失敗 |
+| 第三方登入的處理錯誤 | — | 任何無法處理的情況（例如沒有對應的 mapper）都登出並回到 `/login?error=federation` | 原本會以 HTTP 500 結束 |
+| 測試方式 | — | 核心類別另有單元測試（Mockito、固定時鐘，每個分支一個案例）；整合測試以可推移的 `Clock` Bean 測試到期（T-REFRESH-06）；假的 OIDC 提供者每個測試類別各自啟動與關閉、每次登入以授權碼區分；E2E 只有登入服務事先決定埠號，其餘以 `server.port=0` 啟動並在埠號衝突時重試 | 隔離、確定性、錯誤路徑都要涵蓋 |
 | `/userinfo` | — | SAS 端點的 filter chain 以 `oauth2ResourceServer().jwt()` 驗證 Access Token，`JwtDecoder` 由公開的金鑰建立 | OIDC userinfo 需要 Bearer Token |
 | 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
 

@@ -31,14 +31,14 @@ record SchemaIntrospection(Set<String> tables, Map<String, Set<String>> columns,
     private static SchemaIntrospection sqlite(JdbcOperations jdbc) {
         Set<String> tables = lower(jdbc.queryForList("""
                 SELECT name FROM sqlite_master WHERE type = 'table'
-                AND name NOT LIKE 'sqlite_%' AND name <> 'flyway_schema_history'""", String.class));
+                AND name NOT LIKE 'sqlite_%' AND name NOT IN ('flyway_schema_history', 'jacky917_as_schema_history')""", String.class));
         Map<String, Set<String>> columns = new TreeMap<>();
         for (String table : tables) {
             columns.put(table, lower(jdbc.queryForList("SELECT name FROM pragma_table_info(?)", String.class, table)));
         }
         Set<String> indexes = lower(jdbc.queryForList("""
                 SELECT name FROM sqlite_master WHERE type = 'index'
-                AND name NOT LIKE 'sqlite_autoindex_%' AND tbl_name <> 'flyway_schema_history'""", String.class));
+                AND name NOT LIKE 'sqlite_autoindex_%' AND tbl_name NOT IN ('flyway_schema_history', 'jacky917_as_schema_history')""", String.class));
         Set<String> constraints = new TreeSet<>();
         for (String sql : jdbc.queryForList("SELECT sql FROM sqlite_master WHERE type = 'table'", String.class)) {
             Matcher matcher = NAMED_CONSTRAINT.matcher(sql == null ? "" : sql);
@@ -55,7 +55,7 @@ record SchemaIntrospection(Set<String> tables, Map<String, Set<String>> columns,
     private static SchemaIntrospection postgresql(JdbcOperations jdbc) {
         Set<String> tables = lower(jdbc.queryForList("""
                 SELECT table_name FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> 'flyway_schema_history'""",
+                WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name NOT IN ('flyway_schema_history', 'jacky917_as_schema_history')""",
                 String.class));
         Map<String, Set<String>> columns = new TreeMap<>();
         for (String table : tables) {
@@ -65,7 +65,7 @@ record SchemaIntrospection(Set<String> tables, Map<String, Set<String>> columns,
         }
         Set<String> indexes = lower(jdbc.queryForList("""
                 SELECT indexname FROM pg_indexes
-                WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'
+                WHERE schemaname = 'public' AND tablename NOT IN ('flyway_schema_history', 'jacky917_as_schema_history')
                 AND indexname NOT IN (SELECT conname FROM pg_constraint)""", String.class));
         Set<String> constraints = new TreeSet<>();
         for (String name : lower(jdbc.queryForList("""

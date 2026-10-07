@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -23,9 +24,11 @@ import java.util.Map;
 class BffController {
 
     private final RestClient resourceServer;
+    private final BffProperties properties;
 
-    BffController(RestClient resourceServer) {
+    BffController(RestClient resourceServer, BffProperties properties) {
         this.resourceServer = resourceServer;
+        this.properties = properties;
     }
 
     /**
@@ -52,7 +55,14 @@ class BffController {
     @GetMapping("/api/**")
     ResponseEntity<String> proxy(HttpServletRequest request) {
         String path = request.getRequestURI().substring(request.getContextPath().length() + "/api".length());
-        return resourceServer.get().uri(path).exchange((clientRequest, response) -> ResponseEntity
+        // 只轉送本服務的路徑：以 "//" 開頭會被解讀成另一台主機，token 就會被送到那裡
+        if (!path.startsWith("/") || path.startsWith("//")) {
+            return ResponseEntity.badRequest().build();
+        }
+        // 已編碼的路徑與 query 原樣轉送；不以 URI 樣板處理，路徑中的 "{" 不會被當成變數
+        String query = request.getQueryString();
+        URI target = URI.create(properties.resourceServerUrl() + path + (query == null ? "" : "?" + query));
+        return resourceServer.get().uri(target).exchange((clientRequest, response) -> ResponseEntity
                 .status(response.getStatusCode())
                 .contentType(response.getHeaders().getContentType() == null
                         ? MediaType.APPLICATION_JSON : response.getHeaders().getContentType())

@@ -5,6 +5,8 @@ import jacky917.security.authorizationserver.support.TestDatabases;
 import jacky917.security.authorizationserver.token.TokenClaimsContributor;
 import jacky917.security.authorizationserver.user.NewUser;
 import jacky917.security.authorizationserver.user.UserAccountService;
+import jacky917.security.authorizationserver.support.MutableClock;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +37,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.net.URI;
+import java.time.Duration;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -97,6 +100,14 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
 
     @Autowired
     UserAccountService users;
+
+    @Autowired
+    MutableClock clock;
+
+    @AfterEach
+    void resetClock() {
+        clock.reset();
+    }
 
     @Test
     @DisplayName("授權碼 + PKCE 完整流程：登入後建立 auth_session，換到的 Access Token 的 sub 為使用者 ID")
@@ -245,15 +256,74 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("登入 Session 超過絕對有效期（90 天）後刷新：invalid_grant（T-REFRESH-06）")
+    void refreshIsRefusedAfterSessionMaxAge() throws Exception {
+        createUser("old-session-user", null);
+        LoggedIn result = logInAndExchangeCode("old-session-user");
+        clock.advance(Duration.ofDays(89));
+        JsonNode refreshed = refresh(result);
+        assertThat(jwtDecoder.decode(refreshed.get("access_token").asString()).getSubject())
+                .as("89 天時仍可刷新").isEqualTo(result.userId());
+        clock.advance(Duration.ofDays(2));
+        // 刷新會輪換 Refresh Token，因此以最新的那一個測試
+        assertRefreshRefused(refreshed.get("refresh_token").asString());
+    }
+
+    @Test
+    @DisplayName("瀏覽器仍登入、但登入 Session 已被撤銷：授權請求回到登入頁（不是錯誤頁），重新登入後繼續")
+    void revokedLoginSessionSendsTheBrowserBackToLogin() throws Exception {
+        createUser("revoked-browser-user", null);
+        MockHttpSession browser = new MockHttpSession();
+        LoggedIn first = logInAndExchangeCode("revoked-browser-user", browser);
+        jdbc.sql("UPDATE auth_session SET status = 'REVOKED', revoked_at = :now, revoke_reason = 'ADMIN' WHERE session_id = :id")
+                .param("now", java.sql.Timestamp.from(java.time.Instant.now())).param("id", first.asid()).update();
+
+        LoggedIn second = logInAndExchangeCode("revoked-browser-user", browser);
+        assertThat(second.asid()).as("重新登入建立新的登入 Session").isNotEqualTo(first.asid());
+        assertThat(jwtDecoder.decode(second.tokens().get("access_token").asString()).getClaimAsString("asid"))
+                .isEqualTo(second.asid());
+    }
+
+    @Test
+    @DisplayName("瀏覽器仍登入、但登入 Session 已過期：授權請求回到登入頁")
+    void expiredLoginSessionSendsTheBrowserBackToLogin() throws Exception {
+        createUser("expired-browser-user", null);
+        MockHttpSession browser = new MockHttpSession();
+        logInAndExchangeCode("expired-browser-user", browser);
+        clock.advance(Duration.ofDays(91));
+        mockMvc.perform(get(authorizeUrl(challenge(randomVerifier()))).session(browser).accept(MediaType.TEXT_HTML))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string(HttpHeaders.LOCATION, "/login"));
+    }
+
+    @Test
+    @DisplayName("/userinfo：以 Access Token 取得使用者資料（sub、name）；沒有 token 時 401")
+    void userInfo() throws Exception {
+        createUser("userinfo-user", "User Info");
+        LoggedIn result = logInAndExchangeCode("userinfo-user");
+        JsonNode userInfo = JSON.readTree(mockMvc.perform(get("/userinfo")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + result.tokens().get("access_token").asString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(userInfo.get("sub").asString()).isEqualTo(result.userId());
+        assertThat(userInfo.get("name").asString()).isEqualTo("User Info");
+        // 不帶 token 的 API 呼叫回 401（瀏覽器的 Accept: text/html 則會導向登入頁）
+        mockMvc.perform(get("/userinfo").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+    }
+
     private JsonNode refresh(LoggedIn result) throws Exception {
         return tokenRequest(mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
                 .param("grant_type", "refresh_token").param("refresh_token", result.tokens().get("refresh_token").asString())));
     }
 
     private void assertRefreshRefused(LoggedIn result) throws Exception {
+        assertRefreshRefused(result.tokens().get("refresh_token").asString());
+    }
+
+    private void assertRefreshRefused(String refreshToken) throws Exception {
         String body = mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
                         .param("grant_type", "refresh_token")
-                        .param("refresh_token", result.tokens().get("refresh_token").asString()))
+                        .param("refresh_token", refreshToken))
                 .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
         assertThat(body).contains("invalid_grant");
     }
@@ -266,13 +336,22 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
      * 模擬瀏覽器：授權請求 → 登入頁 → 登入 → 授權碼；再模擬 BFF 以授權碼換 Token。
      */
     LoggedIn logInAndExchangeCode(String username) throws Exception {
+        return logInAndExchangeCode(username, new MockHttpSession());
+    }
+
+    /**
+     * 以指定的瀏覽器 Session 登入（可模擬同一個瀏覽器再次登入）。
+     */
+    LoggedIn logInAndExchangeCode(String username, MockHttpSession browser) throws Exception {
         String verifier = randomVerifier();
-        MockHttpSession session = new MockHttpSession();
+        MockHttpSession session = browser;
 
         // 1. 未登入的瀏覽器發出授權請求 → 導向登入頁
-        mockMvc.perform(get(authorizeUrl(challenge(verifier))).session(session).accept(MediaType.TEXT_HTML))
+        MvcResult toLogin = mockMvc.perform(get(authorizeUrl(challenge(verifier))).session(session).accept(MediaType.TEXT_HTML))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(header().string(HttpHeaders.LOCATION, "/login"));
+                .andExpect(header().string(HttpHeaders.LOCATION, "/login")).andReturn();
+        // 舊的瀏覽器 Session 可能已被結束（登入 Session 失效時）：與瀏覽器一樣改用新的 Session Cookie
+        session = (MockHttpSession) toLogin.getRequest().getSession();
 
         // 2. 登入頁有表單與 CSRF token；3. 送出帳密 → 回到原本的授權請求
         String csrf = csrfToken(session);
@@ -434,6 +513,14 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
     @SpringBootConfiguration
     @EnableAutoConfiguration
     static class TestApplication {
+
+        /**
+         * 可推移的時鐘：Starter 的 Clock Bean 以 @ConditionalOnMissingBean 讓位給它。
+         */
+        @Bean
+        MutableClock clock() {
+            return new MutableClock();
+        }
 
         /**
          * 應用程式自訂的 claim；刻意使用 List.of()，確認刷新時仍能讀回（customizer 會轉換集合）。

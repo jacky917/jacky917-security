@@ -5,6 +5,8 @@ import jacky917.security.authorizationserver.support.FakeOidcProvider;
 import jacky917.security.authorizationserver.support.TestDatabases;
 import jacky917.security.authorizationserver.user.NewUser;
 import jacky917.security.authorizationserver.user.UserAccountService;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,7 +63,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 abstract class AbstractGoogleLoginIntegrationTest {
 
     static final String REDIRECT_URI = "https://app.example.com/login/oauth2/code/jacky917";
-    static final FakeOidcProvider GOOGLE = FakeOidcProvider.start();
+    /**
+     * 每個測試類別各自啟動與關閉（@DynamicPropertySource 的值在 context 建立時才讀取，晚於 @BeforeAll）。
+     */
+    static FakeOidcProvider GOOGLE;
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -76,6 +81,16 @@ abstract class AbstractGoogleLoginIntegrationTest {
 
     @Autowired
     UserAccountService users;
+
+    @BeforeAll
+    static void startGoogle() {
+        GOOGLE = FakeOidcProvider.start();
+    }
+
+    @AfterAll
+    static void stopGoogle() {
+        GOOGLE.close();
+    }
 
     static void provider(DynamicPropertyRegistry registry) {
         registry.add("spring.security.oauth2.client.provider.google.authorization-uri", () -> GOOGLE.baseUrl() + "/authorize");
@@ -215,11 +230,12 @@ abstract class AbstractGoogleLoginIntegrationTest {
         // 網址中的參數是編碼過的（state 可能含 "="），必須先解碼
         Map<String, String> request = UriComponentsBuilder.fromUriString(toGoogle).build().getQueryParams().toSingleValueMap();
         String state = URLDecoder.decode(request.get("state"), StandardCharsets.UTF_8);
-        GOOGLE.prepare(subject, email, verified, name, URLDecoder.decode(request.get("nonce"), StandardCharsets.UTF_8));
+        String providerCode = GOOGLE.prepare(subject, email, verified, name,
+                URLDecoder.decode(request.get("nonce"), StandardCharsets.UTF_8));
 
         // Google 導回：Spring 以 code 換 token、驗證 ID Token，接著由本專案處理登入
         URI callback = UriComponentsBuilder.fromPath("/login/oauth2/code/google")
-                .queryParam("code", "provider-code").queryParam("state", state).encode().build().toUri();
+                .queryParam("code", providerCode).queryParam("state", state).encode().build().toUri();
         return mockMvc.perform(get(callback).session(flow.session))
                 .andExpect(status().is3xxRedirection()).andReturn().getResponse().getRedirectedUrl();
     }

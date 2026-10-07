@@ -56,37 +56,36 @@ class EndToEndTest {
     static int bffPort;
     static final List<ConfigurableApplicationContext> APPS = new ArrayList<>();
 
+    /**
+     * 只有登入服務的埠號必須事先決定（issuer 在啟動時就要固定）；其他應用程式以 server.port=0 啟動後讀回實際埠號。
+     * 事先選好的埠號在登入服務綁定前被其他程式佔用時，換一個埠號重新啟動整組應用程式。
+     */
     @BeforeAll
     static void startApplications() throws IOException {
-        asPort = freePort();
-        rsPort = freePort();
-        otherRsPort = freePort();
-        bffPort = freePort();
-        String issuer = "http://localhost:" + asPort;
-        String bff = "http://localhost:" + bffPort;
+        RuntimeException last = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                startAll(freePort());
+                return;
+            } catch (RuntimeException ex) {
+                last = ex;
+                stopApplications();
+            }
+        }
+        throw last;
+    }
 
-        // 登入服務先啟動：Resource Server 以 issuer-uri 在啟動時查詢 discovery
-        APPS.add(start(DemoAuthorizationServerApplication.class,
-                "--server.port=" + asPort,
-                "--server.servlet.session.cookie.name=JACKY917_AS_SESSION",
-                "--jacky917.security.enabled=false",
-                NO_JPA,
-                "--jacky917.security.authorization-server.issuer=" + issuer,
-                "--jacky917.security.authorization-server.keys.encryption-key="
-                        + Base64.getEncoder().encodeToString("e2e-test-only-master-key-32bytes".getBytes(StandardCharsets.UTF_8)),
-                "--jacky917.security.authorization-server.database.sqlite.path=" + dir.resolve("auth.db"),
-                "--jacky917.security.authorization-server.clients.web-bff.secret=bff-secret",
-                "--jacky917.security.authorization-server.clients.web-bff.redirect-uris=" + bff + "/login/oauth2/code/jacky917",
-                "--jacky917.security.authorization-server.clients.web-bff.post-logout-redirect-uris=" + bff + "/",
-                "--jacky917.security.authorization-server.clients.web-bff.scopes=openid,profile,email",
-                "--jacky917.security.authorization-server.clients.report-batch.secret=batch-secret",
-                "--jacky917.security.authorization-server.clients.report-batch.grant-types=client_credentials",
-                "--jacky917.security.authorization-server.clients.report-batch.scopes=report.generate",
-                "--demo.users.password=" + PASSWORD));
-        APPS.add(startResourceServer(rsPort, issuer, "jacky917-api"));
-        APPS.add(startResourceServer(otherRsPort, issuer, "other-api"));
-        APPS.add(start(BffApplication.class,
-                "--server.port=" + bffPort,
+    private static void startAll(int authorizationServerPort) {
+        asPort = authorizationServerPort;
+        String issuer = "http://localhost:" + asPort;
+
+        // Resource Server 同時設定 jwk-set-uri：啟動時不需要登入服務（另一個 Resource Server 會測試 discovery）
+        ConfigurableApplicationContext rs = startResourceServer(issuer, "jacky917-api",
+                "--spring.security.oauth2.resourceserver.jwt.jwk-set-uri=" + issuer + "/oauth2/jwks");
+        rsPort = port(rs);
+        // BFF 逐一指定登入服務的端點：啟動時不需要登入服務
+        ConfigurableApplicationContext bffApp = start(BffApplication.class,
+                "--server.port=0",
                 "--jacky917.security.enabled=false",
                 "--jacky917.security.authorization-server.enabled=false",
                 "--spring.flyway.enabled=false",
@@ -96,14 +95,42 @@ class EndToEndTest {
                 "--spring.security.oauth2.client.registration.jacky917.authorization-grant-type=authorization_code",
                 "--spring.security.oauth2.client.registration.jacky917.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
                 "--spring.security.oauth2.client.registration.jacky917.scope=openid,profile,email",
-                "--spring.security.oauth2.client.provider.jacky917.issuer-uri=" + issuer,
+                "--spring.security.oauth2.client.provider.jacky917.authorization-uri=" + issuer + "/oauth2/authorize",
+                "--spring.security.oauth2.client.provider.jacky917.token-uri=" + issuer + "/oauth2/token",
+                "--spring.security.oauth2.client.provider.jacky917.jwk-set-uri=" + issuer + "/oauth2/jwks",
+                "--spring.security.oauth2.client.provider.jacky917.user-info-uri=" + issuer + "/userinfo",
+                "--spring.security.oauth2.client.provider.jacky917.user-name-attribute=sub",
                 "--demo.authorization-server-url=" + issuer,
-                "--demo.resource-server-url=http://localhost:" + rsPort));
+                "--demo.resource-server-url=http://localhost:" + rsPort);
+        bffPort = port(bffApp);
+        String bff = "http://localhost:" + bffPort;
+
+        start(DemoAuthorizationServerApplication.class,
+                "--server.port=" + asPort,
+                "--server.servlet.session.cookie.name=JACKY917_AS_SESSION",
+                "--jacky917.security.enabled=false",
+                NO_JPA,
+                "--jacky917.security.authorization-server.issuer=" + issuer,
+                "--jacky917.security.authorization-server.keys.encryption-key="
+                        + Base64.getEncoder().encodeToString("e2e-test-only-master-key-32bytes".getBytes(StandardCharsets.UTF_8)),
+                "--jacky917.security.authorization-server.database.sqlite.path=" + dir.resolve("auth-" + asPort + ".db"),
+                "--jacky917.security.authorization-server.clients.web-bff.secret=bff-secret",
+                "--jacky917.security.authorization-server.clients.web-bff.redirect-uris=" + bff + "/login/oauth2/code/jacky917",
+                "--jacky917.security.authorization-server.clients.web-bff.post-logout-redirect-uris=" + bff + "/",
+                "--jacky917.security.authorization-server.clients.web-bff.scopes=openid,profile,email",
+                "--jacky917.security.authorization-server.clients.report-batch.secret=batch-secret",
+                "--jacky917.security.authorization-server.clients.report-batch.grant-types=client_credentials",
+                "--jacky917.security.authorization-server.clients.report-batch.scopes=report.generate",
+                "--demo.users.password=" + PASSWORD);
+
+        // 第二個 Resource Server 只設定 issuer-uri：啟動時向登入服務查詢 discovery（詳細設計 T-E2E-03）
+        otherRsPort = port(startResourceServer(issuer, "other-api"));
     }
 
     @AfterAll
     static void stopApplications() {
         APPS.reversed().forEach(ConfigurableApplicationContext::close);
+        APPS.clear();
     }
 
     @Test
@@ -200,16 +227,22 @@ class EndToEndTest {
                 .header("Authorization", "Bearer " + token).build(), HttpResponse.BodyHandlers.ofString());
     }
 
-    private static ConfigurableApplicationContext startResourceServer(int port, String issuer, String audience) {
-        return start(DemoResourceServerApplication.class,
-                "--server.port=" + port,
+    private static ConfigurableApplicationContext startResourceServer(String issuer, String audience, String... extra) {
+        List<String> args = new ArrayList<>(List.of(
+                "--server.port=0",
                 "--jacky917.security.authorization-server.enabled=false",
                 "--spring.flyway.enabled=false",
-                "--spring.datasource.url=jdbc:h2:mem:rs-" + port + ";DB_CLOSE_DELAY=-1",
+                "--spring.datasource.url=jdbc:h2:mem:rs-" + java.util.UUID.randomUUID() + ";DB_CLOSE_DELAY=-1",
                 "--spring.jpa.hibernate.ddl-auto=create-drop",
                 "--spring.security.oauth2.resourceserver.jwt.issuer-uri=" + issuer,
                 "--spring.security.oauth2.resourceserver.jwt.audiences=" + audience,
-                "--jacky917.security.permit-all-patterns=/public/**");
+                "--jacky917.security.permit-all-patterns=/public/**"));
+        args.addAll(List.of(extra));
+        return start(DemoResourceServerApplication.class, args.toArray(String[]::new));
+    }
+
+    private static int port(ConfigurableApplicationContext context) {
+        return Integer.parseInt(context.getEnvironment().getProperty("local.server.port"));
     }
 
     private static ConfigurableApplicationContext start(Class<?> application, String... args) {
@@ -217,7 +250,9 @@ class EndToEndTest {
         System.arraycopy(args, 0, all, 0, args.length);
         // 不載入任何 application.yml：三個範例的設定檔同名，在同一個 classpath 上只會讀到其中一個
         all[args.length] = "--spring.config.name=jacky917-e2e-no-config-file";
-        return new SpringApplicationBuilder(application).run(all);
+        ConfigurableApplicationContext context = new SpringApplicationBuilder(application).run(all);
+        APPS.add(context);
+        return context;
     }
 
     private static URI bff(String path) {

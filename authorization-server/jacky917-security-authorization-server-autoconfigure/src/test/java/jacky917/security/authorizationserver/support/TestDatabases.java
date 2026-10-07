@@ -2,10 +2,8 @@ package jacky917.security.authorizationserver.support;
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import jacky917.security.authorizationserver.autoconfigure.AuthorizationServerAutoConfiguration;
-import jacky917.security.authorizationserver.database.DefaultSqliteEnvironmentPostProcessor;
 import jacky917.security.authorizationserver.database.SqliteDialect;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration;
 import org.springframework.boot.jdbc.autoconfigure.JdbcClientAutoConfiguration;
@@ -57,9 +55,8 @@ public final class TestDatabases {
     }
 
     /**
-     * 只執行資料庫相關自動配置的 runner；migration 位置與 issuer 已設定。
-     * <p>
-     * {@code ApplicationContextRunner} 不會執行 {@code EnvironmentPostProcessor}，所以由這裡補上 Flyway 位置。
+     * 只執行資料庫相關自動配置的 runner；資料庫、issuer 與主金鑰已設定。
+     * Authorization Server 的 migration 由它自己的 Flyway 執行，不需要 Spring Boot 的 Flyway 自動配置。
      */
     public static ApplicationContextRunner runner(String vendor) {
         return runner(vendor, newDatabaseUrl(vendor));
@@ -76,11 +73,9 @@ public final class TestDatabases {
                         JdbcTemplateAutoConfiguration.class,
                         JdbcClientAutoConfiguration.class,
                         TransactionAutoConfiguration.class,
-                        FlywayAutoConfiguration.class,
                         AuthorizationServerAutoConfiguration.class))
                 .withPropertyValues(
                         "spring.datasource.url=" + url,
-                        "spring.flyway.locations=" + DefaultSqliteEnvironmentPostProcessor.MIGRATION_LOCATION,
                         "jacky917.security.authorization-server.issuer=http://localhost:9000",
                         "jacky917.security.authorization-server.keys.encryption-key=" + TEST_ENCRYPTION_KEY);
         if (POSTGRESQL.equals(vendor)) {

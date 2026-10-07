@@ -2,11 +2,14 @@ package jacky917.security.authorizationserver.autoconfigure;
 
 import jacky917.security.authorizationserver.database.AuthorizationServerDialect;
 import jacky917.security.authorizationserver.database.AuthorizationServerDialects;
+import jacky917.security.authorizationserver.database.AuthorizationServerMigrations;
+import jacky917.security.authorizationserver.database.DefaultSqliteEnvironmentPostProcessor;
 import jacky917.security.authorizationserver.database.SqliteExceptionTranslatorPostProcessor;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 
 import javax.sql.DataSource;
 
@@ -16,11 +19,10 @@ import javax.sql.DataSource;
  * <p>
  * 資料庫配置（D22）：選擇方言，並在啟動時檢查連線設定。
  * <p>
- * The default SQLite URL and the Flyway location are added earlier by
- * {@link jacky917.security.authorizationserver.database.DefaultSqliteEnvironmentPostProcessor}.
+ * The default SQLite URL is added earlier by
+ * {@link DefaultSqliteEnvironmentPostProcessor}.
  * <p>
- * 預設的 SQLite URL 與 Flyway 位置由
- * {@code DefaultSqliteEnvironmentPostProcessor} 預先加入。
+ * 預設的 SQLite URL 由 {@code DefaultSqliteEnvironmentPostProcessor} 預先加入。
  *
  * @author Jacky
  * @since 2.1.0
@@ -51,6 +53,31 @@ class AuthorizationServerDatabaseConfiguration {
                 AuthorizationServerDialects.select(properties.getDatabase().getDialect(), dataSource);
         dialect.validate(dataSource);
         return dialect;
+    }
+
+    /**
+     * Runs the authorization server's migrations with their own Flyway
+     * instance and history table. The default SQLite file is restricted to
+     * its owner first, before any secret is written.
+     * <p>
+     * 以專屬的 Flyway 實例與歷史表執行 Authorization Server 的 migration。執行前
+     * 先把預設的 SQLite 檔案限制為只有擁有者可讀寫，再寫入任何機密資料。
+     *
+     * @param dataSource   the authorization server's data source
+     *                     <br>Authorization Server 的資料來源
+     * @param dialect      the validated dialect
+     *                     <br>已通過檢查的方言
+     * @param environment  the application environment
+     *                     <br>應用程式的環境
+     * @return the migration runner
+     *         <br>migration 執行器
+     */
+    @Bean
+    AuthorizationServerMigrations authorizationServerMigrations(DataSource dataSource,
+                                                                AuthorizationServerDialect dialect,
+                                                                Environment environment) {
+        DefaultSqliteEnvironmentPostProcessor.restrictDefaultDatabaseFile(environment);
+        return new AuthorizationServerMigrations(dataSource, dialect);
     }
 
     /**

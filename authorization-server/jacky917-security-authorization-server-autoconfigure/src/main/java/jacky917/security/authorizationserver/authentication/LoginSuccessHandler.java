@@ -4,6 +4,7 @@ import jacky917.security.authorizationserver.session.AuthSession;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.session.LoginMethod;
 import jacky917.security.authorizationserver.user.UserAccountService;
+import jacky917.security.authorizationserver.web.LoginController;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -54,6 +55,8 @@ public class LoginSuccessHandler extends SavedRequestAwareAuthenticationSuccessH
         this.sessions = sessions;
         this.users = users;
         this.clock = clock;
+        // 沒有被中斷的授權請求時（直接開啟登入頁），導向 starter 的已登入頁，而不是應用程式的 "/"
+        setDefaultTargetUrl(LoginController.SIGNED_IN_PATH);
     }
 
     @Override
