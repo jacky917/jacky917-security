@@ -994,7 +994,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 10 | `example-authorization-server`（改用 AS starter）、`example-bff`、`e2e-tests` | ✅ |
 | 11 | 重用偵測：`RefreshTokenReuseDetector`（包裝 Spring 的刷新 provider）、`refresh_token_history`、`AuthSessionService#revoke`、稽核事件與 `login_audit` | ✅ |
 | 12 | 登出：`Jacky917LogoutHandler`（RP-Initiated Logout 與 `POST /logout`）、帳號頁 `/jacky917/account`（裝置清單、登出單一或所有裝置） | ✅ |
-| 13～17 | 第 2 階段其餘工作 | ⏳ |
+| 13 | 登入保護：`LoginFailureHandler`（失敗計數、鎖定）、`LoginAttemptGuard`（IP 限流）、登入成功與失敗的稽核（密碼與第三方） | ✅ |
+| 14～17 | 第 2 階段其餘工作 | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1062,4 +1063,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 登出時撤銷哪些 Session（工作 12） | ① 瀏覽器 Session 的 `asid`；② 否則以 `id_token_hint` 找 | 兩者都撤銷（去除重複）。瀏覽器的 `asid` 只有在屬於該瀏覽器登入的使用者時才撤銷 | 同一個瀏覽器重新登入後，BFF 手上的 ID Token 可能屬於較早的 Session；使用者要求登出時兩者都應結束 |
 | 帳號頁（工作 12） | `/account` | `/jacky917/account`（DEC-088）；登出其他裝置用 `LOGOUT`，「登出所有裝置」用 `LOGOUT_ALL`；時間以伺服器的預設時區顯示 | 不與應用程式自己的頁面衝突。帳號連結管理於工作 14 加入 |
 | 登入頁 filter chain 的 Session 檢查（工作 12） | — | `LoginSessionValidationFilter` 也加到登入頁的 filter chain | 在其他裝置按「登出所有裝置」後，這個瀏覽器開啟帳號頁時也應回到登入頁 |
+| 失敗計數與鎖定（工作 13） | `LoginFailureHandler`：失敗次數 + 1；達上限設定 `locked_until` | 以單一 `UPDATE … CASE` 完成計數與鎖定（併發的失敗不互相覆蓋）；**鎖定時計數歸零**；只有既有、可用帳號的密碼錯誤才計數，對已鎖定帳號的嘗試不延長鎖定 | 解鎖後重新給予相同的次數；若已鎖定的嘗試也延長鎖定，攻擊者可以讓帳號永久無法以密碼登入 |
+| IP 限流的實作（工作 13） | `LoginAttemptGuard` | 每次 `POST /login` 依資料模型 §11.7 查詢最近一分鐘的失敗；被拒絕的嘗試也寫入 `LOGIN`（`RATE_LIMITED`）並計入失敗。Filter 直接在登入頁的 filter chain 中建立，不是 Bean | 持續嘗試的 IP 會一直被拒絕；Spring Boot 會把 Filter Bean 自動註冊到所有請求 |
+| 稽核的失敗原因（工作 13） | — | `LoginFailureReason`：`BAD_CREDENTIALS`、`UNKNOWN_USER`、`LOCKED`、`DISABLED`、`RATE_LIMITED`、`FEDERATION`、`USER_CANNOT_LOG_IN`、`ACCOUNT_EXISTS`；失敗時記錄輸入的帳號（`username_attempted`），日誌中則不記錄 | 頁面訊息一律相同（§7.2），原因只寫入稽核。日誌依 §8.3 不記錄 username |
 

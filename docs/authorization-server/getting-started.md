@@ -132,6 +132,9 @@ public class AuthServerApplication {
 | `keys.encryption-key` | **必填** | Base64 的 32 bytes；**不可寫在設定檔中** |
 | `keys.encryption-key-id` | `v1` | 主金鑰的識別碼，更換主金鑰時一併修改 |
 | `password.min-length` | `12` | 8～64 |
+| `login-protection.max-failures` | `5` | 1～20。連續密碼錯誤達此次數時鎖定帳號（只阻擋密碼登入，已登入的裝置不受影響） |
+| `login-protection.lock-duration` | `15m` | 1 分鐘～24 小時 |
+| `login-protection.max-failures-per-ip-per-minute` | `20` | 1～10000。同一個 IP 最近一分鐘失敗達此次數後，該 IP 的登入一律拒絕（顯示「嘗試次數過多」）。IP 取自 `getRemoteAddr()`，在反向代理之後必須設定 `server.forward-headers-strategy` |
 | `password.bcrypt-strength` | `12` | 10～14；調高後，使用者下次登入時自動重新雜湊 |
 | `bootstrap-admin.username`／`password`／`email` | — | 第一位管理員 |
 | `branding.product-name` | `jacky917` | 登入頁上的產品名稱 |
@@ -332,6 +335,21 @@ spring:
 
 完整的 BFF 範例（API 代理、自動刷新、同一位使用者的刷新依序執行、RP-Initiated Logout）：[`examples/example-bff`](../../examples/example-bff)。
 
+### 登入保護與稽核紀錄
+
+- 連續密碼錯誤 `login-protection.max-failures` 次（預設 5）後，帳號鎖定 `login-protection.lock-duration`（預設 15 分鐘）。鎖定期間正確的密碼也無法登入，也不會延長鎖定；登入成功時失敗次數歸零。
+- 同一個 IP 最近一分鐘失敗 `login-protection.max-failures-per-ip-per-minute` 次（預設 20）後，該 IP 的登入在檢查密碼之前就被拒絕。
+- 登入頁對所有失敗顯示相同的訊息（不透露帳號是否存在或被鎖定），真正的原因寫入 `login_audit`：
+
+| `event_type` | 何時 | `failure_reason` |
+|---|---|---|
+| `LOGIN` | 每次登入（密碼或第三方），成功或失敗 | `BAD_CREDENTIALS`、`UNKNOWN_USER`、`LOCKED`、`DISABLED`、`RATE_LIMITED`、`FEDERATION`、`USER_CANNOT_LOG_IN`、`ACCOUNT_EXISTS` |
+| `ACCOUNT_LOCKED` | 連續失敗造成鎖定 | — |
+| `LOGOUT` | 登出（見下一節） | — |
+| `TOKEN_REFRESH_REUSE` | 偵測到 Refresh Token 重用 | `REUSE_DETECTED` |
+
+稽核事件同時以 Spring 的 `ApplicationEvent`（`LoginAuditEvent`）發布，應用程式可以另外監聽並轉送到 SIEM。寫入失敗只記錄錯誤日誌，不影響登入。
+
 ### 登出與帳號頁
 
 | 方式 | 結果 |
@@ -352,8 +370,6 @@ spring:
 
 | 項目 | 現況 | 預計 |
 |---|---|---|
-| 登入保護 | 沒有失敗次數鎖定與 IP 限流（管理員設定的 `locked_until` 會生效） | 第 2 階段 |
-| 稽核紀錄 | 寫入 Refresh Token 重用（`TOKEN_REFRESH_REUSE`）與登出（`LOGOUT`）；登入事件尚未寫入 | 第 2 階段 |
 | 金鑰輪換、資料清理 | 沒有排程；過期的授權不會自動刪除 | 第 2 階段 |
 | 多實例 | 登入頁的 Session 存在記憶體中，多實例需要黏性 Session；SQLite 只能單一實例 | 第 2 階段：PostgreSQL 搭配 Spring Session JDBC |
 | 第三方帳號連結 | Email 屬於既有帳號時拒絕登入 | 第 2 階段 |

@@ -11,7 +11,9 @@ import org.springframework.util.StringUtils;
 
 import java.sql.Timestamp;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Optional;
@@ -169,6 +171,23 @@ public class JdbcUserAccountService implements UserAccountService {
         jdbc.sql("UPDATE app_user SET failed_login_count = 0, last_login_at = :at, updated_at = :at, "
                         + "row_version = row_version + 1 WHERE id = :id")
                 .param("at", time).param("id", userId).update();
+    }
+
+    @Override
+    public boolean recordLoginFailure(String userId, Instant at, int maxFailures, Duration lockDuration) {
+        // SQLite 只保存到毫秒：先截斷，讀回後才能與寫入的值比較
+        Timestamp until = Timestamp.from(at.plus(lockDuration).truncatedTo(ChronoUnit.MILLIS));
+        // 單一 UPDATE 完成計數與鎖定，併發的失敗不會互相覆蓋；鎖定時計數歸零，解鎖後重新給予相同的次數
+        jdbc.sql("""
+                        UPDATE app_user SET
+                            locked_until = CASE WHEN failed_login_count + 1 >= :max THEN :until ELSE locked_until END,
+                            failed_login_count = CASE WHEN failed_login_count + 1 >= :max THEN 0 ELSE failed_login_count + 1 END,
+                            updated_at = :at, row_version = row_version + 1
+                        WHERE id = :id""")
+                .param("max", maxFailures).param("until", until).param("at", Timestamp.from(at)).param("id", userId)
+                .update();
+        return findById(userId).map(user -> user.lockedUntil() != null && !user.lockedUntil().isBefore(until.toInstant()))
+                .orElse(false);
     }
 
     @Override

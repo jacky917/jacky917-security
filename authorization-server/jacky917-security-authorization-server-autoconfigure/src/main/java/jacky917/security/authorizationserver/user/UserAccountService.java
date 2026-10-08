@@ -2,6 +2,7 @@ package jacky917.security.authorizationserver.user;
 
 import jacky917.security.authorizationserver.federation.FederatedUserInfo;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -101,6 +102,29 @@ public interface UserAccountService {
      *                <br>登入時間
      */
     void recordLoginSuccess(String userId, Instant at);
+
+    /**
+     * Records a failed password login. When the consecutive failures reach
+     * {@code maxFailures}, the account is locked until
+     * {@code at + lockDuration} and the count starts again from zero.
+     * <p>
+     * 記錄一次密碼登入失敗。連續失敗達到 {@code maxFailures} 次時，帳號鎖定到
+     * {@code at + lockDuration}，失敗次數重新從零開始計算。
+     *
+     * @param userId        the user id
+     *                      <br>使用者 ID
+     * @param at            the time of the failure
+     *                      <br>失敗的時間
+     * @param maxFailures   consecutive failures that lock the account; at
+     *                      least 1
+     *                      <br>鎖定帳號的連續失敗次數，至少為 1
+     * @param lockDuration  how long the account stays locked
+     *                      <br>鎖定的時間
+     * @return {@code true} if this failure locked the account
+     *         <br>此次失敗造成帳號鎖定時為 {@code true}
+     * @since 2.1.0
+     */
+    boolean recordLoginFailure(String userId, Instant at, int maxFailures, Duration lockDuration);
 
     /**
      * Replaces the stored password hash without counting it as a password

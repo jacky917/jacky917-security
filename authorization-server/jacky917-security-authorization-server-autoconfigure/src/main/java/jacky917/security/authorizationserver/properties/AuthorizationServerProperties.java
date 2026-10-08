@@ -135,6 +135,13 @@ public class AuthorizationServerProperties implements Validator {
      */
     private Login login = new Login();
 
+    /**
+     * Protection against password guessing.
+     * <p>
+     * 防止密碼猜測的保護。
+     */
+    private LoginProtection loginProtection = new LoginProtection();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -151,6 +158,7 @@ public class AuthorizationServerProperties implements Validator {
         properties.getRefresh().validate(properties.getToken(), errors);
         properties.getKeys().validate(errors);
         properties.getPassword().validate(errors);
+        properties.getLoginProtection().validate(errors);
         properties.getBootstrapAdmin().validate(errors);
         properties.getBranding().validate(errors);
         properties.getClients().forEach((clientId, client) -> client.validate(clientId, errors));
@@ -406,6 +414,57 @@ public class AuthorizationServerProperties implements Validator {
          * 資料庫中的）時請設定此屬性。
          */
         private List<String> providers = new ArrayList<>();
+    }
+
+    /**
+     * Protection against password guessing, bound from
+     * {@code .login-protection.*} (detailed design §5.1).
+     * <p>
+     * 防止密碼猜測的保護，綁定自 {@code .login-protection.*}（詳細設計 §5.1）。
+     */
+    @Getter
+    @Setter
+    public static class LoginProtection {
+
+        /**
+         * Consecutive failed password logins that lock the account,
+         * between 1 and 20.
+         * <p>
+         * 鎖定帳號的連續密碼登入失敗次數，1～20。
+         */
+        private int maxFailures = 5;
+
+        /**
+         * How long a locked account cannot log in with its password,
+         * between 1 minute and 24 hours. Devices already logged in are not
+         * affected.
+         * <p>
+         * 帳號鎖定後無法以密碼登入的時間，1 分鐘～24 小時。已登入的裝置不受
+         * 影響。
+         */
+        private Duration lockDuration = Duration.ofMinutes(15);
+
+        /**
+         * Failed logins allowed from one IP address per minute, between 1
+         * and 10000; further attempts from it are refused until the
+         * failures of the last minute fall below the limit.
+         * <p>
+         * 每個 IP 每分鐘允許的登入失敗次數，1～10000；超過後，該 IP 的登入嘗試
+         * 一律拒絕，直到最近一分鐘內的失敗次數低於上限。
+         */
+        private int maxFailuresPerIpPerMinute = 20;
+
+        void validate(Errors errors) {
+            if (maxFailures < 1 || maxFailures > 20) {
+                errors.rejectValue("loginProtection.maxFailures", "range",
+                        "login-protection.max-failures must be between 1 and 20");
+            }
+            rejectOutOfRange(errors, "loginProtection.lockDuration", lockDuration, Duration.ofMinutes(1), Duration.ofHours(24));
+            if (maxFailuresPerIpPerMinute < 1 || maxFailuresPerIpPerMinute > 10000) {
+                errors.rejectValue("loginProtection.maxFailuresPerIpPerMinute", "range",
+                        "login-protection.max-failures-per-ip-per-minute must be between 1 and 10000");
+            }
+        }
     }
 
     /**

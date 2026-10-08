@@ -26,8 +26,12 @@
 |   |       |   |               |-- audit
 |   |       |   |               |   |-- JdbcLoginAuditListener.java
 |   |       |   |               |   |-- LoginAuditEvent.java
-|   |       |   |               |   `-- LoginAuditEventType.java
+|   |       |   |               |   |-- LoginAuditEventType.java
+|   |       |   |               |   |-- LoginAuditRepository.java
+|   |       |   |               |   `-- LoginFailureReason.java
 |   |       |   |               |-- authentication
+|   |       |   |               |   |-- LoginAttemptGuard.java
+|   |       |   |               |   |-- LoginFailureHandler.java
 |   |       |   |               |   |-- LoginSuccessHandler.java
 |   |       |   |               |   `-- PrincipalNormalizer.java
 |   |       |   |               |-- autoconfigure
@@ -151,6 +155,8 @@
 |   |           |       `-- security
 |   |           |           `-- authorizationserver
 |   |           |               |-- authentication
+|   |           |               |   |-- LoginAttemptGuardTest.java
+|   |           |               |   |-- LoginFailureHandlerTest.java
 |   |           |               |   `-- PrincipalNormalizerTest.java
 |   |           |               |-- autoconfigure
 |   |           |               |   `-- AutoConfigurationOrderingTest.java
@@ -171,13 +177,16 @@
 |   |           |               |   |-- AbstractAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- AbstractFlowIntegrationTest.java
 |   |           |               |   |-- AbstractGoogleLoginIntegrationTest.java
+|   |           |               |   |-- AbstractLoginProtectionIntegrationTest.java
 |   |           |               |   |-- AbstractLogoutIntegrationTest.java
 |   |           |               |   |-- PostgresqlAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- PostgresqlGoogleLoginIntegrationTest.java
+|   |           |               |   |-- PostgresqlLoginProtectionIntegrationTest.java
 |   |           |               |   |-- PostgresqlLogoutIntegrationTest.java
 |   |           |               |   |-- SqliteAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- SqliteEs256AuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- SqliteGoogleLoginIntegrationTest.java
+|   |           |               |   |-- SqliteLoginProtectionIntegrationTest.java
 |   |           |               |   `-- SqliteLogoutIntegrationTest.java
 |   |           |               |-- keys
 |   |           |               |   |-- ActiveKeyJwtEncoderTest.java
@@ -462,7 +471,10 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/FederatedIdentityService.java` | `as-autoconfigure` | 外部帳號 | 已連結 → 登入；已驗證的 Email 屬於既有帳號 → 拒絕；其餘建立新使用者。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/FederatedUserInfoMapper.java`、`OidcFederatedUserInfoMapper.java`、`FederatedUserInfo.java` | `as-autoconfigure` | 提供者資料轉換 SPI | 通用 OIDC（Google 等）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/PrincipalNormalizer.java` | `as-autoconfigure` | D16 | 轉為 `UsernamePasswordAuthenticationToken` + `User(使用者 ID)`；補上 factor authority。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginSuccessHandler.java` | `as-autoconfigure` | 登入成功 | 記錄登入、建立 `auth_session`、回到授權請求。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginSuccessHandler.java` | `as-autoconfigure` | 登入成功 | 記錄登入、建立 `auth_session`、發布 `LOGIN`、回到授權請求。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginFailureHandler.java` | `as-autoconfigure` | 登入失敗（§5.1） | 密碼錯誤時計數，達上限鎖定並發布 `ACCOUNT_LOCKED`；稽核失敗原因；一律導向 `/login?error`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginAttemptGuard.java` | `as-autoconfigure` | IP 限流（§5.1） | `POST /login` 前檢查該 IP 最近一分鐘的失敗次數。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../audit/LoginAuditRepository.java`、`LoginFailureReason.java` | `as-autoconfigure` | 稽核查詢 | 依 IP 計算失敗次數（資料模型 §11.7）；失敗原因代碼。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/LoginController.java` | `as-autoconfigure` | 登入頁 | 依語言顯示；所有錯誤顯示相同訊息；`/jacky917/theme.css`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/templates/jacky917/`、`static/jacky917/`、`jacky917/authorization-server-messages*.properties` | `as-autoconfigure` | 登入頁資源 | Thymeleaf 範本、樣式、英文與繁體中文訊息。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/db/jacky917-as/{postgresql,sqlite}/` | `as-autoconfigure` | Flyway V1 | 兩種資料庫各 7 個同名檔案：23 張表與內建資料。 |
@@ -482,6 +494,8 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/AbstractFlowIntegrationTest.java` | `as-test` | 測試共用 | `@SpringBootTest` 設定與模擬瀏覽器、BFF 的工具（登入、換 Token、刷新、Session 斷言）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*LogoutIntegrationTest.java` | `as-test` | 整合測試 | T-LOGOUT-01～04、`POST /logout`、帳號頁（裝置清單、登出其他／目前／所有裝置、不能登出他人的 Session、CSRF）；SQLite 與 PostgreSQL 各一次。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../session/Jacky917LogoutHandlerTest.java` | `as-test` | 單元測試 | 從瀏覽器與 `id_token_hint` 找 Session 的每個分支。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*LoginProtectionIntegrationTest.java` | `as-test` | 整合測試 | 連續失敗鎖定（不延長、到期後恢復）、成功歸零與稽核、IP 限流、不存在與停用的帳號；SQLite 與 PostgreSQL 各一次。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../authentication/LoginAttemptGuardTest.java`、`LoginFailureHandlerTest.java` | `as-test` | 單元測試 | 限流與每個失敗原因的分支。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/KeyEncryptorTest.java` | `as-test` | 單元測試 | 加解密、錯誤主金鑰、竄改、`kid` 綁定。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../client/ClientRegistrationIntegrationTest.java` | `as-test` | 整合測試 | 註冊、重新啟動時更新、secret 輪換、缺少 secret、停權。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../user/UserAccountIntegrationTest.java` | `as-test` | 整合測試 | 帳號或 Email 登入、失敗訊息一致、停用與鎖定、角色過期、唯一性、密碼政策、重新雜湊、第一位管理員。 |

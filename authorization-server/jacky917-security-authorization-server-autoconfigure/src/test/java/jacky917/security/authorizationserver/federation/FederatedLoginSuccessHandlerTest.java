@@ -1,5 +1,8 @@
 package jacky917.security.authorizationserver.federation;
 
+import jacky917.security.authorizationserver.audit.LoginAuditEvent;
+import jacky917.security.authorizationserver.audit.LoginAuditEventType;
+import jacky917.security.authorizationserver.audit.LoginFailureReason;
 import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.user.UserAccountService;
@@ -7,6 +10,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.authority.AuthorityUtils;
@@ -37,6 +42,7 @@ class FederatedLoginSuccessHandlerTest {
     private FederatedIdentityService identities;
     private AuthSessionService sessions;
     private OAuth2AuthorizedClientRepository authorizedClients;
+    private ApplicationEventPublisher events;
     private final OAuth2AuthenticationToken authentication = new OAuth2AuthenticationToken(
             new DefaultOAuth2User(AuthorityUtils.createAuthorityList("OAUTH2_USER"), Map.of("id", "1"), "id"),
             AuthorityUtils.createAuthorityList("OAUTH2_USER"), "github");
@@ -46,6 +52,7 @@ class FederatedLoginSuccessHandlerTest {
         identities = mock(FederatedIdentityService.class);
         sessions = mock(AuthSessionService.class);
         authorizedClients = mock(OAuth2AuthorizedClientRepository.class);
+        events = mock(ApplicationEventPublisher.class);
         SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 
@@ -60,6 +67,7 @@ class FederatedLoginSuccessHandlerTest {
         MockHttpServletResponse response = handle(List.of());
         assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=federation");
         assertLoggedOutWithoutSession();
+        assertAudited(LoginFailureReason.FEDERATION);
     }
 
     @Test
@@ -69,6 +77,7 @@ class FederatedLoginSuccessHandlerTest {
                 FederatedLoginRejectedException.Reason.ACCOUNT_EXISTS, "exists"));
         assertThat(handle(List.of(new AcceptingMapper())).getRedirectedUrl()).isEqualTo("/login?error=account_exists");
         assertLoggedOutWithoutSession();
+        assertAudited(LoginFailureReason.ACCOUNT_EXISTS);
     }
 
     @Test
@@ -78,11 +87,21 @@ class FederatedLoginSuccessHandlerTest {
                 FederatedLoginRejectedException.Reason.USER_CANNOT_LOG_IN, "disabled"));
         assertThat(handle(List.of(new AcceptingMapper())).getRedirectedUrl()).isEqualTo("/login?error=federation");
         assertLoggedOutWithoutSession();
+        assertAudited(LoginFailureReason.USER_CANNOT_LOG_IN);
+    }
+
+    private void assertAudited(LoginFailureReason reason) {
+        ArgumentCaptor<LoginAuditEvent> event = ArgumentCaptor.forClass(LoginAuditEvent.class);
+        verify(events).publishEvent(event.capture());
+        assertThat(event.getValue().type()).isEqualTo(LoginAuditEventType.LOGIN);
+        assertThat(event.getValue().success()).isFalse();
+        assertThat(event.getValue().idp()).isEqualTo("github");
+        assertThat(event.getValue().failureReason()).isEqualTo(reason.name());
     }
 
     private MockHttpServletResponse handle(List<FederatedUserInfoMapper> mappers) throws Exception {
         FederatedLoginSuccessHandler handler = new FederatedLoginSuccessHandler(mappers, identities,
-                mock(UserAccountService.class), sessions, mock(PrincipalNormalizer.class), authorizedClients,
+                mock(UserAccountService.class), sessions, mock(PrincipalNormalizer.class), authorizedClients, events,
                 Clock.systemUTC());
         MockHttpServletResponse response = new MockHttpServletResponse();
         handler.onAuthenticationSuccess(new MockHttpServletRequest(), response, authentication);

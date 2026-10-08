@@ -1,5 +1,8 @@
 package jacky917.security.authorizationserver.federation;
 
+import jacky917.security.authorizationserver.audit.LoginAuditEvent;
+import jacky917.security.authorizationserver.audit.LoginAuditEventType;
+import jacky917.security.authorizationserver.audit.LoginFailureReason;
 import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
 import jacky917.security.authorizationserver.session.AuthSession;
 import jacky917.security.authorizationserver.session.AuthSessionService;
@@ -12,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
@@ -58,6 +62,7 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
     private final AuthSessionService sessions;
     private final PrincipalNormalizer normalizer;
     private final @Nullable OAuth2AuthorizedClientRepository authorizedClients;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
     private final SecurityContextRepository contextRepository = new DelegatingSecurityContextRepository(
             new RequestAttributeSecurityContextRepository(), new HttpSessionSecurityContextRepository());
@@ -81,19 +86,23 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
      * @param authorizedClients  where Spring stores the provider tokens, or
      *                           {@code null}
      *                           <br>Spring 存放提供者 token 的位置，或 {@code null}
+     * @param events             publishes the {@code LOGIN} audit events
+     *                           <br>發布 {@code LOGIN} 稽核事件
      * @param clock              the clock for timestamps
      *                           <br>用於時間戳記的時鐘
      */
     public FederatedLoginSuccessHandler(List<FederatedUserInfoMapper> mappers, FederatedIdentityService identities,
                                         UserAccountService users, AuthSessionService sessions,
                                         PrincipalNormalizer normalizer,
-                                        @Nullable OAuth2AuthorizedClientRepository authorizedClients, Clock clock) {
+                                        @Nullable OAuth2AuthorizedClientRepository authorizedClients,
+                                        ApplicationEventPublisher events, Clock clock) {
         this.mappers = List.copyOf(mappers);
         this.identities = identities;
         this.users = users;
         this.sessions = sessions;
         this.normalizer = normalizer;
         this.authorizedClients = authorizedClients;
+        this.events = events;
         this.clock = clock;
         setDefaultTargetUrl(LoginController.SIGNED_IN_PATH);
     }
@@ -114,12 +123,15 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
             user = identities.login(info);
         } catch (FederatedLoginRejectedException ex) {
             log.info("Rejected a login through {}: {}", provider, ex.getMessage());
-            reject(request, response,
-                    ex.reason() == FederatedLoginRejectedException.Reason.ACCOUNT_EXISTS ? "account_exists" : "federation");
+            boolean accountExists = ex.reason() == FederatedLoginRejectedException.Reason.ACCOUNT_EXISTS;
+            audit(provider, false, null, null, accountExists ? LoginFailureReason.ACCOUNT_EXISTS
+                    : LoginFailureReason.USER_CANNOT_LOG_IN, request);
+            reject(request, response, accountExists ? "account_exists" : "federation");
             return;
         } catch (RuntimeException ex) {
             // 例如沒有支援此提供者的 mapper、或提供者回傳的資料不完整：登出並回到登入頁，而不是錯誤頁
             log.error("A login through {} could not be processed", provider, ex);
+            audit(provider, false, null, null, LoginFailureReason.FEDERATION, request);
             reject(request, response, "federation");
             return;
         } finally {
@@ -138,7 +150,15 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
         SecurityContextHolder.setContext(context);
         contextRepository.saveContext(context, request, response);
         request.getSession().setAttribute(AuthSessionService.SESSION_ATTRIBUTE, session.sessionId());
+        audit(provider, true, user.id(), session.sessionId(), null, request);
         super.onAuthenticationSuccess(request, response, normalized);
+    }
+
+    private void audit(String provider, boolean success, @Nullable String userId, @Nullable String sessionId,
+                       @Nullable LoginFailureReason reason, HttpServletRequest request) {
+        events.publishEvent(LoginAuditEvent.builder(LoginAuditEventType.LOGIN, clock.instant(), success)
+                .userId(userId).login(LoginMethod.FEDERATED.name(), provider).sessionId(sessionId)
+                .failureReason(reason == null ? null : reason.name()).request(request).build());
     }
 
     private void reject(HttpServletRequest request, HttpServletResponse response, String error) throws IOException {

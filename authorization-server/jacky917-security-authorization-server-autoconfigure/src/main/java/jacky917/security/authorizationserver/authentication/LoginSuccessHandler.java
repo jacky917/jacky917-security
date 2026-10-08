@@ -1,5 +1,7 @@
 package jacky917.security.authorizationserver.authentication;
 
+import jacky917.security.authorizationserver.audit.LoginAuditEvent;
+import jacky917.security.authorizationserver.audit.LoginAuditEventType;
 import jacky917.security.authorizationserver.session.AuthSession;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.session.LoginMethod;
@@ -8,6 +10,7 @@ import jacky917.security.authorizationserver.web.LoginController;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler;
@@ -37,6 +40,7 @@ public class LoginSuccessHandler extends SavedRequestAwareAuthenticationSuccessH
 
     private final AuthSessionService sessions;
     private final UserAccountService users;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     /**
@@ -48,12 +52,16 @@ public class LoginSuccessHandler extends SavedRequestAwareAuthenticationSuccessH
      *                  <br>登入 Session 服務
      * @param users     the user account service
      *                  <br>使用者帳號服務
+     * @param events    publishes the {@code LOGIN} audit event
+     *                  <br>發布 {@code LOGIN} 稽核事件
      * @param clock     the clock for timestamps
      *                  <br>用於時間戳記的時鐘
      */
-    public LoginSuccessHandler(AuthSessionService sessions, UserAccountService users, Clock clock) {
+    public LoginSuccessHandler(AuthSessionService sessions, UserAccountService users, ApplicationEventPublisher events,
+                               Clock clock) {
         this.sessions = sessions;
         this.users = users;
+        this.events = events;
         this.clock = clock;
         // 沒有被中斷的授權請求時（直接開啟登入頁），導向 starter 的已登入頁，而不是應用程式的 "/"
         setDefaultTargetUrl(LoginController.SIGNED_IN_PATH);
@@ -68,6 +76,9 @@ public class LoginSuccessHandler extends SavedRequestAwareAuthenticationSuccessH
         AuthSession session = sessions.create(userId, LoginMethod.PASSWORD, "local", "pwd",
                 request.getRemoteAddr(), request.getHeader(HttpHeaders.USER_AGENT));
         request.getSession().setAttribute(AuthSessionService.SESSION_ATTRIBUTE, session.sessionId());
+        events.publishEvent(LoginAuditEvent.builder(LoginAuditEventType.LOGIN, session.createdAt(), true)
+                .userId(userId).login(LoginMethod.PASSWORD.name(), "local").sessionId(session.sessionId())
+                .request(request).build());
         super.onAuthenticationSuccess(request, response, authentication);
     }
 }

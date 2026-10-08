@@ -128,6 +128,10 @@ abstract class AbstractGoogleLoginIntegrationTest {
         Map<String, Object> session = jdbc.sql("SELECT login_method, idp, amr FROM auth_session WHERE session_id = :id")
                 .param("id", flow.asid()).query().singleRow();
         assertThat(session).containsEntry("login_method", "FEDERATED").containsEntry("idp", "google").containsEntry("amr", "fed");
+        assertThat(jdbc.sql("SELECT login_method, idp, session_id FROM login_audit WHERE event_type = 'LOGIN' "
+                        + "AND user_id = :user").param("user", userId).query().singleRow())
+                .as("登入稽核").containsEntry("login_method", "FEDERATED").containsEntry("idp", "google")
+                .containsEntry("session_id", flow.asid());
 
         JsonNode tokens = flow.exchange(this);
         Jwt access = jwtDecoder.decode(tokens.get("access_token").asString());
@@ -185,8 +189,15 @@ abstract class AbstractGoogleLoginIntegrationTest {
         logInWithGoogle(subject, subject + "@gmail.com", true, "Soon Disabled").exchange(this);
         jdbc.sql("UPDATE app_user SET status = 'DISABLED' WHERE id = (SELECT user_id FROM user_federated_identity "
                 + "WHERE provider_subject = :s)").param("s", subject).update();
+        int before = rejectedAudits();
         assertThat(attemptGoogleLogin(subject, subject + "@gmail.com", true, "Soon Disabled"))
                 .isEqualTo("/login?error=federation");
+        assertThat(rejectedAudits()).as("稽核記錄 USER_CANNOT_LOG_IN").isEqualTo(before + 1);
+    }
+
+    private int rejectedAudits() {
+        return jdbc.sql("SELECT COUNT(*) FROM login_audit WHERE event_type = 'LOGIN' AND idp = 'google' "
+                + "AND failure_reason = 'USER_CANNOT_LOG_IN'").query(Integer.class).single();
     }
 
     /**

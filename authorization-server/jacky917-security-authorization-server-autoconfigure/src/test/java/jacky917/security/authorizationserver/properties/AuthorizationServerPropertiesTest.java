@@ -32,6 +32,9 @@ class AuthorizationServerPropertiesTest {
         assertThat(properties.getKeys().getEncryptionKeyId()).isEqualTo("v1");
         assertThat(properties.getRefresh().getReuseGracePeriod()).isEqualTo(Duration.ofSeconds(30));
         assertThat(properties.getRefresh().getHistoryRetention()).isEqualTo(Duration.ofHours(24));
+        assertThat(properties.getLoginProtection().getMaxFailures()).isEqualTo(5);
+        assertThat(properties.getLoginProtection().getLockDuration()).isEqualTo(Duration.ofMinutes(15));
+        assertThat(properties.getLoginProtection().getMaxFailuresPerIpPerMinute()).isEqualTo(20);
     }
 
     @Test
@@ -80,6 +83,17 @@ class AuthorizationServerPropertiesTest {
         properties.getRefresh().setHistoryRetention(Duration.ofDays(15));
         assertThat(validate(properties).getFieldErrors()).extracting(error -> error.getField())
                 .containsExactly("refresh.historyRetention");
+    }
+
+    @Test
+    @DisplayName("登入保護：失敗次數 1～20、鎖定 1 分鐘～24 小時、IP 上限 1～10000")
+    void loginProtectionRanges() {
+        AuthorizationServerProperties properties = withIssuer("https://auth.example.com");
+        properties.getLoginProtection().setMaxFailures(0);
+        properties.getLoginProtection().setLockDuration(Duration.ofSeconds(30));
+        properties.getLoginProtection().setMaxFailuresPerIpPerMinute(0);
+        assertThat(validate(properties).getFieldErrors()).extracting(error -> error.getField()).containsExactlyInAnyOrder(
+                "loginProtection.maxFailures", "loginProtection.lockDuration", "loginProtection.maxFailuresPerIpPerMinute");
     }
 
     @Test

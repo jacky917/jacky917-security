@@ -835,3 +835,21 @@
   - **DEC-095**: 登出時，瀏覽器 Session 與 `id_token_hint` 所屬的登入 Session 都撤銷。
   - **DEC-096**: 帳號頁放在 `/jacky917/account`，時間以伺服器的預設時區顯示。
 
+---
+## Step 36: Authorization Server 第 2 階段——工作 13（登入保護與稽核）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `LoginFailureHandler`：既有帳號的密碼錯誤才計數；連續 `login-protection.max-failures`（5）次時鎖定 `lock-duration`（15 分鐘）並發布 `ACCOUNT_LOCKED`；鎖定期間的嘗試不延長鎖定；所有失敗都寫入 `LOGIN` 稽核（`LoginFailureReason`），頁面訊息相同。
+  - `LoginAttemptGuard`：同一個 IP 最近一分鐘失敗 `max-failures-per-ip-per-minute`（20）次後，在檢查密碼之前就拒絕（`/login?error=rate_limited`）。
+  - 密碼登入與第三方登入的成功、失敗都寫入 `login_audit`。
+  - `UserAccountService#recordLoginFailure`：單一 `UPDATE` 完成計數與鎖定。
+  - 新設定：`login-protection.*`。
+- **Commands Run & Results**:
+  - 新增 `*LoginProtectionIntegrationTest`（SQLite、PostgreSQL 各 5 個）、`LoginAttemptGuardTest`、`LoginFailureHandlerTest`；Google 登入整合測試加上稽核的檢查。
+  - 第一次執行時 IP 限流沒有生效：filter 以 servlet path 判斷 `/login`，而 servlet path 依部署方式可能為空（MockMvc 即是如此）；改以 request URI 判斷。
+  - 鎖定時間在 SQLite 只保存到毫秒：寫入前先截斷，讀回後才能正確判斷「此次失敗造成鎖定」。
+  - `mvn -B -o clean verify`：**SUCCESS**，324 個測試（Resource Server 47、Authorization Server 259、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-097**: 鎖定時失敗次數歸零；對已鎖定帳號的嘗試不延長鎖定。
+  - **DEC-098**: 被限流拒絕的嘗試也計入該 IP 的失敗。
+

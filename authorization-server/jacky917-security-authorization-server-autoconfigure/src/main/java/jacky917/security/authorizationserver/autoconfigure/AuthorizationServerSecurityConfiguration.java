@@ -3,6 +3,9 @@ package jacky917.security.authorizationserver.autoconfigure;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import jacky917.security.authorizationserver.audit.JdbcLoginAuditListener;
+import jacky917.security.authorizationserver.audit.LoginAuditRepository;
+import jacky917.security.authorizationserver.authentication.LoginAttemptGuard;
+import jacky917.security.authorizationserver.authentication.LoginFailureHandler;
 import jacky917.security.authorizationserver.authentication.LoginSuccessHandler;
 import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
 import jacky917.security.authorizationserver.federation.FederatedIdentityService;
@@ -60,6 +63,7 @@ import org.springframework.security.oauth2.server.authorization.token.OAuth2Toke
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -135,6 +139,9 @@ class AuthorizationServerSecurityConfiguration {
     SecurityFilterChain loginSecurityFilterChain(HttpSecurity http, LoginSuccessHandler loginSuccessHandler,
                                                  ObjectProvider<ClientRegistrationRepository> clientRegistrations,
                                                  ObjectProvider<FederatedLoginSuccessHandler> federatedLoginSuccessHandler,
+                                                 LoginFailureHandler loginFailureHandler,
+                                                 LoginAuditRepository loginAudits, ApplicationEventPublisher events,
+                                                 AuthorizationServerProperties properties,
                                                  Jacky917LogoutHandler logoutHandler, AuthSessionService sessions,
                                                  Clock clock)
             throws Exception {
@@ -153,8 +160,13 @@ class AuthorizationServerSecurityConfiguration {
                 .formLogin(form -> form
                         .loginPage("/login")
                         .successHandler(loginSuccessHandler)
-                        // 所有失敗原因導向同一個網址，頁面顯示相同的訊息（詳細設計 §7.2）
-                        .failureUrl("/login?error"))
+                        // 失敗計數、鎖定與稽核；所有失敗原因導向同一個網址，頁面顯示相同的訊息（詳細設計 §7.2）
+                        .failureHandler(loginFailureHandler))
+                // 同一個 IP 最近一分鐘失敗過多時，在檢查密碼之前就拒絕。不是 Bean：Spring Boot 會把 Filter Bean
+                // 註冊到所有請求
+                .addFilterBefore(new LoginAttemptGuard(loginAudits, events,
+                        properties.getLoginProtection().getMaxFailuresPerIpPerMinute(), clock),
+                        UsernamePasswordAuthenticationFilter.class)
                 // POST /logout 也撤銷登入 Session
                 .logout(logout -> logout.addLogoutHandler(logoutHandler).logoutSuccessUrl("/login?logout"))
                 .sessionManagement(session -> session.sessionFixation(fixation -> fixation.changeSessionId()))
@@ -310,9 +322,26 @@ class AuthorizationServerSecurityConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    LoginSuccessHandler loginSuccessHandler(AuthSessionService sessions, UserAccountService users, Clock clock) {
-        return new LoginSuccessHandler(sessions, users, clock);
+    LoginSuccessHandler loginSuccessHandler(AuthSessionService sessions, UserAccountService users,
+                                            ApplicationEventPublisher events, Clock clock) {
+        return new LoginSuccessHandler(sessions, users, events, clock);
     }
+
+    @Bean
+    @ConditionalOnMissingBean
+    LoginFailureHandler loginFailureHandler(UserAccountService users, ApplicationEventPublisher events,
+                                            AuthorizationServerProperties properties, Clock clock) {
+        AuthorizationServerProperties.LoginProtection protection = properties.getLoginProtection();
+        return new LoginFailureHandler(users, events, protection.getMaxFailures(), protection.getLockDuration(), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    LoginAuditRepository loginAuditRepository(JdbcClient jdbcClient) {
+        return new LoginAuditRepository(jdbcClient);
+    }
+
 
     @Bean
     @ConditionalOnMissingBean
@@ -387,8 +416,9 @@ class AuthorizationServerSecurityConfiguration {
     FederatedLoginSuccessHandler federatedLoginSuccessHandler(
             ObjectProvider<FederatedUserInfoMapper> mappers, FederatedIdentityService identities, UserAccountService users,
             AuthSessionService sessions, PrincipalNormalizer normalizer,
-            ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClients, Clock clock) {
+            ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClients, ApplicationEventPublisher events,
+            Clock clock) {
         return new FederatedLoginSuccessHandler(mappers.orderedStream().toList(), identities, users, sessions, normalizer,
-                authorizedClients.getIfAvailable(), clock);
+                authorizedClients.getIfAvailable(), events, clock);
     }
 }
