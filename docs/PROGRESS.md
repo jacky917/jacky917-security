@@ -788,3 +788,9 @@
 - **Next TODO**:
   - 發佈後把 `main` 的 `<revision>` 改為 `2.1.0-SNAPSHOT`。
   - 以外部專案從 GitHub Packages 實際下載 2.0.0 驗證（含舊座標的 relocation）。
+
+---
+## Step 33: 開始 2.1.0 的開發版本
+- **Status**: 🟢 Completed（`v2.0.0` Release 建立後合併）
+- **變更**：根 POM 的 `<revision>` 改為 `2.1.0-SNAPSHOT`。
+- **注意**：`v2.0.0` 的 tag 必須建在版本為 `2.0.0` 的 commit（`303f62f`）上；若誤建在之後的 commit，發佈流程的 tag 檢查會中止發佈（`2.1.0-SNAPSHOT` ≠ `2.0.0`）。
