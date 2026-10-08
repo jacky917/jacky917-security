@@ -1,9 +1,12 @@
 package jacky917.security.authorizationserver.flow;
 
+import jacky917.security.authorizationserver.mfa.MfaService;
+import jacky917.security.authorizationserver.mfa.Totp;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.user.NewUser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
@@ -33,6 +36,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 abstract class AbstractAccountLinkingIntegrationTest extends AbstractGoogleIntegrationTest {
 
     private static final String PASSWORD = "correct horse battery";
+
+    @Autowired
+    MfaService mfa;
 
     @Test
     @DisplayName("以原帳號密碼確認：密碼錯誤計入失敗；正確後連結、登入（amr=fed,pwd）並繼續授權；之後以 Google 直接登入同一位使用者")
@@ -277,6 +283,62 @@ abstract class AbstractAccountLinkingIntegrationTest extends AbstractGoogleInteg
         mockMvc.perform(post("/jacky917/account/unlink/google").session(flow.session).with(csrf()))
                 .andExpect(header().string(HttpHeaders.LOCATION, "/jacky917/account?error=last_method"));
         assertThat(linkedProviders(userId)).containsExactly("google");
+    }
+
+    @Test
+    @DisplayName("已啟用兩步驟驗證的第三方登入：要求驗證碼，通過後 amr 為 fed、otp（T-MFA-04）")
+    void federatedLoginsNeedTheSecondStep() throws Exception {
+        String subject = "google-" + UUID.randomUUID();
+        String email = "mfa-" + UUID.randomUUID() + "@example.com";
+        logInWithGoogle(subject, email, true, "Mfa User");
+        String userId = userOf(subject);
+        String secret = enableMfa(userId);
+
+        Flow flow = startFlow();
+        assertThat(googleCallback(flow, subject, email, true, "Mfa User")).isEqualTo("/jacky917/mfa");
+        mockMvc.perform(get(flow.authorizeUrl).session(flow.session).accept(MediaType.TEXT_HTML))
+                .andExpect(header().string(HttpHeaders.LOCATION, "/login"));
+        clock.advance(Duration.ofSeconds(30));
+        String location = secondStep(flow.session, secret);
+        assertThat(location).startsWith("http://localhost/oauth2/authorize");
+        flow.code = codeFrom(location, flow.session);
+        Jwt idToken = jwtDecoder.decode(flow.exchange(this).get("id_token").asString());
+        assertThat(idToken.getClaimAsStringList("amr")).containsExactly("fed", "otp");
+    }
+
+    @Test
+    @DisplayName("以密碼確認連結、擁有者已啟用兩步驟驗證：第二步通過之前不建立連結；通過後才連結並登入")
+    void linksOnlyAfterTheSecondStep() throws Exception {
+        String email = "mfa-owner-" + UUID.randomUUID() + "@example.com";
+        String ownerId = users.createUser(new NewUser("mfa-owner-" + UUID.randomUUID().toString().substring(0, 8),
+                email, true, PASSWORD, "Owner", Set.of())).id();
+        String secret = enableMfa(ownerId);
+        String subject = "google-" + UUID.randomUUID();
+        Flow flow = startFlow();
+        assertThat(googleCallback(flow, subject, email, true, "Owner at Google")).isEqualTo("/jacky917/link-account");
+
+        assertThat(confirm(flow.session, PASSWORD)).isEqualTo("/jacky917/mfa");
+        assertThat(linkedProviders(ownerId)).as("只知道密碼還不能建立連結").isEmpty();
+        clock.advance(Duration.ofSeconds(30));
+        String location = secondStep(flow.session, secret);
+        assertThat(location).startsWith("http://localhost/oauth2/authorize");
+        assertThat(linkedProviders(ownerId)).containsExactly("google");
+        assertThat(audits(ownerId)).contains("ACCOUNT_LINKED:google");
+        String asid = (String) flow.session.getAttribute(AuthSessionService.SESSION_ATTRIBUTE);
+        assertThat(jdbc.sql("SELECT amr FROM auth_session WHERE session_id = :id").param("id", asid)
+                .query(String.class).single()).isEqualTo("fed,pwd,otp");
+    }
+
+    private String enableMfa(String userId) {
+        String secret = Totp.newSecret();
+        assertThat(mfa.enable(userId, secret, Totp.code(secret, Totp.step(clock.instant())))).isPresent();
+        return secret;
+    }
+
+    private String secondStep(MockHttpSession session, String secret) throws Exception {
+        return mockMvc.perform(post("/jacky917/mfa").session(session).with(csrf())
+                        .param("code", Totp.code(secret, Totp.step(clock.instant()))))
+                .andExpect(status().is3xxRedirection()).andReturn().getResponse().getRedirectedUrl();
     }
 
     private String confirm(MockHttpSession session, String password) throws Exception {

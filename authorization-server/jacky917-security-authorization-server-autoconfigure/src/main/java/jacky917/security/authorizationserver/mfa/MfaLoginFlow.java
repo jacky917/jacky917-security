@@ -115,7 +115,7 @@ public class MfaLoginFlow {
         // 第二步通過之前不是已登入狀態：授權端點因此會導向登入頁
         completion.restore(null, request, response);
         request.getSession().setAttribute(PendingLogin.SESSION_ATTRIBUTE, new PendingLogin(userId, method, idp, amr,
-                authentication, continuation, clock.instant(), 0, enrollment));
+                authentication, continuation, clock.instant(), 0, enrollment ? Totp.newSecret() : null));
         log.info("User {} passed the first step of a {} login; two-step verification {}", userId, method,
                 enrollment ? "must be turned on" : "is next");
         response.sendRedirect(request.getContextPath() + (enrollment ? MfaPaths.SETUP : MfaPaths.VERIFY));

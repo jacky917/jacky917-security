@@ -41,13 +41,15 @@
         </th:block>
         <button type="submit" th:text="${text['consent.allow']}">Allow</button>
     </form>
-    <!-- 不送 scope：client 收到 access_denied -->
+    <!--/* 不送 scope：第一次同意時 client 收到 access_denied；已有同意紀錄時以先前同意的 scope 繼續 */-->
     <form method="post" th:action="@{/oauth2/authorize}">
         <input type="hidden" name="client_id" th:value="${clientId}">
         <input type="hidden" name="state" th:value="${state}">
-        <button type="submit" class="secondary" th:text="${text['consent.deny']}">Deny</button>
+        <button type="submit" class="secondary"
+                th:text="${#lists.isEmpty(previousScopes) ? text['consent.deny'] : text['consent.deny-new']}">Deny</button>
     </form>
-    <p class="hint" th:text="${text['consent.hint']}">You can withdraw this on your account page.</p>
+    <p class="hint" th:text="${#lists.isEmpty(previousScopes) ? text['consent.hint'] : text['consent.hint-previous']}">
+        You can withdraw this on your account page.</p>
     <p class="meta">
         <a class="link" th:if="${client.homepageUrl}" th:href="${client.homepageUrl}" rel="noopener"
            th:text="${text['consent.homepage']}">Home page</a>

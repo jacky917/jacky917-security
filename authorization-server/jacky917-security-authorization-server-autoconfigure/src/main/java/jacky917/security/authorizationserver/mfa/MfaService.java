@@ -3,6 +3,7 @@ package jacky917.security.authorizationserver.mfa;
 import jacky917.security.authorizationserver.keys.KeyEncryptor;
 import jacky917.security.authorizationserver.user.UserAccountService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionOperations;
 
@@ -32,7 +33,8 @@ import java.util.Set;
  *       <br>密鑰以主金鑰（{@code keys.encryption-key}）加密儲存。</li>
  *   <li>A code is accepted for the current 30-second step or the one
  *       before or after it, and only once.
- *       <br>驗證碼在目前、前一個或後一個 30 秒時間步內有效，且只能使用一次。</li>
+ *       <br>驗證碼在目前、前一個或後一個 30 秒時間步內有效，且只能使用
+ *       一次。</li>
  *   <li>Enabling creates 10 single-use recovery codes; only their SHA-256
  *       hashes are stored.
  *       <br>啟用時產生 10 組一次性復原碼，只儲存其 SHA-256 雜湊。</li>
@@ -110,7 +112,8 @@ public class MfaService {
      * Returns whether a user has a role that must use two-step
      * verification ({@code mfa.required-roles}).
      * <p>
-     * 回傳使用者是否擁有必須使用兩步驟驗證的角色（{@code mfa.required-roles}）。
+     * 回傳使用者是否擁有必須使用兩步驟驗證的角色
+     * （{@code mfa.required-roles}）。
      *
      * @param userId  the user
      *                <br>使用者
@@ -160,25 +163,34 @@ public class MfaService {
         if (step.isEmpty()) {
             return Optional.empty();
         }
-        return transactions.execute(status -> {
-            if (isEnabled(userId)) {
-                return Optional.<List<String>>empty();
-            }
-            jdbc.sql("INSERT INTO user_mfa_totp (user_id, secret_encrypted, encryption_key_id, last_used_step, "
-                            + "enabled_at) VALUES (:user, :secret, :key, :step, :now)")
-                    .param("user", userId).param("secret", encryptor.encrypt(secret, keyName(userId)))
-                    .param("key", encryptor.masterKeyId()).param("step", step.getAsLong())
-                    .param("now", Timestamp.from(now)).update();
-            log.info("User {} turned on two-step verification", userId);
-            return Optional.of(replaceRecoveryCodes(userId, now));
-        });
+        try {
+            return transactions.execute(status -> {
+                if (isEnabled(userId)) {
+                    return Optional.<List<String>>empty();
+                }
+                jdbc.sql("INSERT INTO user_mfa_totp (user_id, secret_encrypted, encryption_key_id, last_used_step, "
+                                + "enabled_at) VALUES (:user, :secret, :key, :step, :now)")
+                        .param("user", userId).param("secret", encryptor.encrypt(secret, keyName(userId)))
+                        .param("key", encryptor.masterKeyId()).param("step", step.getAsLong())
+                        .param("now", Timestamp.from(now)).update();
+                log.info("User {} turned on two-step verification", userId);
+                return Optional.of(replaceRecoveryCodes(userId, now));
+            });
+        } catch (DuplicateKeyException ex) {
+            // 同時送出的兩個啟用請求：主鍵讓第二個失敗並回滾，視為已啟用
+            log.info("User {} turned on two-step verification twice at the same time", userId);
+            return Optional.empty();
+        }
     }
 
     /**
-     * Checks a code from the authenticator app or a recovery code. A code
-     * is used up when it is accepted.
+     * Checks a code from the authenticator app or a recovery code. Six
+     * digits are a code from the app; anything else is a recovery code,
+     * whose hyphen, spaces and case are ignored. A code is used up when it
+     * is accepted.
      * <p>
-     * 檢查驗證器 App 的驗證碼或復原碼。驗證碼被接受後即用掉。
+     * 檢查驗證器 App 的驗證碼或復原碼。6 位數字為 App 的驗證碼，其餘視為復原碼
+     * （忽略連字號、空白與大小寫）。驗證碼被接受後即用掉。
      *
      * @param userId  the user
      *                <br>使用者
@@ -193,8 +205,14 @@ public class MfaService {
             return Verification.INVALID;
         }
         Verification result = transactions.execute(status -> {
-            if (typed.replace(" ", "").chars().allMatch(Character::isDigit)) {
-                return verifyTotp(userId, typed) ? Verification.TOTP : Verification.INVALID;
+            // 以長度區分：驗證碼是 6 位數字，復原碼是 10 個字元（可含連字號），不會混淆
+            String compact = typed.replace(" ", "");
+            if (compact.length() == 6 && compact.chars().allMatch(Character::isDigit)) {
+                return switch (verifyTotp(userId, typed)) {
+                    case ACCEPTED -> Verification.TOTP;
+                    case REJECTED -> Verification.INVALID;
+                    case UNAVAILABLE -> Verification.UNAVAILABLE;
+                };
             }
             int used = jdbc.sql("UPDATE user_recovery_code SET used_at = :now WHERE user_id = :user "
                             + "AND code_hash = :hash AND used_at IS NULL")
@@ -216,11 +234,13 @@ public class MfaService {
      * @param code    the code from the app
      *                <br>App 上的驗證碼
      * @return the new recovery codes, shown only now; empty if the code is
-     *         wrong
-     *         <br>新的復原碼，只在此時顯示；驗證碼錯誤時為空
+     *         wrong or two-step verification is off. An accepted code is
+     *         used up and cannot log in afterwards.
+     *         <br>新的復原碼，只在此時顯示；驗證碼錯誤或未啟用時為空。被接受的
+     *         驗證碼即用掉，之後不能再用來登入。
      */
     public Optional<List<String>> regenerateRecoveryCodes(String userId, String code) {
-        return transactions.execute(status -> verifyTotp(userId, code.strip())
+        return transactions.execute(status -> verifyTotp(userId, code.strip()) == TotpCheck.ACCEPTED
                 ? Optional.of(replaceRecoveryCodes(userId, clock.instant()))
                 : Optional.<List<String>>empty());
     }
@@ -246,23 +266,33 @@ public class MfaService {
         return Boolean.TRUE.equals(disabled);
     }
 
-    private boolean verifyTotp(String userId, String code) {
+    private TotpCheck verifyTotp(String userId, String code) {
         Optional<Secret> secret = jdbc.sql("SELECT secret_encrypted, encryption_key_id, last_used_step "
                         + "FROM user_mfa_totp WHERE user_id = :user")
                 .param("user", userId)
                 .query((rs, rowNum) -> new Secret(rs.getString(1), rs.getString(2), rs.getLong(3))).optional();
         if (secret.isEmpty()) {
-            return false;
+            return TotpCheck.REJECTED;
         }
-        String plain = encryptor.decrypt(secret.get().encrypted(), keyName(userId), secret.get().keyId());
+        String plain;
+        try {
+            plain = encryptor.decrypt(secret.get().encrypted(), keyName(userId), secret.get().keyId());
+        } catch (IllegalStateException ex) {
+            // 主金鑰（keys.encryption-key）更換或資料被竄改：驗證碼無法檢查，但復原碼不需要解密，仍可使用
+            log.error("Cannot decrypt the two-step verification secret of user {} (stored with master key '{}'); "
+                    + "was keys.encryption-key changed? The user can still log in with a recovery code, or an "
+                    + "administrator can reset it", userId, secret.get().keyId(), ex);
+            return TotpCheck.UNAVAILABLE;
+        }
         OptionalLong step = Totp.verify(plain, code, clock.instant(), secret.get().lastUsedStep());
         if (step.isEmpty()) {
-            return false;
+            return TotpCheck.REJECTED;
         }
         // 只在時間步比上一次大時更新：同時送出的同一個驗證碼只有一個成功
-        return jdbc.sql("UPDATE user_mfa_totp SET last_used_step = :step WHERE user_id = :user "
+        int updated = jdbc.sql("UPDATE user_mfa_totp SET last_used_step = :step WHERE user_id = :user "
                         + "AND last_used_step < :step")
-                .param("step", step.getAsLong()).param("user", userId).update() == 1;
+                .param("step", step.getAsLong()).param("user", userId).update();
+        return updated == 1 ? TotpCheck.ACCEPTED : TotpCheck.REJECTED;
     }
 
     private List<String> replaceRecoveryCodes(String userId, Instant now) {
@@ -343,7 +373,20 @@ public class MfaService {
          * <p>
          * 驗證碼錯誤或已使用過。
          */
-        INVALID
+        INVALID,
+
+        /**
+         * The secret cannot be decrypted, so codes from the app cannot be
+         * checked; recovery codes still work. Not the user's fault.
+         * <p>
+         * 密鑰無法解密，因此無法檢查 App 的驗證碼；復原碼仍可使用。不是使用者的
+         * 錯誤。
+         */
+        UNAVAILABLE
+    }
+
+    private enum TotpCheck {
+        ACCEPTED, REJECTED, UNAVAILABLE
     }
 
     /**

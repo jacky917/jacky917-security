@@ -2,16 +2,19 @@ package jacky917.security.authorizationserver.autoconfigure;
 
 import jacky917.security.authorizationserver.account.AccountLinks;
 import jacky917.security.authorizationserver.account.AccountMailContent;
+import jacky917.security.authorizationserver.account.AccountMailDispatcher;
 import jacky917.security.authorizationserver.account.AccountMailer;
 import jacky917.security.authorizationserver.account.ActionTokenService;
 import jacky917.security.authorizationserver.account.LoggingAccountMailer;
 import jacky917.security.authorizationserver.account.SpringAccountMailer;
 import jacky917.security.authorizationserver.account.UnavailableAccountMailer;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -20,6 +23,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import java.util.concurrent.Executors;
 
 /**
  * Account self-service support: the account mails and their one-time
@@ -41,6 +45,7 @@ import java.time.Clock;
  * @author Jacky
  * @since 2.1.0
  */
+@Slf4j
 @Configuration(proxyBeanMethods = false)
 class AuthorizationServerAccountConfiguration {
 
@@ -58,6 +63,14 @@ class AuthorizationServerAccountConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    AccountMailDispatcher accountMailDispatcher(AccountMailer mailer, ApplicationEventPublisher events) {
+        // 每封信一個虛擬執行緒：寄信多半在等待郵件伺服器。不註冊成 Executor Bean，否則 Spring Boot 不會建立
+        // 應用程式的 applicationTaskExecutor；dispatcher 關閉時一併關閉它
+        return new AccountMailDispatcher(mailer, Executors.newVirtualThreadPerTaskExecutor(), events);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     AccountLinks accountLinks(AuthorizationServerProperties properties) {
         return new AccountLinks(properties.getIssuer());
     }
@@ -71,8 +84,13 @@ class AuthorizationServerAccountConfiguration {
     }
 
     static AccountMailer withoutMailSender(AuthorizationServerProperties properties, AccountMailContent content) {
-        return properties.getAccount().getMail().isLogLinks() ? new LoggingAccountMailer(content)
-                : new UnavailableAccountMailer();
+        if (properties.getAccount().getMail().isLogLinks()) {
+            return new LoggingAccountMailer(content);
+        }
+        // 讓維運人員知道為什麼忘記密碼頁是 404
+        log.info("Account mails are off: there is no JavaMailSender and account.mail.log-links is false, so the "
+                + "forgotten password and registration pages are not offered");
+        return new UnavailableAccountMailer();
     }
 
     /**
@@ -80,8 +98,8 @@ class AuthorizationServerAccountConfiguration {
      * and the application has one. Member classes are processed before the
      * outer {@code @Bean} methods, so this bean wins over the fallback.
      * <p>
-     * 有郵件類別且應用程式有 {@code JavaMailSender} 時使用它。成員類別會先於外層
-     * 的 {@code @Bean} 方法處理，因此此 Bean 優先於預設的 Bean。
+     * 有郵件類別且應用程式有 {@code JavaMailSender} 時使用它。成員類別會先於
+     * 外層的 {@code @Bean} 方法處理，因此此 Bean 優先於預設的 Bean。
      */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(JavaMailSender.class)

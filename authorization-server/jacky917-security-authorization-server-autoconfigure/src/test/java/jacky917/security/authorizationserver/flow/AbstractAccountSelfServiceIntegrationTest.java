@@ -1,6 +1,8 @@
 package jacky917.security.authorizationserver.flow;
 
 import jacky917.security.authorizationserver.account.AccountMail;
+import jacky917.security.authorizationserver.account.AccountMailDispatcher;
+import jacky917.security.authorizationserver.account.AccountMailFailedEvent;
 import jacky917.security.authorizationserver.account.AccountMailer;
 import jacky917.security.authorizationserver.user.NewUser;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,8 +10,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
@@ -43,9 +47,13 @@ abstract class AbstractAccountSelfServiceIntegrationTest extends AbstractFlowInt
     @Autowired
     CapturingMailer mailer;
 
+    @Autowired
+    FailedMails failedMails;
+
     @BeforeEach
     void clearMails() {
         mailer.sent.clear();
+        failedMails.events.clear();
     }
 
     // ---- 工作 22：變更密碼 ----
@@ -297,6 +305,66 @@ abstract class AbstractAccountSelfServiceIntegrationTest extends AbstractFlowInt
         assertThat(mailer.sent).extracting(AccountMail::to).containsExactly("pending@example.com", "pending@example.com");
     }
 
+    // ---- 審查後的修正 ----
+
+    @Test
+    @DisplayName("密碼超過 72 bytes（BCrypt 的上限）：註冊、重設、變更都顯示密碼規則錯誤，不會 500，重設連結仍可使用")
+    void passwordsLongerThanBcryptAllowsAreRefused() throws Exception {
+        String tooLong = "中".repeat(25);
+        assertThat(register("long@example.com", null, tooLong, tooLong)).contains("密碼不符合下方的規則");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM app_user WHERE email = 'long@example.com'").query(Integer.class)
+                .single()).isZero();
+
+        createUserWithEmail("long-resetter", "long-resetter@example.com");
+        forgot("long-resetter@example.com");
+        String token = tokenOf(mailer.sent.get(0));
+        assertThat(reset(token, tooLong, tooLong)).contains("不符合下方的規則");
+        assertThat(reset(token, NEW_PASSWORD, NEW_PASSWORD)).as("連結沒有被用掉").contains("密碼已設定");
+
+        LoggedIn session = logInAndExchangeCode("long-resetter", NEW_PASSWORD);
+        assertThat(changePasswordPage(session.browser(), NEW_PASSWORD, tooLong, tooLong)).contains("不符合下方的規則");
+    }
+
+    @Test
+    @DisplayName("註冊屬於帳號、但 Email 未驗證的地址：不寄任何信（重設連結只能寄到已驗證的地址），畫面相同")
+    void registeringAnUnverifiedAddressSendsNothing() throws Exception {
+        users.createUser(new NewUser("unverified-owner", "unverified-owner@example.com", false, PASSWORD, null,
+                Set.of()));
+        assertThat(register("unverified-owner@example.com", null, NEW_PASSWORD, NEW_PASSWORD))
+                .contains("我們已寄出連結到此 Email");
+        assertThat(mailer.sent).isEmpty();
+    }
+
+    @Test
+    @DisplayName("重設連結在 Email 改為未驗證或帳號停用後失效")
+    void resetLinksNeedAVerifiedActiveAccount() throws Exception {
+        String userId = createUserWithEmail("changing", "changing@example.com");
+        forgot("changing@example.com");
+        String token = tokenOf(mailer.sent.get(0));
+        jdbc.sql("UPDATE app_user SET email_verified = :no WHERE id = :id").param("no", false).param("id", userId)
+                .update();
+        assertThat(page(new MockHttpSession(), "/jacky917/password/reset?token=" + token)).contains("此連結已失效");
+        assertThat(reset(token, NEW_PASSWORD, NEW_PASSWORD)).contains("此連結已失效");
+        jdbc.sql("UPDATE app_user SET email_verified = :yes, status = 'DISABLED' WHERE id = :id").param("yes", true)
+                .param("id", userId).update();
+        assertThat(reset(token, NEW_PASSWORD, NEW_PASSWORD)).contains("此連結已失效");
+    }
+
+    @Test
+    @DisplayName("寄信失敗：畫面與成功時相同（不透露帳號是否存在），並發布 AccountMailFailedEvent")
+    void mailFailuresDoNotChangeThePage() throws Exception {
+        createUserWithEmail("unlucky", "unlucky@example.com");
+        mailer.failing = true;
+        try {
+            assertThat(forgot("unlucky@example.com")).contains("如果有帳號使用此 Email");
+        } finally {
+            mailer.failing = false;
+        }
+        assertThat(mailer.sent).isEmpty();
+        assertThat(failedMails.events).extracting(AccountMailFailedEvent::type)
+                .containsExactly(AccountMail.Type.PASSWORD_RESET);
+    }
+
     // ---- 共用工具 ----
 
     String forgot(String email) throws Exception {
@@ -371,6 +439,8 @@ abstract class AbstractAccountSelfServiceIntegrationTest extends AbstractFlowInt
 
         final List<AccountMail> sent = new CopyOnWriteArrayList<>();
 
+        volatile boolean failing;
+
         @Override
         public boolean isAvailable() {
             return true;
@@ -378,7 +448,23 @@ abstract class AbstractAccountSelfServiceIntegrationTest extends AbstractFlowInt
 
         @Override
         public void send(AccountMail mail) {
+            if (failing) {
+                throw new IllegalStateException("mail server is down");
+            }
             sent.add(mail);
+        }
+    }
+
+    /**
+     * 收集寄信失敗事件。
+     */
+    static class FailedMails {
+
+        final List<AccountMailFailedEvent> events = new CopyOnWriteArrayList<>();
+
+        @EventListener
+        void on(AccountMailFailedEvent event) {
+            events.add(event);
         }
     }
 
@@ -386,8 +472,21 @@ abstract class AbstractAccountSelfServiceIntegrationTest extends AbstractFlowInt
     static class Mail {
 
         @Bean
+        FailedMails failedMails() {
+            return new FailedMails();
+        }
+
+        @Bean
         CapturingMailer accountMailer() {
             return new CapturingMailer();
+        }
+
+        /**
+         * 立即寄出，測試可以在請求結束後直接檢查信件。
+         */
+        @Bean
+        AccountMailDispatcher accountMailDispatcher(CapturingMailer mailer, ApplicationEventPublisher events) {
+            return new AccountMailDispatcher(mailer, Runnable::run, events);
         }
     }
 }

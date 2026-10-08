@@ -220,6 +220,14 @@ public class AccountLinkController {
             return;
         }
         String provider = pending.info().provider();
+        UsernamePasswordAuthenticationToken proof = UsernamePasswordAuthenticationToken.authenticated(owner.id(), null,
+                List.of(FactorGrantedAuthority.withAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY).issuedAt(now)
+                        .build()));
+        // 擁有者需要兩步驟驗證時，先通過第二步才建立連結：待確認的連結留在瀏覽器 Session，第二步完成後才連結
+        if (mfa.challenge(owner.id(), LoginMethod.FEDERATED, provider, "fed,pwd", proof,
+                PendingLogin.Continuation.LINK, request, response)) {
+            return;
+        }
         try {
             // 用掉待確認的連結與建立連結在同一個交易中：連結失敗時待確認的連結維持未使用
             if (!pendingLinks.confirm(pending, () -> identities.link(owner.id(), pending.info()))) {
@@ -239,13 +247,6 @@ public class AccountLinkController {
                 .userId(owner.id()).login(LoginMethod.FEDERATED, provider).request(request).build());
         // 登入前更換 Session ID（session fixation）
         request.changeSessionId();
-        UsernamePasswordAuthenticationToken proof = UsernamePasswordAuthenticationToken.authenticated(owner.id(), null,
-                List.of(FactorGrantedAuthority.withAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY).issuedAt(now)
-                        .build()));
-        if (mfa.challenge(owner.id(), LoginMethod.FEDERATED, provider, "fed,pwd", proof,
-                PendingLogin.Continuation.LINK, request, response)) {
-            return;
-        }
         completion.logIn(owner.id(), LoginMethod.FEDERATED, provider, "fed,pwd", proof, request, response);
         continueAuthorization.onAuthenticationSuccess(request, response,
                 SecurityContextHolder.getContext().getAuthentication());

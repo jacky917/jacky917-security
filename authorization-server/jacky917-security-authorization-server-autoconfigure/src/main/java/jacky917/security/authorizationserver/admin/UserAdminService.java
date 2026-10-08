@@ -2,6 +2,7 @@ package jacky917.security.authorizationserver.admin;
 
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.session.RevokeReason;
+import jacky917.security.authorizationserver.support.Columns;
 import jacky917.security.authorizationserver.user.NewUser;
 import jacky917.security.authorizationserver.user.PasswordPolicy;
 import jacky917.security.authorizationserver.user.UserAccount;
@@ -190,6 +191,7 @@ public class UserAdminService {
             errors.put("username", "username or email is required");
         }
         checkEmail(request.email(), errors);
+        checkDisplayName(request.displayName(), errors);
         checkPassword(request.password(), errors);
         Set<String> roles = request.roles() == null ? Set.of() : Set.copyOf(request.roles());
         roles.stream().filter(role -> !roleExists(role)).forEach(role -> errors.put("roles", "role " + role
@@ -240,9 +242,11 @@ public class UserAdminService {
      *         <br>更新後的使用者
      * @throws AdminApiException {@code 400} for an unknown or invalid field,
      *         or a change of the caller's own status; {@code 404} if there is
-     *         no such user
+     *         no such user; {@code 409} if the new username or email belongs
+     *         to another user
      *         <br>欄位不明或無效、或變更自己的狀態時為 {@code 400}；使用者
-     *         不存在時為 {@code 404}
+     *         不存在時為 {@code 404}；新的帳號或 Email 屬於其他使用者時為
+     *         {@code 409}
      */
     public UserDetail update(String userId, Map<String, Object> changes) {
         Set<String> known = Set.of("username", "email", "emailVerified", "displayName", "status");
@@ -258,6 +262,9 @@ public class UserAdminService {
         }
         if (changes.containsKey("email")) {
             checkEmail(text(changes.get("email")), errors);
+        }
+        if (changes.containsKey("displayName")) {
+            checkDisplayName(text(changes.get("displayName")), errors);
         }
         if (changes.containsKey("emailVerified") && !(changes.get("emailVerified") instanceof Boolean)) {
             errors.put("emailVerified", "must be true or false");
@@ -522,6 +529,12 @@ public class UserAdminService {
         }
     }
 
+    private static void checkDisplayName(@Nullable String displayName, Map<String, String> errors) {
+        if (displayName != null && displayName.strip().length() > Columns.DISPLAY_NAME) {
+            errors.put("displayName", "must be at most " + Columns.DISPLAY_NAME + " characters");
+        }
+    }
+
     private void checkPassword(@Nullable String password, Map<String, String> errors) {
         if (password == null) {
             return;
@@ -679,7 +692,8 @@ public class UserAdminService {
      *                                <br>帳號，或 {@code null}
      * @param email                   the email, or {@code null}; one of the
      *                                two is required
-     *                                <br>Email，或 {@code null}；兩者至少需要一個
+     *                                <br>Email，或 {@code null}；兩者至少需要
+     *                                一個
      * @param emailVerified           whether the email is already verified;
      *                                {@code null} means {@code false}
      *                                <br>Email 是否已驗證；{@code null} 視為
@@ -698,7 +712,8 @@ public class UserAdminService {
      *                                <br>顯示名稱，或 {@code null}
      * @param roles                   the roles besides {@code USER}, or
      *                                {@code null}
-     *                                <br>{@code USER} 以外的角色，或 {@code null}
+     *                                <br>{@code USER} 以外的角色，或
+     *                                {@code null}
      */
     public record CreateUserRequest(@Nullable String username, @Nullable String email, @Nullable Boolean emailVerified,
                                     @Nullable String password, @Nullable Boolean passwordChangeRequired,

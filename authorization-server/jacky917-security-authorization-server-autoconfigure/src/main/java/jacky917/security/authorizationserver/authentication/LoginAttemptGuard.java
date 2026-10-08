@@ -25,34 +25,43 @@ import java.time.Duration;
 import java.time.Instant;
 
 /**
- * Refuses password logins from an IP address with too many recent failures
- * (detailed design §5.1).
+ * Refuses the login-related forms of an IP address with too many recent
+ * failed logins (detailed design §5.1).
  * <p>
- * 拒絕近期登入失敗次數過多之 IP 的密碼登入（詳細設計 §5.1）。
+ * 拒絕近期登入失敗次數過多之 IP 的登入相關表單（詳細設計 §5.1）。
  * <p>
- * Only the forms that check a password, send a mail or set a password are
- * checked: {@code POST /login}, {@code /jacky917/link-account},
- * {@code /jacky917/password/forgot}, {@code /jacky917/password/reset},
- * {@code /jacky917/register}, {@code /jacky917/verify-email},
- * {@code /jacky917/verify-email/resend}, {@code /jacky917/mfa} and
- * {@code /jacky917/mfa/setup}. They are matched on the decoded path the same
- * way Spring Security and Spring MVC match them, so an encoded path such as
- * {@code /%6Cogin} cannot skip the check. When the failed logins of the last
- * minute from the request's IP reach the limit, the request is refused
- * before it is processed: the browser is sent to
+ * The forms that check a password, a code or a link, or that send a mail,
+ * are checked: {@code POST /login}, {@code /jacky917/link-account},
+ * {@code /jacky917/account/password}, {@code /jacky917/password/forgot},
+ * {@code /jacky917/password/reset}, {@code /jacky917/register},
+ * {@code /jacky917/verify-email}, {@code /jacky917/verify-email/resend},
+ * {@code /jacky917/mfa} and {@code /jacky917/mfa/setup}. They are matched
+ * on the decoded path the same way Spring Security and Spring MVC match
+ * them, so an encoded path such as {@code /%6Cogin} cannot skip the check.
+ * <p>
+ * 檢查會驗證密碼、驗證碼或連結，或會寄信的表單：{@code POST /login}、
+ * {@code /jacky917/link-account}、{@code /jacky917/account/password}、
+ * {@code /jacky917/password/forgot}、{@code /jacky917/password/reset}、
+ * {@code /jacky917/register}、{@code /jacky917/verify-email}、
+ * {@code /jacky917/verify-email/resend}、{@code /jacky917/mfa} 與
+ * {@code /jacky917/mfa/setup}。與 Spring Security、Spring MVC 一樣以解碼後的
+ * 路徑比對，因此 {@code /%6Cogin} 這類編碼過的路徑無法略過檢查。
+ * <p>
+ * Only failed {@code LOGIN} events count, among them wrong two-step
+ * verification codes; the other forms are refused while the IP is over the
+ * limit but their own requests do not count. Mails are limited per user
+ * by {@code ActionTokenService#COOLDOWN}. When the limit is reached, the
+ * request is refused before it is processed: the browser is sent to
  * {@code /login?error=rate_limited}, and a failed {@code LOGIN} event with
- * reason {@code RATE_LIMITED} is published, which itself counts as a
- * failure. The IP is {@code HttpServletRequest#getRemoteAddr()}; behind a
- * reverse proxy, configure {@code server.forward-headers-strategy}.
+ * reason {@code RATE_LIMITED} is published, which itself counts. The IP is
+ * {@code HttpServletRequest#getRemoteAddr()}; behind a reverse proxy,
+ * configure {@code server.forward-headers-strategy}.
  * <p>
- * 只檢查會檢查密碼、寄信或設定密碼的表單：{@code POST /login}、
- * {@code /jacky917/link-account}、{@code /jacky917/password/forgot}、
- * {@code /jacky917/password/reset}、{@code /jacky917/register}、
- * {@code /jacky917/verify-email}、{@code /jacky917/verify-email/resend}、
- * {@code /jacky917/mfa} 與 {@code /jacky917/mfa/setup}。與 Spring Security、Spring MVC 一樣以解碼後的路徑比對，因此 {@code /%6Cogin} 這類編碼
- * 過的路徑無法略過檢查。請求 IP 最近一分鐘的登入失敗次數達到上限時，在處理之前
- * 就拒絕：瀏覽器被導向 {@code /login?error=rate_limited}，並發布原因為
- * {@code RATE_LIMITED} 的失敗 {@code LOGIN} 事件（它本身也計入失敗）。IP 取自
+ * 只計算失敗的 {@code LOGIN} 事件（包含錯誤的兩步驟驗證碼）；其他表單在該 IP
+ * 超過上限時一併拒絕，但它們本身的請求不計入。信件數量另以每位使用者的
+ * {@code ActionTokenService#COOLDOWN} 限制。達到上限時在處理之前就拒絕：瀏覽器
+ * 被導向 {@code /login?error=rate_limited}，並發布原因為 {@code RATE_LIMITED}
+ * 的失敗 {@code LOGIN} 事件（它本身也計入）。IP 取自
  * {@code HttpServletRequest#getRemoteAddr()}；在反向代理之後請設定
  * {@code server.forward-headers-strategy}。
  *
@@ -63,10 +72,11 @@ import java.time.Instant;
 public class LoginAttemptGuard extends OncePerRequestFilter {
 
     private static final Duration WINDOW = Duration.ofMinutes(1);
-    private static final RequestMatcher PASSWORD_FORMS = new OrRequestMatcher(
+    private static final RequestMatcher GUARDED_FORMS = new OrRequestMatcher(
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/login"),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/jacky917/link-account"),
-            // 會寄信或設定密碼的表單也受同一個 IP 限流保護
+            // 這些表單在該 IP 的登入失敗超過上限時一併拒絕；它們本身的請求不計入（兩步驟驗證的錯誤除外）
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, AccountPaths.CHANGE_PASSWORD),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, AccountPaths.FORGOT_PASSWORD),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, AccountPaths.RESET_PASSWORD),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, AccountPaths.REGISTER),
@@ -105,7 +115,7 @@ public class LoginAttemptGuard extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // 與表單登入、Spring MVC 使用相同的比對方式；以原始 URI 比對會被 /%6Cogin 這類編碼繞過
-        return !PASSWORD_FORMS.matches(request);
+        return !GUARDED_FORMS.matches(request);
     }
 
     @Override

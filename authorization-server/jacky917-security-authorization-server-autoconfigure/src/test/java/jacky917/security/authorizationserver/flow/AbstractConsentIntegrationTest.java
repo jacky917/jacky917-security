@@ -74,6 +74,29 @@ abstract class AbstractConsentIntegrationTest extends AbstractFlowIntegrationTes
     }
 
     @Test
+    @DisplayName("已有同意紀錄時：按鈕為「不允許新的權限」；按下後以先前同意的 scope 繼續，新的 scope 不授予")
+    void declinesOnlyTheNewScopesAfterAConsent() throws Exception {
+        createUser("returning-user", null);
+        MockHttpSession browser = logIn("returning-user", "openid profile");
+        decide(browser, consentRequest(browser, "openid profile", randomVerifier()), "profile");
+        String verifier = randomVerifier();
+        MultiValueMap<String, String> consent = consentRequest(browser, "openid profile email", verifier);
+        String html = mockMvc.perform(get("/oauth2/consent").session(browser).params(consent)
+                        .header(HttpHeaders.ACCEPT_LANGUAGE, "zh-TW")).andExpect(status().isOk()).andReturn()
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(html).contains("不允許新的權限").contains("先前允許的權限仍然有效");
+
+        String callback = decide(browser, consent);
+        String code = UriComponentsBuilder.fromUriString(callback).build().getQueryParams().getFirst("code");
+        assertThat(code).as("Spring Authorization Server 以先前同意的 scope 繼續").isNotNull();
+        assertThat(exchange(code, verifier).get("scope").asString().split(" "))
+                .containsExactlyInAnyOrder("openid", "profile");
+        assertThat(jdbc.sql("SELECT authorities FROM oauth2_authorization_consent WHERE principal_name = "
+                + "(SELECT id FROM app_user WHERE username = 'returning-user')").query(String.class).single())
+                .doesNotContain("SCOPE_email");
+    }
+
+    @Test
     @DisplayName("帳號頁列出已授權的應用程式；撤回後 Refresh Token 失效、稽核，下一次授權再次詢問（T-CONSENT-02）")
     void revokesFromTheAccountPage() throws Exception {
         String userId = createUser("revoking-user", null);
@@ -102,6 +125,42 @@ abstract class AbstractConsentIntegrationTest extends AbstractFlowIntegrationTes
         assertThat(authorize(browser, "openid profile", randomVerifier())).contains("/oauth2/consent");
         assertThat(mockMvc.perform(get("/jacky917/account").session(browser)).andReturn().getResponse()
                 .getContentAsString(StandardCharsets.UTF_8)).doesNotContain("/jacky917/account/apps/partner/revoke");
+    }
+
+    @Test
+    @DisplayName("撤回授權只影響自己：另一位使用者的同意紀錄與 Refresh Token 不受影響，也不會再被詢問")
+    void revokingAffectsOnlyTheUser() throws Exception {
+        createUser("revoking-a", null);
+        createUser("keeping-b", null);
+        MockHttpSession a = logIn("revoking-a", "openid profile");
+        decide(a, consentRequest(a, "openid profile", randomVerifier()), "profile");
+        MockHttpSession b = logIn("keeping-b", "openid profile");
+        String verifier = randomVerifier();
+        String callback = decide(b, consentRequest(b, "openid profile", verifier), "profile");
+        JsonNode tokens = exchange(UriComponentsBuilder.fromUriString(callback).build().getQueryParams()
+                .getFirst("code"), verifier);
+
+        mockMvc.perform(post("/jacky917/account/apps/partner/revoke").session(a).with(csrf()))
+                .andExpect(status().is3xxRedirection());
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM oauth2_authorization_consent WHERE principal_name = "
+                + "(SELECT id FROM app_user WHERE username = 'keeping-b')").query(Integer.class).single()).isEqualTo(1);
+        mockMvc.perform(post("/oauth2/token").with(httpBasic("partner", "partner-secret"))
+                        .param("grant_type", "refresh_token").param("refresh_token", tokens.get("refresh_token").asString()))
+                .andExpect(status().isOk());
+        assertThat(authorize(b, "openid profile", randomVerifier())).startsWith(PARTNER_REDIRECT_URI);
+    }
+
+    @Test
+    @DisplayName("第三方 client 取得的 token 不能呼叫管理 API：即使使用者是 AS_ADMIN，token 也沒有 as: 權限")
+    void thirdPartyTokensCannotUseTheAdministrationApi() throws Exception {
+        createUser("partner-admin", null, "AS_ADMIN");
+        MockHttpSession browser = logIn("partner-admin", "openid profile");
+        String verifier = randomVerifier();
+        String callback = decide(browser, consentRequest(browser, "openid profile", verifier), "profile");
+        JsonNode tokens = exchange(UriComponentsBuilder.fromUriString(callback).build().getQueryParams()
+                .getFirst("code"), verifier);
+        mockMvc.perform(get("/admin/api/users").header(HttpHeaders.AUTHORIZATION,
+                "Bearer " + tokens.get("access_token").asString())).andExpect(status().isForbidden());
     }
 
     // ---- 共用工具 ----

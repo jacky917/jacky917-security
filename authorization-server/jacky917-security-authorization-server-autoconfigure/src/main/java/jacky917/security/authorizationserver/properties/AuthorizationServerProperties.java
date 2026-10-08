@@ -935,8 +935,8 @@ public class AuthorizationServerProperties implements Validator {
          * with {@code as:}; its tokens carry no roles (D30).
          * <p>
          * 信任等級。{@code third-party} 的 client 一律要求使用者同意、必須有
-         * {@code privacy-policy-url}、不可使用 {@code client_credentials}，也不可
-         * 要求以 {@code as:} 開頭的 scope；它的 token 不含角色（D30）。
+         * {@code privacy-policy-url}、不可使用 {@code client_credentials}，
+         * 也不可要求以 {@code as:} 開頭的 scope；它的 token 不含角色（D30）。
          */
         private TrustLevel trustLevel = TrustLevel.FIRST_PARTY;
 
@@ -1273,7 +1273,8 @@ public class AuthorizationServerProperties implements Validator {
          * <p>
          * Access Token 的 audience 如何決定：{@code shared} 一律使用
          * {@code audience}；{@code per-scope} 使用授予的 scope 所屬的 API
-         * resource，沒有任何 scope 屬於 API resource 時才使用 {@code audience}。
+         * resource，沒有任何 scope 屬於 API resource 時才使用
+         * {@code audience}。
          */
         private AudienceStrategy audienceStrategy = AudienceStrategy.SHARED;
 

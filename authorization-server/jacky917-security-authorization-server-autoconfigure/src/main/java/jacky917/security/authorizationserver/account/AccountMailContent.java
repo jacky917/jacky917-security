@@ -7,7 +7,8 @@ import java.util.Locale;
 
 /**
  * The subject and text of an account mail, from the starter's message
- * bundle ({@code mail.*} keys of {@code jacky917/authorization-server-messages}).
+ * bundle ({@code mail.*} keys of
+ * {@code jacky917/authorization-server-messages}).
  * <p>
  * 帳號信件的主旨與內文，取自 starter 的訊息檔
  * （{@code jacky917/authorization-server-messages} 的 {@code mail.*} key）。
@@ -78,7 +79,7 @@ public class AccountMailContent {
         String key = "mail." + mail.type().name().toLowerCase(Locale.ROOT).replace('_', '-') + "." + part;
         String name = mail.displayName() == null || mail.displayName().isBlank() ? mail.to() : mail.displayName();
         long minutes = mail.validFor() == null ? 0 : mail.validFor().toMinutes();
-        return messages.getMessage(key, new Object[]{productName, name, mail.link() == null ? "" : mail.link(),
+        return messages.getMessage(key, new Object[]{productName, name, mail.link(),
                 minutes}, mail.locale());
     }
 }

@@ -50,7 +50,7 @@ class DatabaseMigrationIntegrationTest {
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {TestDatabases.SQLITE, TestDatabases.POSTGRESQL})
-    @DisplayName("建立全部 23 張表與內建資料，並選擇對應的方言")
+    @DisplayName("建立全部 25 張表與內建資料，並選擇對應的方言")
     void migrationsCreateSchemaAndSeed(String vendor) {
         TestDatabases.runner(vendor).run(context -> {
             assertThat(context).hasNotFailed();

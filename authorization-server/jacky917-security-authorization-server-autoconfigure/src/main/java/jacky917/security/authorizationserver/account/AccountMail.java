@@ -19,26 +19,36 @@ import java.util.Objects;
  *                     <br>信件使用的語言
  * @param displayName  the user's name for the greeting, or {@code null}
  *                     <br>問候語中使用者的名稱，或 {@code null}
- * @param link         the link the user should open, or {@code null} for a
- *                     notice without a link
- *                     <br>使用者應開啟的連結；沒有連結的通知為 {@code null}
- * @param validFor     how long the link works, or {@code null}
- *                     <br>連結的有效期，或 {@code null}
+ * @param link         the link the user should open; every kind of mail has
+ *                     one
+ *                     <br>使用者應開啟的連結；每一種信件都有
+ * @param validFor     how long the link works; required except for
+ *                     {@code PASSWORD_CHANGED}, whose link does not expire
+ *                     <br>連結的有效期；除了連結不會到期的
+ *                     {@code PASSWORD_CHANGED} 之外都必須提供
  * @author Jacky
  * @since 2.1.0
  */
-public record AccountMail(Type type, String to, Locale locale, @Nullable String displayName, @Nullable String link,
+public record AccountMail(Type type, String to, Locale locale, @Nullable String displayName, String link,
                           @Nullable Duration validFor) {
 
     /**
-     * Creates the mail.
+     * Creates the mail; a mail without its link, or a link without its
+     * lifetime, cannot be created, so it is never sent by mistake.
      * <p>
-     * 建立信件。
+     * 建立信件；缺少連結、或連結缺少有效期的信件無法建立，因此不會誤寄出去。
+     *
+     * @throws NullPointerException if a required part is missing
+     *         <br>若缺少必要的部分
      */
     public AccountMail {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(to, "to");
         Objects.requireNonNull(locale, "locale");
+        Objects.requireNonNull(link, "link");
+        if (type != Type.PASSWORD_CHANGED) {
+            Objects.requireNonNull(validFor, () -> "validFor is required for a " + type + " mail");
+        }
     }
 
     /**

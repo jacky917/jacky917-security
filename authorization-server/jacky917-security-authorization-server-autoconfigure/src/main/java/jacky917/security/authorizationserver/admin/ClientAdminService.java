@@ -182,7 +182,7 @@ public class ClientAdminService {
         ClientAuthenticationMethod method = authenticationMethod(request.authenticationMethod(), errors);
         ClientStatus status = initialStatus(request.status(), errors);
         ClientDetails details = details(request.description(), request.logoUrl(), request.homepageUrl(),
-                request.privacyPolicyUrl(), request.termsUrl(), errors);
+                request.privacyPolicyUrl(), request.termsUrl(), true, errors);
         List<String> redirectUris = redirectUris("redirectUris", request.redirectUris(), true, errors);
         List<String> postLogoutRedirectUris = redirectUris("postLogoutRedirectUris", request.postLogoutRedirectUris(),
                 false, errors);
@@ -229,12 +229,14 @@ public class ClientAdminService {
     }
 
     /**
-     * Changes the given fields of a client created through this API;
-     * {@code null} fields stay the same, and an empty text clears an
-     * optional address.
+     * Changes the given fields of a client that is not defined in the
+     * configuration; {@code null} fields stay the same, and an empty text
+     * clears the description or an optional address. The trust level stays
+     * as it is, and the token lifetimes follow the current configuration.
      * <p>
-     * 變更透過此 API 建立之 client 的指定欄位；{@code null} 的欄位維持不變，空
-     * 字串會清除選填的網址。
+     * 變更未定義在設定檔中之 client 的指定欄位；{@code null} 的欄位維持不變，空
+     * 字串會清除說明或選填的網址。信任等級維持不變，token 有效期跟隨目前的
+     * 設定。
      *
      * @param clientId  the client id
      *                  <br>client id
@@ -254,11 +256,13 @@ public class ClientAdminService {
         if (request.name() != null) {
             checkName(request.name(), errors);
         }
+        // 從設定檔移除的舊 client 可能是第一方：保留原本的信任等級，只有第三方必須有隱私權政策
+        TrustLevel trustLevel = TrustLevel.valueOf(before.trustLevel());
         ClientDetails details = details(
                 merge(request.description(), before.description()), merge(request.logoUrl(), before.logoUrl()),
                 merge(request.homepageUrl(), before.homepageUrl()),
                 merge(request.privacyPolicyUrl(), before.privacyPolicyUrl()),
-                merge(request.termsUrl(), before.termsUrl()), errors);
+                merge(request.termsUrl(), before.termsUrl()), trustLevel == TrustLevel.THIRD_PARTY, errors);
         List<String> redirectUris = request.redirectUris() == null ? null
                 : redirectUris("redirectUris", request.redirectUris(), true, errors);
         List<String> postLogoutRedirectUris = request.postLogoutRedirectUris() == null ? null
@@ -292,7 +296,7 @@ public class ClientAdminService {
                 // token 有效期跟隨目前的設定
                 builder.tokenSettings(ClientRegistrationSynchronizer.tokenSettings(properties));
             });
-            profiles.createOrUpdate(find(clientId).getId(), TrustLevel.THIRD_PARTY, name, details, clock.instant());
+            profiles.createOrUpdate(find(clientId).getId(), trustLevel, name, details, clock.instant());
             audit.record("CLIENT_UPDATED", AdminAuditTarget.CLIENT, clientId, before, client(clientId));
         });
         return client(clientId);
@@ -311,8 +315,8 @@ public class ClientAdminService {
      * @throws AdminApiException {@code 404} if the client does not exist;
      *         {@code 409} if it is defined in the configuration or is a
      *         public client
-     *         <br>client 不存在時為 {@code 404}；定義在設定檔中或為 public client
-     *         時為 {@code 409}
+     *         <br>client 不存在時為 {@code 404}；定義在設定檔中或為 public
+     *         client 時為 {@code 409}
      */
     public CreatedClient regenerateSecret(String clientId) {
         ClientView before = managedHere(clientId);
@@ -328,11 +332,12 @@ public class ClientAdminService {
     }
 
     /**
-     * Changes the status of a client created through this API: approving a
+     * Changes the status of a client that is not defined in the
+     * configuration: approving a
      * client under review, suspending a client, or activating a suspended
      * one. Suspending deletes the client's authorizations.
      * <p>
-     * 變更透過此 API 建立之 client 的狀態：核准審核中的 client、停權，或重新
+     * 變更未定義在設定檔中之 client 的狀態：核准審核中的 client、停權，或重新
      * 啟用已停權的 client。停權時刪除該 client 的授權。
      *
      * @param clientId  the client id
@@ -372,10 +377,10 @@ public class ClientAdminService {
     }
 
     /**
-     * Deletes a client created through this API, with its authorizations
-     * and consents.
+     * Deletes a client that is not defined in the configuration, with its
+     * authorizations and consents.
      * <p>
-     * 刪除透過此 API 建立的 client，以及它的授權與同意紀錄。
+     * 刪除未定義在設定檔中的 client，以及它的授權與同意紀錄。
      *
      * @param clientId  the client id
      *                  <br>client id
@@ -461,8 +466,8 @@ public class ClientAdminService {
 
     private static ClientDetails details(@Nullable String description, @Nullable String logoUrl,
                                          @Nullable String homepageUrl, @Nullable String privacyPolicyUrl,
-                                         @Nullable String termsUrl, Map<String, String> errors) {
-        if (privacyPolicyUrl == null || privacyPolicyUrl.isBlank()) {
+                                         @Nullable String termsUrl, boolean thirdParty, Map<String, String> errors) {
+        if (thirdParty && (privacyPolicyUrl == null || privacyPolicyUrl.isBlank())) {
             errors.put("privacyPolicyUrl", "required for a third-party client");
         }
         return new ClientDetails(blankToNull(description), url("logoUrl", logoUrl, errors),
@@ -575,10 +580,12 @@ public class ClientAdminService {
      * @param description             the description, or {@code null}
      *                                <br>說明，或 {@code null}
      * @param trustLevel              {@code FIRST_PARTY} or {@code THIRD_PARTY}
-     *                                <br>{@code FIRST_PARTY} 或 {@code THIRD_PARTY}
+     *                                <br>{@code FIRST_PARTY} 或
+     *                                {@code THIRD_PARTY}
      * @param status                  {@code PENDING_REVIEW}, {@code ACTIVE} or
      *                                {@code SUSPENDED}
-     *                                <br>{@code PENDING_REVIEW}、{@code ACTIVE} 或
+     *                                <br>{@code PENDING_REVIEW}、{@code ACTIVE}
+     *                                或
      *                                {@code SUSPENDED}
      * @param configured              whether it is defined in the
      *                                configuration and therefore read-only

@@ -2,6 +2,7 @@ package jacky917.security.authorizationserver.flow;
 
 import jacky917.security.authorizationserver.admin.AdminAuditService;
 import jacky917.security.authorizationserver.admin.AdminAuditTarget;
+import jacky917.security.authorizationserver.audit.LoginAuditEventType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -82,9 +83,9 @@ abstract class AbstractAdminApiIntegrationTest extends AbstractFlowIntegrationTe
     }
 
     @Test
-    @DisplayName("管理稽核：記錄操作者、對象與快照；可依對象篩選")
+    @DisplayName("管理稽核：記錄對象與快照；可依對象篩選（操作者見 recordsTheOperator）")
     void recordsAdminActions() throws Exception {
-        String adminId = createUser("audit-admin", null, "AS_ADMIN");
+        createUser("audit-admin", null, "AS_ADMIN");
         String token = userToken("audit-admin");
         adminAudit.record("TEST_ACTION", AdminAuditTarget.API_RESOURCE, "order-api", null, Map.of("name", "Orders"));
         JsonNode page = json(call(get("/admin/api/audit/admin").param("targetType", "API_RESOURCE")
@@ -93,7 +94,6 @@ abstract class AbstractAdminApiIntegrationTest extends AbstractFlowIntegrationTe
         JsonNode entry = page.get("items").get(0);
         assertThat(entry.get("action").asString()).isEqualTo("TEST_ACTION");
         assertThat(JSON.readTree(entry.get("after").asString()).get("name").asString()).isEqualTo("Orders");
-        assertThat(adminId).isNotNull();
     }
 
     @Test
@@ -107,12 +107,15 @@ abstract class AbstractAdminApiIntegrationTest extends AbstractFlowIntegrationTe
     }
 
     @Test
-    @DisplayName("migration V1_1_0：新的稽核事件種類與管理稽核對象可以寫入")
-    void newAuditValuesAreAllowed() {
-        for (String type : List.of("USER_REGISTERED", "EMAIL_VERIFIED", "PASSWORD_RESET", "MFA_ENABLED",
-                "MFA_DISABLED", "CONSENT_GRANTED", "CONSENT_REVOKED")) {
+    @DisplayName("資料庫約束與程式一致：每一種稽核事件與管理稽核對象都可以寫入")
+    void everyAuditValueIsAllowed() {
+        for (LoginAuditEventType type : LoginAuditEventType.values()) {
             jdbc.sql("INSERT INTO login_audit (occurred_at, event_type, success) VALUES (:at, :type, :ok)")
-                    .param("at", Timestamp.from(Instant.now())).param("type", type).param("ok", true).update();
+                    .param("at", Timestamp.from(Instant.now())).param("type", type.name()).param("ok", true).update();
+        }
+        for (AdminAuditTarget target : AdminAuditTarget.values()) {
+            jdbc.sql("INSERT INTO admin_audit_log (occurred_at, action, target_type) VALUES (:at, 'TEST', :target)")
+                    .param("at", Timestamp.from(Instant.now())).param("target", target.name()).update();
         }
         assertThat(jdbc.sql("SELECT password_change_required FROM app_user WHERE username = 'admin'")
                 .query(Boolean.class).single()).isNotNull();
@@ -535,6 +538,61 @@ abstract class AbstractAdminApiIntegrationTest extends AbstractFlowIntegrationTe
                 .param("targetId", "orders.read"), admin));
         assertThat(audit.get("items")).extracting(entry -> entry.get("action").asString())
                 .containsExactly("SCOPE_DELETED", "SCOPE_CREATED");
+    }
+
+    // ---- 審查後的補強 ----
+
+    @Test
+    @DisplayName("管理稽核記錄操作者：使用者 token 記錄使用者與 client；client_credentials 只記錄 client；可依操作者篩選")
+    void recordsTheOperator() throws Exception {
+        String adminId = createUser("operator-admin", null, "AS_ADMIN");
+        String admin = userToken("operator-admin");
+        String userId = json(send(postJson("/admin/api/users"), admin, Map.of("username", "operated-user",
+                "password", PASSWORD)).andExpect(status().isCreated())).get("user").get("id").asString();
+        Map<String, Object> row = jdbc.sql("SELECT operator_user_id, operator_client, ip_address FROM admin_audit_log "
+                + "WHERE action = 'USER_CREATED' AND target_id = :id").param("id", userId).query().singleRow();
+        assertThat(row).containsEntry("operator_user_id", adminId).containsEntry("operator_client", "web-bff");
+        assertThat(row.get("ip_address")).isNotNull();
+        JsonNode filtered = json(call(get("/admin/api/audit/admin").param("operatorUserId", adminId), admin)
+                .andExpect(status().isOk()));
+        assertThat(filtered.get("items")).extracting(entry -> entry.get("targetId").asString()).contains(userId);
+
+        String machine = json(mockMvc.perform(post("/oauth2/token").with(httpBasic("admin-sync", "sync-secret"))
+                .param("grant_type", "client_credentials").param("scope", "as:audit:read as:user:read"))
+                .andExpect(status().isOk())).get("access_token").asString();
+        call(get("/admin/api/users/" + userId), machine).andExpect(status().isOk());
+        // admin-sync 沒有 as:user:write
+        call(postJson("/admin/api/users/" + userId + "/unlock"), machine).andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("錯誤回應：型別錯誤與缺少參數指出欄位；不是 JSON 的本文說明原因；顯示名稱過長為 400 而不是 500")
+    void explainsBadRequests() throws Exception {
+        String admin = adminToken("explaining-admin");
+        JsonNode mismatch = json(call(get("/admin/api/users").param("page", "abc"), admin)
+                .andExpect(status().isBadRequest()));
+        assertThat(mismatch.get("errors").get("page").asString()).isEqualTo("must be a valid int");
+        JsonNode body = json(call(postJson("/admin/api/users").contentType(MediaType.APPLICATION_JSON)
+                .content("{not json"), admin).andExpect(status().isBadRequest()));
+        assertThat(body.get("detail").asString()).contains("not valid JSON");
+        JsonNode tooLong = json(send(postJson("/admin/api/users"), admin, Map.of("username", "long-name-user",
+                "displayName", "名".repeat(129))).andExpect(status().isBadRequest()));
+        assertThat(tooLong.get("errors").get("displayName").asString()).contains("at most 128");
+    }
+
+    @Test
+    @DisplayName("權限矩陣：AS_SUPPORT 可撤銷 Session 但不能修改使用者、不能管理 client、不能重設兩步驟驗證")
+    void supportHasOnlyItsPermissions() throws Exception {
+        String userId = createUser("matrix-user", null);
+        createUser("matrix-support", null, "AS_SUPPORT");
+        String support = userToken("matrix-support");
+        call(deleteJson("/admin/api/users/" + userId + "/sessions"), support).andExpect(status().is2xxSuccessful());
+        send(patchJson("/admin/api/users/" + userId), support, Map.of("displayName", "x"))
+                .andExpect(status().isForbidden());
+        call(getJson("/admin/api/clients"), support).andExpect(status().isForbidden());
+        send(postJson("/admin/api/clients"), support, partnerClient("matrix-client")).andExpect(status().isForbidden());
+        call(deleteJson("/admin/api/users/" + userId + "/mfa"), support).andExpect(status().isForbidden());
+        send(putJson("/admin/api/roles/USER"), support, Map.of("name", "x")).andExpect(status().isForbidden());
     }
 
     // ---- 共用工具 ----

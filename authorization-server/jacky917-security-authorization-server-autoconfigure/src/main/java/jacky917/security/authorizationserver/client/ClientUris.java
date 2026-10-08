@@ -22,13 +22,15 @@ public final class ClientUris {
 
     /**
      * Returns whether an address can be a redirect URI: an absolute
-     * {@code https} URL without a fragment ({@code http} only for
-     * {@code localhost}), or a reverse-domain scheme of a native app such as
+     * {@code https} URL without a fragment ({@code http} only for the
+     * loopback hosts {@code localhost}, {@code 127.0.0.1} and
+     * {@code [::1]}), or a reverse-domain scheme of a native app such as
      * {@code com.example.app:/callback} (RFC 8252 §7.1).
      * <p>
      * 回傳網址是否可作為 redirect URI：沒有 fragment 的絕對 {@code https} 網址
-     * （{@code http} 只限 {@code localhost}），或原生 App 的反向網域名稱 scheme，
-     * 例如 {@code com.example.app:/callback}（RFC 8252 §7.1）。
+     * （{@code http} 只限本機位址 {@code localhost}、{@code 127.0.0.1} 與
+     * {@code [::1]}），或原生 App 的反向網域名稱 scheme，例如
+     * {@code com.example.app:/callback}（RFC 8252 §7.1）。
      *
      * @param uri  the address
      *             <br>網址
@@ -54,13 +56,13 @@ public final class ClientUris {
 
     /**
      * Returns whether an address is a web page users can open: an absolute
-     * {@code https} URL without a fragment, or {@code http} on
-     * {@code localhost}. Used for the logo, home page, privacy policy and
-     * terms of service.
+     * {@code https} URL without a fragment, or {@code http} on a loopback
+     * host ({@code localhost}, {@code 127.0.0.1}, {@code [::1]}). Used for
+     * the logo, home page, privacy policy and terms of service.
      * <p>
      * 回傳網址是否為使用者可以開啟的網頁：沒有 fragment 的絕對 {@code https}
-     * 網址，或 {@code localhost} 上的 {@code http}。用於 Logo、首頁、隱私權政策
-     * 與服務條款。
+     * 網址，或本機位址（{@code localhost}、{@code 127.0.0.1}、
+     * {@code [::1]}）上的 {@code http}。用於 Logo、首頁、隱私權政策與服務條款。
      *
      * @param uri  the address
      *             <br>網址

@@ -35,26 +35,33 @@ import java.util.Set;
  *       verified, because logins accept only verified emails.
  *       <br>新的地址建立一個擁有 {@code USER} 角色、Email 尚未驗證的帳號；
  *       驗證之前無法登入，因為登入只接受已驗證的 Email。</li>
- *   <li>An address of an unfinished registration (not verified, never
- *       logged in, no username, no linked account) replaces that
- *       registration's password and name, so nobody can block an address by
- *       registering it first.
- *       <br>屬於未完成之註冊（未驗證、從未登入、沒有帳號名稱、沒有連結的外部
- *       帳號）的地址，會取代該註冊的密碼與名稱，因此沒有人能先以他人的地址
- *       註冊來占用。</li>
- *   <li>An address of any other account changes nothing; its owner gets a
- *       notice with a password reset link instead.
- *       <br>屬於其他帳號的地址不會變更任何資料；改寄通知給地址的擁有者，並附
- *       上重設密碼的連結。</li>
+ *   <li>An address of an unfinished registration (active, has a password,
+ *       not verified, never logged in, no username, no linked account)
+ *       replaces that registration's password and name, so nobody can block
+ *       an address by registering it first.
+ *       <br>屬於未完成之註冊（啟用中、有密碼、未驗證、從未登入、沒有帳號名稱、
+ *       沒有連結的外部帳號）的地址，會取代該註冊的密碼與名稱，因此沒有人能先以
+ *       他人的地址註冊來占用。</li>
+ *   <li>The verified address of an active account changes nothing; its
+ *       owner gets a notice with a password reset link instead, as from the
+ *       forgotten password page.
+ *       <br>啟用中帳號的已驗證地址不會變更任何資料；改寄通知給地址的擁有者，並
+ *       附上重設密碼的連結，與忘記密碼頁相同。</li>
+ *   <li>An address of any other account gets no mail: a reset link must
+ *       never reach an address that was not verified.
+ *       <br>屬於其他帳號的地址不會收到信：重設連結絕不能寄到未驗證的地址。</li>
  *   <li>Verifying needs the link and the password chosen when registering.
  *       <br>驗證需要連結以及註冊時設定的密碼。</li>
  * </ul>
- * The caller shows the same page in every case, so registering reveals
- * nothing about existing accounts. Mails are limited by
- * {@link ActionTokenService#COOLDOWN}.
+ * The caller shows the same page in every case and mails are sent in the
+ * background, so the page does not reveal whether an address has an
+ * account; only a new or unfinished registration takes the time of
+ * hashing a password. Mails
+ * are limited by {@link ActionTokenService#COOLDOWN}.
  * <p>
- * 呼叫端在每一種情況都顯示相同的頁面，因此註冊不會透露既有帳號的任何資訊。
- * 信件數量受 {@code ActionTokenService#COOLDOWN} 限制。
+ * 呼叫端在每一種情況都顯示相同的頁面，信件也在背景寄出，因此頁面不會透露地址
+ * 是否已有帳號；只有新的或未完成的註冊需要多花雜湊密碼的時間。信件數量受
+ * {@code ActionTokenService#COOLDOWN} 限制。
  *
  * @author Jacky
  * @since 2.1.0
@@ -66,7 +73,7 @@ public class RegistrationService {
     private final JdbcClient jdbc;
     private final PasswordEncoder passwordEncoder;
     private final ActionTokenService tokens;
-    private final AccountMailer mailer;
+    private final AccountMailDispatcher mailer;
     private final AccountLinks links;
     private final ApplicationEventPublisher events;
     private final TransactionOperations transactions;
@@ -89,8 +96,8 @@ public class RegistrationService {
      *                         <br>雜湊被取代之註冊的密碼，並在驗證時檢查密碼
      * @param tokens           issues and uses the email tokens
      *                         <br>發出與使用 Email token
-     * @param mailer           sends the mails
-     *                         <br>寄出信件
+     * @param mailer           sends the mails in the background
+     *                         <br>在背景寄出信件
      * @param links            builds the links
      *                         <br>產生連結
      * @param events           publishes the audit events
@@ -108,7 +115,7 @@ public class RegistrationService {
      *         <br>若 {@code mailer} 無法寄信；註冊需要寄出驗證信
      */
     public RegistrationService(UserAccountService users, JdbcClient jdbc, PasswordEncoder passwordEncoder,
-                               ActionTokenService tokens, AccountMailer mailer, AccountLinks links,
+                               ActionTokenService tokens, AccountMailDispatcher mailer, AccountLinks links,
                                ApplicationEventPublisher events, TransactionOperations transactions,
                                Duration verificationTtl, Duration resetTtl, Clock clock) {
         // 無法寄信時讓啟動失敗，而不是開放一個無法完成的註冊頁
@@ -156,8 +163,8 @@ public class RegistrationService {
             try {
                 created = users.createUser(new NewUser(null, address, false, password, displayName, Set.of()));
             } catch (DuplicateKeyException ex) {
-                // 同時有另一個註冊：當作已存在處理
-                log.info("Registration of an email raced with another one");
+                // 另一個請求同時建立了此 Email：不寄信，畫面仍相同（另一個請求會寄出驗證信）
+                log.info("Registration of an email raced with another registration of the same email");
                 return;
             }
             log.info("Registered user {}", created.id());
@@ -177,9 +184,19 @@ public class RegistrationService {
             sendVerification(user.id(), address, displayName, locale);
             return;
         }
-        tokens.issue(user.id(), ActionTokenService.Purpose.PASSWORD_RESET, resetTtl).ifPresent(token -> send(
-                new AccountMail(AccountMail.Type.ACCOUNT_EXISTS, address, locale, user.displayName(),
-                        links.withToken(AccountPaths.RESET_PASSWORD, token), resetTtl), user.id()));
+        if (!user.verifiedAndActive()) {
+            // 重設連結只能寄到已驗證的地址（與忘記密碼頁相同）；其他帳號的地址不寄任何信
+            log.info("Registration of the email of user {} ignored: the email is not verified or the account "
+                    + "cannot log in", user.id());
+            return;
+        }
+        Optional<String> token = tokens.issue(user.id(), ActionTokenService.Purpose.PASSWORD_RESET, resetTtl);
+        if (token.isEmpty()) {
+            log.info("Not sending another account notice to user {} so soon", user.id());
+            return;
+        }
+        send(new AccountMail(AccountMail.Type.ACCOUNT_EXISTS, address, locale, user.displayName(),
+                links.withToken(AccountPaths.RESET_PASSWORD, token.get()), resetTtl), user.id());
     }
 
     /**
@@ -276,11 +293,7 @@ public class RegistrationService {
     }
 
     private void send(AccountMail mail, String userId) {
-        try {
-            mailer.send(mail);
-        } catch (RuntimeException ex) {
-            log.error("Cannot send the {} mail to user {}", mail.type(), userId, ex);
-        }
+        mailer.send(mail, userId);
     }
 
     private Optional<Existing> findByEmail(String email) {
@@ -289,15 +302,17 @@ public class RegistrationService {
                             (u.email_verified = :no AND u.last_login_at IS NULL AND u.username IS NULL
                                 AND u.password_hash IS NOT NULL AND u.status = 'ACTIVE'
                                 AND NOT EXISTS (SELECT 1 FROM user_federated_identity f WHERE f.user_id = u.id))
-                                AS unfinished
+                                AS unfinished,
+                            (u.email_verified = :yes AND u.status = 'ACTIVE') AS verified_active
                         FROM app_user u WHERE LOWER(u.email) = LOWER(:email)""")
-                .param("no", false).param("email", email)
+                .param("no", false).param("yes", true).param("email", email)
                 .query((rs, rowNum) -> new Existing(rs.getString("id"), rs.getString("display_name"),
-                        rs.getBoolean("unfinished")))
+                        rs.getBoolean("unfinished"), rs.getBoolean("verified_active")))
                 .optional();
     }
 
-    private record Existing(String id, @Nullable String displayName, boolean unfinishedRegistration) {
+    private record Existing(String id, @Nullable String displayName, boolean unfinishedRegistration,
+                            boolean verifiedAndActive) {
     }
 
     /**

@@ -26,6 +26,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -195,8 +196,9 @@ class AuthorizationServerAdminApiConfiguration {
     @Bean
     @ConditionalOnMissingBean
     MfaAdminController jacky917MfaAdminController(MfaService mfa, UserAccountService users, AdminAuditService audit,
-                                                  PlatformTransactionManager transactionManager) {
-        return new MfaAdminController(mfa, users, audit, new TransactionTemplate(transactionManager));
+                                                  ApplicationEventPublisher events,
+                                                  PlatformTransactionManager transactionManager, Clock clock) {
+        return new MfaAdminController(mfa, users, audit, events, new TransactionTemplate(transactionManager), clock);
     }
 
     @Bean

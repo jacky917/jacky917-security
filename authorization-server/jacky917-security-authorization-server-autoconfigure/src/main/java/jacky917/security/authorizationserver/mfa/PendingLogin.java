@@ -1,6 +1,7 @@
 package jacky917.security.authorizationserver.mfa;
 
 import jacky917.security.authorizationserver.session.LoginMethod;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.Authentication;
 
 import java.io.Serial;
@@ -32,15 +33,20 @@ import java.time.Instant;
  *                        <br>第一步通過的時間
  * @param failures        wrong codes so far
  *                        <br>目前為止輸入錯誤的次數
- * @param enrollment      whether the user must turn two-step verification
- *                        on first ({@code mfa.required-roles})
- *                        <br>使用者是否必須先啟用兩步驟驗證
- *                        （{@code mfa.required-roles}）
+ * @param setupSecret     the new secret to turn two-step verification on
+ *                        with, when the user must do so first
+ *                        ({@code mfa.required-roles}); {@code null}
+ *                        otherwise. It ends with the pending login, so it
+ *                        never reaches another user of the browser.
+ *                        <br>使用者必須先啟用兩步驟驗證時
+ *                        （{@code mfa.required-roles}）用來啟用的新密鑰，否則
+ *                        為 {@code null}。它隨待驗證的登入一起結束，因此不會
+ *                        留給同一個瀏覽器的下一位使用者。
  * @author Jacky
  * @since 2.1.0
  */
 public record PendingLogin(String userId, LoginMethod method, String idp, String amr, Authentication authentication,
-                           Continuation continuation, Instant startedAt, int failures, boolean enrollment)
+                           Continuation continuation, Instant startedAt, int failures, @Nullable String setupSecret)
         implements Serializable {
 
     /**
@@ -68,6 +74,19 @@ public record PendingLogin(String userId, LoginMethod method, String idp, String
     private static final long serialVersionUID = 1L;
 
     /**
+     * Returns whether the user must turn two-step verification on before
+     * the login completes.
+     * <p>
+     * 回傳使用者是否必須在登入完成前啟用兩步驟驗證。
+     *
+     * @return {@code true} if {@link #setupSecret()} is set
+     *         <br>{@code setupSecret} 有值時為 {@code true}
+     */
+    public boolean enrollment() {
+        return setupSecret != null;
+    }
+
+    /**
      * Returns whether the pending login can still be completed.
      * <p>
      * 回傳待驗證的登入是否仍可完成。
@@ -91,7 +110,7 @@ public record PendingLogin(String userId, LoginMethod method, String idp, String
      */
     public PendingLogin withFailure() {
         return new PendingLogin(userId, method, idp, amr, authentication, continuation, startedAt, failures + 1,
-                enrollment);
+                setupSecret);
     }
 
     /**
@@ -103,7 +122,7 @@ public record PendingLogin(String userId, LoginMethod method, String idp, String
     public enum Continuation {
 
         /**
-         * A password login: a forced password change comes next.
+         * A password login: a forced password change may come next.
          * <p>
          * 密碼登入：接著可能必須變更密碼。
          */
@@ -118,9 +137,10 @@ public record PendingLogin(String userId, LoginMethod method, String idp, String
         FEDERATED,
 
         /**
-         * A link confirmed with the password; nothing else.
+         * A link confirmed with the password: the link is created only once
+         * the second step passes.
          * <p>
-         * 以密碼確認的帳號連結；沒有其他事。
+         * 以密碼確認的帳號連結：第二步通過後才建立連結。
          */
         LINK
     }

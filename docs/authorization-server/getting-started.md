@@ -273,6 +273,7 @@ Starter 以自己的執行緒執行下列工作（不會啟用應用程式的 `@
 | `jacky917.as.signing_key.age` | gauge（天） | — | 目前金鑰的使用天數；**超過 `keys.rotation-period` + 2 天時告警**（輪換排程沒有執行）。沒有 `ACTIVE` 金鑰時為無限大，同一條告警也會觸發 |
 | `jacky917.as.cleanup.deleted` | counter | `target`（`authorizations`、`refresh_token_history`、`expired_sessions`、`sessions`、`action_tokens`、`audits`、`signing_keys`） | 清理是否正常；`expired_sessions` 是改為 `EXPIRED` 的筆數 |
 | `jacky917.as.audit.write_failures` | counter | `type` | **告警**：大於 0 代表稽核紀錄不完整，IP 限流也看不到這些登入失敗 |
+| `jacky917.as.mail.failures` | counter | `type`、`reason` | **告警**：帳號信件無法寄出（`authentication` 為郵件伺服器拒絕登入、`delivery` 為其他郵件錯誤、`internal` 為程式或設定錯誤）；使用者看到的頁面不變 |
 | `jacky917.as.maintenance.failures` | counter | `task`（工作名稱或 `cleanup.<target>`） | **告警**：排程工作或清理步驟失敗 |
 
 有 Spring Boot 的健康檢查時，`/actuator/health` 另外包含 `signingKey`：沒有 `ACTIVE` 簽章金鑰時為 `DOWN`；詳細資料有金鑰 ID、演算法、使用天數，以及啟用輪換時的 `rotationOverdue`（輪換逾期時狀態仍為 `UP`，請以 `signing_key.age` 告警；不含任何金鑰內容）。資料庫連線由 Spring Boot 本身的檢查回報。可以 `management.health.signingkey.enabled=false` 關閉。
@@ -324,7 +325,7 @@ jacky917:
 | `trust-level` | `first-party` | `third-party`：見下方 |
 | `description`、`logo-url`、`homepage-url`、`privacy-policy-url`、`terms-url` | — | 顯示在同意畫面上；網址必須是 `https` |
 
-**第三方 client**（`trust-level: third-party`）：使用者第一次授權時會看到同意畫面（`/oauth2/consent`：應用程式的名稱、Logo、說明、隱私權政策與服務條款，以及要求的 scope 的名稱與說明），可以只勾選部分 scope；之後只在要求新的 scope 時再次詢問。Scope 的名稱與說明以[管理 API](#9-管理-api) 的 `/admin/api/scopes` 設定，`consentRequired: false` 的 scope 不詢問；必須有 `privacy-policy-url`；不可使用 `client-credentials`（沒有使用者可以同意）；不可要求以 `as:` 開頭的 scope（會授予管理權限）。Token 不含角色，`permissions` 只有「使用者同意的 scope 對應的權限」中使用者也擁有的部分（見 [§7](#7-token-內容)）。
+**第三方 client**（`trust-level: third-party`）：使用者第一次授權時會看到同意畫面（`/oauth2/consent`：應用程式的名稱、Logo、說明、隱私權政策與服務條款，以及要求的 scope 的名稱與說明），可以只勾選部分 scope；之後只在要求新的 scope 時再次詢問。第一次同意時按「拒絕」，client 收到 `access_denied`；先前已同意過時按鈕為「不允許新的權限」，授權會以先前同意的 scope 繼續（要完全撤回請到帳號頁）。Scope 的名稱與說明以[管理 API](#9-管理-api) 的 `/admin/api/scopes` 設定，`consentRequired: false` 的 scope 不詢問；必須有 `privacy-policy-url`；不可使用 `client-credentials`（沒有使用者可以同意）；不可要求以 `as:` 開頭的 scope（會授予管理權限）。Token 不含角色，`permissions` 只有「使用者同意的 scope 對應的權限」中使用者也擁有的部分（見 [§7](#7-token-內容)）。
 
 **一律套用、無法關閉**：所有 client 都必須使用 PKCE；Refresh Token 每次使用都會換發新的（舊的立即失效）。有效期取自 `token.*`。
 
@@ -460,7 +461,7 @@ spring:
 
 - 連續密碼錯誤 `login-protection.max-failures` 次（預設 5）後，帳號鎖定 `login-protection.lock-duration`（預設 15 分鐘）。鎖定期間正確的密碼也無法登入，也不會延長鎖定；登入成功時失敗次數歸零。
 - 只有密碼錯誤才計入鎖定。非預期的錯誤（例如資料庫無法使用）記錄為 `ERROR` 並稽核為 `ERROR`，不計入，因此不會鎖住輸入正確密碼的使用者。
-- 同一個 IP 最近一分鐘失敗 `login-protection.max-failures-per-ip-per-minute` 次（預設 20）後，該 IP 的登入在檢查密碼之前就被拒絕。登入頁與帳號連結確認頁都受保護，路徑以解碼後的值比對（`/%6Cogin` 這類編碼無法略過）。
+- 同一個 IP 最近一分鐘失敗 `login-protection.max-failures-per-ip-per-minute` 次（預設 20）後，該 IP 的登入在檢查密碼之前就被拒絕。登入頁、帳號連結確認頁、變更與重設密碼、註冊、Email 驗證與兩步驟驗證的表單都受保護，路徑以解碼後的值比對（`/%6Cogin` 這類編碼無法略過）。只有登入失敗（含兩步驟驗證碼錯誤）計入次數，其他表單在超過上限時一併拒絕。
 - 登入頁對所有密碼登入失敗顯示相同的訊息（不透露帳號是否存在或被鎖定），只有限流與第三方登入有各自的訊息；真正的原因寫入 `login_audit`：
 
 | `event_type` | 何時 | `failure_reason` |
@@ -472,7 +473,7 @@ spring:
 | `LOGOUT` | 登出（見下一節） | — |
 | `TOKEN_REFRESH_REUSE` | 偵測到 Refresh Token 重用（每次都寫入，即使 Session 已撤銷） | `REUSE_DETECTED` |
 | `MFA_ENABLED`、`MFA_DISABLED` | 使用者啟用或停用兩步驟驗證 | — |
-| `CONSENT_GRANTED`、`CONSENT_REVOKED` | 使用者同意第三方應用程式；在帳號頁移除存取權（或在同意畫面拒絕而刪除先前的同意） | — |
+| `CONSENT_GRANTED`、`CONSENT_REVOKED` | 使用者同意第三方應用程式；在帳號頁移除存取權 | — |
 
 稽核事件同時以 Spring 的 `ApplicationEvent`（`LoginAuditEvent`）發布，應用程式可以另外監聽並轉送到 SIEM。寫入失敗不影響登入：整個事件（不含輸入的帳號）記錄在 `ERROR` 日誌中以便補回，並計入 `jacky917.as.audit.write_failures`。IP 限流計算的是寫入 `login_audit` 的失敗，寫入失敗期間看不到這些嘗試。
 
@@ -496,12 +497,15 @@ spring:
 | 忘記密碼 | `/jacky917/password/forgot`（登入頁的「忘記密碼？」） | 寄信方式 |
 | 註冊與 Email 驗證 | `/jacky917/register`（登入頁的「建立帳號」） | 寄信方式與 `account.registration.enabled=true` |
 
+信件在背景寄出，頁面不會等待郵件伺服器，回應時間也不會透露帳號是否存在。寄信失敗只記錄在 `ERROR` 日誌並計入 `jacky917.as.mail.failures`，頁面不變；請設定 `spring.mail.properties.mail.smtp.connectiontimeout`、`timeout`、`writetimeout`，避免郵件伺服器沒有回應時一直等待。
+
 寄信方式依序選擇：應用程式自己的 `AccountMailer` Bean；有 `JavaMailSender`（加入 `spring-boot-starter-mail` 並設定 `spring.mail.host`）時以它寄出，此時 `account.mail.from` 必填；`account.mail.log-links=true` 時只把連結寫入日誌（開發用）；都沒有時不提供需要寄信的頁面。信件內容有英文與繁體中文（依使用者瀏覽器的語言）；要使用自己的版面或寄信服務時，提供自己的 `AccountMailer` Bean（`send(AccountMail)` 收到種類、收件者、語言、名稱、連結與有效期）。
 
+- **密碼長度**：最多 72 bytes（BCrypt 的上限：約 72 個英數字或 24 個中文字），最少 `password.min-length` 個字元。
 - **變更密碼**：必須輸入目前的密碼（錯誤會計入帳號鎖定）。變更後其他裝置登出，進行變更的裝置維持登入，並寄出通知到已驗證的 Email。
-- **忘記密碼**：只對可登入帳號的已驗證 Email 寄出連結；頁面一律顯示相同的訊息，不透露帳號是否存在。開啟連結只顯示表單，送出新密碼時才使用連結（郵件掃描器預先開啟不會用掉它）。設定後所有裝置登出，暫時鎖定解除。
-- **註冊**：建立擁有 `USER` 角色、Email 未驗證的帳號，寄出驗證連結；驗證前無法登入。驗證時必須再輸入註冊時設定的密碼，因此以他人地址註冊的人無法在對方開啟連結時取得帳號。Email 已屬於其他帳號時不變更任何資料，改寄「帳號已存在」通知（附重設密碼連結）；未完成的註冊（未驗證、從未登入）可以被新的註冊取代。各種情況的畫面都相同。
-- 同一位使用者、同一種信件 60 秒內最多寄一封。這些表單與登入頁共用 IP 限流。
+- **忘記密碼**：只對可登入帳號的已驗證 Email 寄出連結；頁面一律顯示相同的訊息，不透露帳號是否存在。開啟連結只顯示表單，送出新密碼時才使用連結（郵件掃描器預先開啟不會用掉它），並與設定密碼在同一個交易中：設定失敗時連結仍可再用。Email 之後被改為未驗證或帳號被停用時，連結即失效。設定後所有裝置登出，暫時鎖定解除。
+- **註冊**：建立擁有 `USER` 角色、Email 未驗證的帳號，寄出驗證連結；驗證前無法登入。驗證時必須再輸入註冊時設定的密碼，因此以他人地址註冊的人無法在對方開啟連結時取得帳號。Email 屬於可登入帳號的已驗證地址時不變更任何資料，改寄「帳號已存在」通知（附重設密碼連結）；屬於其他帳號（例如 Email 未驗證）時不寄任何信，因為重設連結只能寄到已驗證的地址。未完成的註冊（啟用中、有密碼、未驗證、從未登入、沒有帳號名稱與外部帳號）可以被新的註冊取代。各種情況的畫面都相同。
+- 同一位使用者的重設密碼連結（含「帳號已存在」通知）與驗證連結，各自 60 秒內最多寄一封。這些表單在 IP 的登入失敗超過上限時一併拒絕。
 - 稽核（`login_audit`）：`PASSWORD_CHANGED`（失敗時 `BAD_CREDENTIALS`）、`PASSWORD_RESET`、`USER_REGISTERED`、`EMAIL_VERIFIED`（密碼錯誤時 `BAD_CREDENTIALS`）。
 
 ### 兩步驟驗證
@@ -510,10 +514,12 @@ spring:
 
 - 啟用後，密碼登入與第三方登入（以及以密碼確認帳號連結）通過第一步後都會要求 6 位數驗證碼或復原碼；第二步通過之前瀏覽器不是已登入狀態，也不會建立登入 Session。待驗證的登入保留 5 分鐘。
 - 驗證碼在前後各 30 秒內有效，且每個只能使用一次；復原碼也只能使用一次。
-- 錯誤 5 次會結束這次登入並回到登入頁；每次錯誤都稽核為 `LOGIN`（`MFA_FAILED`）並計入帳號鎖定，與密碼錯誤共用 IP 限流。
+- 錯誤 5 次會結束這次登入並回到登入頁；每次錯誤都稽核為 `LOGIN`（`MFA_FAILED`）並計入帳號鎖定與 IP 限流。登入過程中啟用時（見下一項）輸入錯誤只計入 5 次的上限。超過 5 分鐘才送出時回到登入頁並說明逾時。
+- 密鑰無法解密時（例如更換了 `keys.encryption-key`）頁面會說明無法檢查 App 的驗證碼，且不計入錯誤；復原碼不需要解密，仍可登入。
 - `mfa.required-roles` 中的角色尚未啟用時，登入過程中會先要求啟用，且不能停用。建議至少設定 `AS_ADMIN`。
 - ID Token 的 `amr` 為 `["pwd","otp"]` 或 `["fed","otp"]`。
-- 密鑰以 `keys.encryption-key` 加密儲存，復原碼只儲存雜湊。使用者同時遺失手機與復原碼時，管理員以 `DELETE /admin/api/users/{id}/mfa` 停用（見 [§9](#9-管理-api)）。
+- 密鑰以 `keys.encryption-key` 加密儲存，復原碼只儲存雜湊。使用者同時遺失手機與復原碼時，管理員以 `DELETE /admin/api/users/{id}/mfa` 停用（見 [§9](#9-管理-api)），使用者的登入稽核也會記錄 `MFA_DISABLED`。
+- 以密碼確認帳號連結時，擁有者若已啟用兩步驟驗證，第二步通過後才建立連結。
 
 > [!WARNING]
 > 在同一台主機上以不同埠號執行登入服務與 BFF 時（例如 `localhost:9000` 與 `localhost:8082`），兩者預設的 `JSESSIONID` Cookie 會互相覆蓋（瀏覽器的 Cookie 不區分埠號），登入流程會失敗。請為登入服務設定不同的 Cookie 名稱：`server.servlet.session.cookie.name: JACKY917_AS_SESSION`。
@@ -522,7 +528,7 @@ spring:
 
 ## 9. 管理 API
 
-`/admin/api/**` 是 JSON REST API，用來管理使用者、角色、權限與查詢稽核紀錄。Starter 不提供管理畫面，請以自己的管理後台（例如透過 BFF）或腳本呼叫。
+`/admin/api/**` 是 JSON REST API，用來管理使用者（含兩步驟驗證的重設）、角色、權限、client、scope、API resource 與查詢稽核紀錄。Starter 不提供管理畫面，請以自己的管理後台（例如透過 BFF）或腳本呼叫。
 
 ### 9.1 驗證與權限
 
@@ -538,9 +544,10 @@ spring:
 | `/admin/api/users/**` | `as:user:read` | `as:user:write` |
 | `/admin/api/users/{id}/sessions`、`/admin/api/sessions/**` | `as:user:read` | `as:session:revoke` |
 | `/admin/api/roles/**`、`/admin/api/permissions/**` | `as:role:read` | `as:role:write` |
+| `/admin/api/clients/**`、`/admin/api/scopes/**`、`/admin/api/api-resources/**` | `as:client:read` | `as:client:write` |
 | `/admin/api/audit/**` | `as:audit:read` | — |
 
-沒有 token 或 token 不符時回 `401`，權限不足時回 `403`。
+其他路徑一律拒絕。沒有 token 或 token 不符時回 `401`，權限不足時回 `403`。第三方 client 取得的 token 不能呼叫管理 API：scope 不能對應 `as:` 權限，因此這些 token 不會帶有 `as:` 權限。
 
 ### 9.2 端點
 
@@ -587,7 +594,8 @@ curl -X POST https://auth.example.com/admin/api/users \
 - 讓使用者無法登入（`LOCKED`、`DISABLED`、刪除）或設定其密碼時，會撤銷其所有登入 Session，Refresh Token 立即失效。角色變更在使用者下一次取得 token（最長 `token.access-token-ttl`）時生效。
 - 管理員不能停用或刪除自己，也不能移除自己最後一個擁有 `as:user:write` 的角色。
 - 透過管理 API 建立的 client 一律是第三方 client，只使用授權碼流程（confidential client 另有 Refresh Token），scope 必須已在 `/admin/api/scopes` 定義且不可以 `as:` 開頭。第一方 client 請寫在設定中。
-- Scope 不能對應 `as:` 權限；內建 scope（`openid`、`profile`、`email`）只能修改名稱與說明，不能刪除。仍有 client 可以要求的 scope、仍有 scope 屬於它或設定為 `token.audience` 的 API resource 不能刪除（`409`）。
+- Scope 不能對應 `as:` 權限；內建 scope（`openid`、`profile`、`email`）只能修改名稱與說明，不能刪除。仍有 client 可以要求的 scope、仍有 scope 屬於它或設定為 `token.audience`／`admin-api.audience` 的 API resource 不能刪除（`409`）。仍被角色或 scope 使用的權限也不能刪除。
+- 錯誤回應：欄位錯誤（含型別錯誤與缺少的參數）放在 `errors`；本文不是 JSON 時回 `400`；違反唯一約束（例如帳號或 Email 已被使用）或與其他請求衝突時回 `409`。
 - 每個寫入操作都寫入 `admin_audit_log`（操作者、client、IP、變更前後的快照，不含密碼雜湊與 client secret）。
 - 錯誤以 [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 回傳；欄位錯誤在 `errors` 中。
 - 管理 API 直接操作預設的使用者資料表；以其他使用者來源取代 `UserAccountService` 時，請設定 `admin-api.enabled=false` 或自行提供。

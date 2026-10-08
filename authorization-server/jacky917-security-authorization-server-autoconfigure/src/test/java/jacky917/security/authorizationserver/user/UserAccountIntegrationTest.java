@@ -136,8 +136,15 @@ class UserAccountIntegrationTest {
                     .hasMessageContaining("3-64 characters");
             assertThatThrownBy(() -> users.createUser(new NewUser("erin", null, false, "short pass", null, Set.of())))
                     .hasMessageContaining("at least 12 characters");
-            assertThatThrownBy(() -> users.createUser(new NewUser("erin", null, false, "x".repeat(129), null, Set.of())))
-                    .hasMessageContaining("at most 128 characters");
+            assertThatThrownBy(() -> users.createUser(new NewUser("erin", null, false, "x".repeat(73), null, Set.of())))
+                    .hasMessageContaining("at most 72 bytes");
+            // BCrypt 的上限是 72 bytes：24 個中文字剛好 72 bytes，25 個超過
+            assertThatThrownBy(() -> users.createUser(new NewUser("erin", null, false, "中".repeat(25), null, Set.of())))
+                    .hasMessageContaining("at most 72 bytes");
+            assertThat(users.createUser(new NewUser("erin", null, false, "中".repeat(24), null, Set.of())).id())
+                    .isNotNull();
+            assertThat(users.createUser(new NewUser("frank", null, false, "x".repeat(72), null, Set.of())).id())
+                    .isNotNull();
         });
     }
 

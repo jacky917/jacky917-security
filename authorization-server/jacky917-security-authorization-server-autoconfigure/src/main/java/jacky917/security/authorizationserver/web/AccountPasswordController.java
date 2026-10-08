@@ -153,7 +153,7 @@ public class AccountPasswordController {
         model.addAttribute("required", session != null
                 && session.getAttribute(AccountPaths.PASSWORD_CHANGE_REQUIRED_ATTRIBUTE) != null);
         model.addAttribute("rules", page.message("password.rules", new Object[]{policy.minLength(),
-                PasswordPolicy.MAX_LENGTH}, locale));
+                PasswordPolicy.MAX_BYTES}, locale));
         if (errorKey != null) {
             model.addAttribute("error", page.message(errorKey, null, locale));
         }

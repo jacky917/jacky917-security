@@ -2,7 +2,7 @@ package jacky917.security.authorizationserver.web;
 
 import jacky917.security.authorizationserver.account.AccountLinks;
 import jacky917.security.authorizationserver.account.AccountMail;
-import jacky917.security.authorizationserver.account.AccountMailer;
+import jacky917.security.authorizationserver.account.AccountMailDispatcher;
 import jacky917.security.authorizationserver.account.AccountPaths;
 import jacky917.security.authorizationserver.account.ActionTokenService;
 import jacky917.security.authorizationserver.account.PasswordChangeService;
@@ -35,22 +35,28 @@ import java.util.Optional;
  * 忘記密碼：要求重設連結，並以連結設定新密碼（第 3、4 階段設計 §5.3）。
  * <ul>
  *   <li>A link is sent only to a verified email of an account that can log
- *       in; the page always says the same thing, so it never reveals
- *       whether an account exists.
- *       <br>只對可登入帳號的已驗證 Email 寄出連結；頁面一律顯示相同的訊息，
- *       不會透露帳號是否存在。</li>
+ *       in, and works only while that is still true. The page shows the
+ *       same text in every case, and the mail is sent in the background,
+ *       so neither the page nor its timing reveals whether an account
+ *       exists.
+ *       <br>只對可登入帳號的已驗證 Email 寄出連結，且只在仍符合時有效。頁面
+ *       一律顯示相同的文字，信件在背景寄出，因此頁面與回應時間都不會透露帳號
+ *       是否存在。</li>
  *   <li>Opening the link only shows the form; the token is used when the
- *       new password is submitted, so a mail scanner that opens links cannot
- *       use it.
- *       <br>開啟連結只會顯示表單；送出新密碼時才使用 token，因此預先開啟連結
- *       的郵件掃描器無法用掉它。</li>
+ *       new password is submitted, in the same transaction that sets it,
+ *       so a mail scanner that opens links cannot use it and a failure
+ *       leaves the link usable.
+ *       <br>開啟連結只會顯示表單；送出新密碼時才在設定密碼的同一個交易中使用
+ *       token，因此預先開啟連結的郵件掃描器無法用掉它，設定失敗時連結仍可
+ *       使用。</li>
  *   <li>Setting the password clears a temporary lock and the forced change,
  *       and revokes every login session.
  *       <br>設定密碼後清除暫時鎖定與強制變更，並撤銷所有登入 Session。</li>
  * </ul>
- * The pages exist only when mails can be sent.
+ * Without a way to send mails the pages answer {@code 404} and the login
+ * page hides the link.
  * <p>
- * 只有在可以寄信時才提供這些頁面。
+ * 沒有寄信方式時，這些頁面回應 {@code 404}，登入頁也不顯示連結。
  *
  * @author Jacky
  * @since 2.1.0
@@ -68,7 +74,7 @@ public class PasswordResetController {
     private final ActionTokenService tokens;
     private final PasswordChangeService passwords;
     private final PasswordPolicy policy;
-    private final AccountMailer mailer;
+    private final AccountMailDispatcher mailer;
     private final AccountLinks links;
     private final Duration resetTtl;
     private final PageSupport page;
@@ -88,14 +94,14 @@ public class PasswordResetController {
      *                    <br>設定新密碼
      * @param policy      the password rules, shown on the page
      *                    <br>密碼規則，顯示在頁面上
-     * @param mailer      sends the link
+     * @param mailer      sends the link in the background
      *                    <br>寄出連結
      * @param links       builds the link
      *                    <br>產生連結
      */
     public PasswordResetController(AuthorizationServerProperties properties, UserAccountService users,
                                    ActionTokenService tokens, PasswordChangeService passwords, PasswordPolicy policy,
-                                   AccountMailer mailer, AccountLinks links) {
+                                   AccountMailDispatcher mailer, AccountLinks links) {
         this.users = users;
         this.tokens = tokens;
         this.passwords = passwords;
@@ -171,7 +177,7 @@ public class PasswordResetController {
                             Model model) {
         requireMail();
         populate(request, model);
-        boolean valid = token != null && tokens.find(token, ActionTokenService.Purpose.PASSWORD_RESET).isPresent();
+        boolean valid = token != null && user(token).isPresent();
         model.addAttribute("valid", valid);
         model.addAttribute("token", valid ? token : null);
         return "jacky917/password-reset";
@@ -202,8 +208,7 @@ public class PasswordResetController {
         requireMail();
         populate(request, model);
         Locale locale = RequestContextUtils.getLocale(request);
-        Optional<UserAccount> user = tokens.find(token, ActionTokenService.Purpose.PASSWORD_RESET)
-                .flatMap(users::findById).filter(found -> found.status() == UserStatus.ACTIVE);
+        Optional<UserAccount> user = user(token);
         if (user.isEmpty()) {
             model.addAttribute("valid", false);
             return "jacky917/password-reset";
@@ -220,14 +225,24 @@ public class PasswordResetController {
                     + invalid.name().toLowerCase(Locale.ROOT).replace('_', '-'), null, locale));
             return "jacky917/password-reset";
         }
-        // 先用掉 token（只能使用一次），再設定密碼
-        if (tokens.consume(token, ActionTokenService.Purpose.PASSWORD_RESET).isEmpty()) {
-            model.addAttribute("valid", false);
-            return "jacky917/password-reset";
+        // token 與新密碼在同一個交易中使用：設定失敗時連結仍可再用；同時送出兩次時只有一個成功
+        String userId = user.get().id();
+        Outcome outcome = passwords.reset(user.get(), newPassword, () -> tokens.consume(token,
+                ActionTokenService.Purpose.PASSWORD_RESET).filter(userId::equals).isPresent(), request);
+        switch (outcome) {
+            case CHANGED -> model.addAttribute("done", true);
+            case PROOF_USED -> model.addAttribute("valid", false);
+            default -> model.addAttribute("error", page.message("password.error."
+                    + outcome.name().toLowerCase(Locale.ROOT).replace('_', '-'), null, locale));
         }
-        passwords.reset(user.get(), newPassword, request);
-        model.addAttribute("done", true);
         return "jacky917/password-reset";
+    }
+
+    private Optional<UserAccount> user(String token) {
+        // 重設連結只寄到已驗證的 Email；使用時再檢查一次，Email 之後被改為未驗證或帳號被停用時連結即失效
+        return tokens.find(token, ActionTokenService.Purpose.PASSWORD_RESET)
+                .flatMap(users::findById)
+                .filter(found -> found.status() == UserStatus.ACTIVE && found.emailVerified());
     }
 
     private void send(UserAccount user, Locale locale) {
@@ -236,13 +251,8 @@ public class PasswordResetController {
             log.info("Not sending another password reset link to user {} so soon", user.id());
             return;
         }
-        try {
-            mailer.send(new AccountMail(AccountMail.Type.PASSWORD_RESET, user.email(), locale, user.displayName(),
-                    links.withToken(AccountPaths.RESET_PASSWORD, token.get()), resetTtl));
-            log.info("Sent a password reset link to user {}", user.id());
-        } catch (RuntimeException ex) {
-            log.error("Cannot send the password reset link to user {}", user.id(), ex);
-        }
+        mailer.send(new AccountMail(AccountMail.Type.PASSWORD_RESET, user.email(), locale, user.displayName(),
+                links.withToken(AccountPaths.RESET_PASSWORD, token.get()), resetTtl), user.id());
     }
 
     private void requireMail() {
@@ -255,6 +265,6 @@ public class PasswordResetController {
         Locale locale = RequestContextUtils.getLocale(request);
         page.populate(model, locale, PAGE_KEYS);
         model.addAttribute("rules", page.message("password.rules", new Object[]{policy.minLength(),
-                PasswordPolicy.MAX_LENGTH}, locale));
+                PasswordPolicy.MAX_BYTES}, locale));
     }
 }

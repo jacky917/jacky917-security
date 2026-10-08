@@ -242,6 +242,6 @@ public class RegistrationController {
         Locale locale = RequestContextUtils.getLocale(request);
         page.populate(model, locale, PAGE_KEYS);
         model.addAttribute("rules", page.message("password.rules", new Object[]{policy.minLength(),
-                PasswordPolicy.MAX_LENGTH}, locale));
+                PasswordPolicy.MAX_BYTES}, locale));
     }
 }

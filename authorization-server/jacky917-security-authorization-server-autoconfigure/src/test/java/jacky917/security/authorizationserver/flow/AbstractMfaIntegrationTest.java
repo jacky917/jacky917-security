@@ -179,7 +179,133 @@ abstract class AbstractMfaIntegrationTest extends AbstractFlowIntegrationTest {
                 .andExpect(status().isNotFound());
         assertThat(jdbc.sql("SELECT COUNT(*) FROM admin_audit_log WHERE action = 'USER_MFA_RESET' AND target_id = :id")
                 .param("id", userId).query(Integer.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM login_audit WHERE user_id = :id AND event_type = 'MFA_DISABLED'")
+                .param("id", userId).query(Integer.class).single()).as("也記在使用者的登入稽核").isEqualTo(1);
         logInAndExchangeCode("lost-phone");
+    }
+
+    @Test
+    @DisplayName("第一步之後帳號被停用：正確的驗證碼也不能完成登入，不建立登入 Session")
+    void disabledAccountsCannotFinish() throws Exception {
+        String userId = createUser("disabled-later", null);
+        String secret = enableOnAccountPage("disabled-later").secret();
+        int sessions = sessionCount(userId);
+        MockHttpSession browser = passwordStep("disabled-later", randomVerifier());
+        jdbc.sql("UPDATE app_user SET status = 'DISABLED' WHERE id = :id").param("id", userId).update();
+        clock.advance(Duration.ofSeconds(30));
+        assertThat(mfa(browser, Totp.code(secret, Totp.step(clock.instant())))).isEqualTo("/login?error");
+        assertThat(sessionCount(userId)).isEqualTo(sessions);
+        mockMvc.perform(get("/jacky917/mfa").session(browser)).andExpect(header().string(HttpHeaders.LOCATION, "/login"));
+    }
+
+    @Test
+    @DisplayName("必須變更密碼且已啟用兩步驟驗證：通過第二步後先導向變更密碼頁，變更後回到授權請求")
+    void forcedPasswordChangeComesAfterTheSecondStep() throws Exception {
+        String userId = createUser("must-change-mfa", null);
+        String secret = enableOnAccountPage("must-change-mfa").secret();
+        jdbc.sql("UPDATE app_user SET password_change_required = :yes WHERE id = :id").param("yes", true)
+                .param("id", userId).update();
+        String verifier = randomVerifier();
+        MockHttpSession browser = passwordStep("must-change-mfa", verifier);
+        clock.advance(Duration.ofSeconds(30));
+        assertThat(mfa(browser, Totp.code(secret, Totp.step(clock.instant()))))
+                .isEqualTo("/jacky917/account/password");
+        mockMvc.perform(get(authorizeUrl(challenge(verifier))).session(browser).accept(MediaType.TEXT_HTML))
+                .andExpect(header().string(HttpHeaders.LOCATION, "/jacky917/account/password"));
+        String location = mockMvc.perform(post("/jacky917/account/password").session(browser).with(csrf())
+                        .param("currentPassword", PASSWORD).param("newPassword", "a completely new password")
+                        .param("confirmPassword", "a completely new password"))
+                .andExpect(status().is3xxRedirection()).andReturn().getResponse().getRedirectedUrl();
+        assertThat(location).startsWith("http://localhost/oauth2/authorize");
+    }
+
+    @Test
+    @DisplayName("停用的伺服器端檢查：角色要求時直接送出也拒絕；驗證碼錯誤時拒絕且不稽核")
+    void disablingIsCheckedOnTheServer() throws Exception {
+        String operatorId = createUser("required-operator", null);
+        Enabled enabled = enableOnAccountPage("required-operator");
+        MockHttpSession browser = logInAndVerify("required-operator", enabled.secret());
+        jdbc.sql("INSERT INTO app_user_role (user_id, role_id, granted_at) SELECT :user, id, :now FROM app_role "
+                + "WHERE code = 'SECURE_OPERATOR'").param("user", operatorId)
+                .param("now", Timestamp.from(Instant.now())).update();
+        clock.advance(Duration.ofSeconds(30));
+        assertThat(disable(browser, Totp.code(enabled.secret(), Totp.step(clock.instant())))).contains("無法停用");
+        assertThat(mfaRows(operatorId)).isEqualTo(1);
+
+        String userId = createUser("wrong-disabler", null);
+        Enabled other = enableOnAccountPage("wrong-disabler");
+        MockHttpSession otherBrowser = logInAndVerify("wrong-disabler", other.secret());
+        assertThat(disable(otherBrowser, "000000")).contains("驗證碼錯誤或已使用過");
+        assertThat(mfaRows(userId)).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM login_audit WHERE user_id = :user AND event_type = 'MFA_DISABLED'")
+                .param("user", userId).query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    @DisplayName("強制啟用的密鑰隨待驗證的登入結束：取消後同一個瀏覽器的下一位使用者看到不同的密鑰")
+    void setupSecretsEndWithThePendingLogin() throws Exception {
+        createUser("first-operator", null, "SECURE_OPERATOR");
+        createUser("second-operator", null, "SECURE_OPERATOR");
+        MockHttpSession browser = startLogin(new MockHttpSession(), randomVerifier());
+        mockMvc.perform(post("/login").session(browser).param("username", "first-operator").param("password", PASSWORD)
+                .param("_csrf", csrfToken(browser))).andExpect(header().string(HttpHeaders.LOCATION, "/jacky917/mfa/setup"));
+        String first = secretOf(page(browser, "/jacky917/mfa/setup"));
+        assertThat(secretOf(page(browser, "/jacky917/mfa/setup"))).as("重新整理時沿用").isEqualTo(first);
+        mockMvc.perform(post("/jacky917/mfa/cancel").session(browser).with(csrf()))
+                .andExpect(header().string(HttpHeaders.LOCATION, "/login"));
+
+        browser = startLogin(browser, randomVerifier());
+        mockMvc.perform(post("/login").session(browser).param("username", "second-operator").param("password", PASSWORD)
+                .param("_csrf", csrfToken(browser))).andExpect(header().string(HttpHeaders.LOCATION, "/jacky917/mfa/setup"));
+        assertThat(secretOf(page(browser, "/jacky917/mfa/setup"))).isNotEqualTo(first);
+    }
+
+    @Test
+    @DisplayName("待驗證的登入超過 5 分鐘：正確的驗證碼也回到登入頁並說明逾時")
+    void pendingLoginsExpire() throws Exception {
+        String userId = createUser("slow-user", null);
+        String secret = enableOnAccountPage("slow-user").secret();
+        int sessions = sessionCount(userId);
+        MockHttpSession browser = passwordStep("slow-user", randomVerifier());
+        clock.advance(Duration.ofMinutes(5));
+        assertThat(mfa(browser, Totp.code(secret, Totp.step(clock.instant())))).isEqualTo("/login?error=mfa_expired");
+        assertThat(sessionCount(userId)).isEqualTo(sessions);
+        assertThat(page(new MockHttpSession(), "/login?error=mfa_expired")).contains("登入逾時");
+    }
+
+    @Test
+    @DisplayName("密鑰無法解密（例如主金鑰被更換）：說明暫時無法驗證、不計入錯誤；復原碼仍可登入")
+    void recoveryCodesWorkWhenTheSecretCannotBeRead() throws Exception {
+        String userId = createUser("broken-secret", null);
+        Enabled enabled = enableOnAccountPage("broken-secret");
+        jdbc.sql("UPDATE user_mfa_totp SET secret_encrypted = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' WHERE user_id = :id")
+                .param("id", userId).update();
+        MockHttpSession browser = passwordStep("broken-secret", randomVerifier());
+        clock.advance(Duration.ofSeconds(30));
+        assertThat(mfaPage(browser, Totp.code(enabled.secret(), Totp.step(clock.instant()))))
+                .contains("目前無法檢查 App 的驗證碼");
+        assertThat(jdbc.sql("SELECT failed_login_count FROM app_user WHERE id = :id").param("id", userId)
+                .query(Integer.class).single()).isZero();
+        assertThat(mfa(browser, enabled.recoveryCodes().get(0))).startsWith("http://localhost/oauth2/authorize");
+    }
+
+    @Test
+    @DisplayName("重新產生復原碼：驗證碼錯誤時拒絕；成功後舊的失效、新的可用、剩餘數量回到 10")
+    void regeneratesRecoveryCodes() throws Exception {
+        createUser("regenerating", null);
+        Enabled enabled = enableOnAccountPage("regenerating");
+        MockHttpSession browser = logInAndVerify("regenerating", enabled.secret());
+        assertThat(regenerate(browser, "000000")).contains("驗證碼錯誤或已使用過");
+        clock.advance(Duration.ofSeconds(30));
+        List<String> fresh = recoveryCodesOf(regenerate(browser, Totp.code(enabled.secret(),
+                Totp.step(clock.instant()))));
+        assertThat(fresh).hasSize(10).doesNotContainAnyElementsOf(enabled.recoveryCodes());
+        assertThat(page(browser, "/jacky917/account/mfa")).contains("剩餘的復原碼： 10");
+
+        assertThat(mfaPage(passwordStep("regenerating", randomVerifier()), enabled.recoveryCodes().get(1)))
+                .as("舊的復原碼失效").contains("驗證碼錯誤或已使用過");
+        assertThat(mfa(passwordStep("regenerating", randomVerifier()), fresh.get(0)))
+                .startsWith("http://localhost/oauth2/authorize");
     }
 
     // ---- 共用工具 ----
@@ -205,6 +331,39 @@ abstract class AbstractMfaIntegrationTest extends AbstractFlowIntegrationTest {
         List<String> recoveryCodes = recoveryCodesOf(codes);
         assertThat(recoveryCodes).hasSize(10).doesNotHaveDuplicates();
         return new Enabled(secret, recoveryCodes);
+    }
+
+    /**
+     * 密碼與驗證碼都通過後，回傳已登入的瀏覽器。
+     */
+    MockHttpSession logInAndVerify(String username, String secret) throws Exception {
+        clock.advance(Duration.ofSeconds(30));
+        MockHttpSession browser = passwordStep(username, randomVerifier());
+        assertThat(mfa(browser, Totp.code(secret, Totp.step(clock.instant()))))
+                .startsWith("http://localhost/oauth2/authorize");
+        return browser;
+    }
+
+    String disable(MockHttpSession browser, String code) throws Exception {
+        return mockMvc.perform(post("/jacky917/account/mfa/disable").session(browser).with(csrf())
+                        .header(HttpHeaders.ACCEPT_LANGUAGE, "zh-TW").param("code", code))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    String regenerate(MockHttpSession browser, String code) throws Exception {
+        return mockMvc.perform(post("/jacky917/account/mfa/recovery-codes").session(browser).with(csrf())
+                        .header(HttpHeaders.ACCEPT_LANGUAGE, "zh-TW").param("code", code))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    int sessionCount(String userId) {
+        return jdbc.sql("SELECT COUNT(*) FROM auth_session WHERE user_id = :user").param("user", userId)
+                .query(Integer.class).single();
+    }
+
+    int mfaRows(String userId) {
+        return jdbc.sql("SELECT COUNT(*) FROM user_mfa_totp WHERE user_id = :user").param("user", userId)
+                .query(Integer.class).single();
     }
 
     MockHttpSession startLogin(MockHttpSession browser, String verifier) throws Exception {

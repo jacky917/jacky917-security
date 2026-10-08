@@ -3,6 +3,7 @@ package jacky917.security.authorizationserver.autoconfigure;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import jacky917.security.authorizationserver.account.AccountLinks;
+import jacky917.security.authorizationserver.account.AccountMailDispatcher;
 import jacky917.security.authorizationserver.account.AccountMailer;
 import jacky917.security.authorizationserver.account.ActionTokenService;
 import jacky917.security.authorizationserver.account.PasswordChangeRequiredFilter;
@@ -113,16 +114,24 @@ import java.time.ZoneId;
  * 登入頁。
  * <ul>
  *   <li>Order 1 handles only Spring Authorization Server's endpoints
- *       ({@code /oauth2/**}, {@code /.well-known/**}, {@code /userinfo},
- *       {@code /connect/**}); a browser without a login is sent to
- *       {@code /login}.
- *       <br>Order 1 只處理 Spring Authorization Server 的端點；未登入的瀏覽器
- *       會被導向 {@code /login}。</li>
- *   <li>Order 3 handles everything else: the login form with CSRF
- *       protection, a new session id after login, and headers that forbid
- *       framing.
- *       <br>Order 3 處理其餘請求：有 CSRF 保護的登入表單、登入後更換 Session
- *       ID，以及禁止被嵌入 iframe 的標頭。</li>
+ *       ({@code /oauth2/**} except the consent page, {@code /.well-known/**},
+ *       {@code /userinfo}, {@code /connect/**}); a browser without a login
+ *       is sent to {@code /login}, and one that must change its password to
+ *       the change page.
+ *       <br>Order 1 只處理 Spring Authorization Server 的端點（同意畫面除外）；
+ *       未登入的瀏覽器會被導向 {@code /login}，必須變更密碼的瀏覽器導向
+ *       變更頁。</li>
+ *   <li>Order 2, the administration API, is defined in
+ *       {@code AuthorizationServerAdminApiConfiguration}.
+ *       <br>Order 2（管理 API）定義在
+ *       {@code AuthorizationServerAdminApiConfiguration}。</li>
+ *   <li>Order 3 handles everything else: the login, account, consent and
+ *       two-step verification pages with CSRF protection, a new session id
+ *       after login, the forced password change, and a content security
+ *       policy that forbids framing.
+ *       <br>Order 3 處理其餘請求：有 CSRF 保護的登入、帳號、同意與兩步驟驗證
+ *       頁面、登入後更換 Session ID、強制變更密碼，以及禁止被嵌入的內容安全
+ *       政策。</li>
  * </ul>
  * Each chain backs off when the application defines a bean with the same
  * name.
@@ -511,7 +520,7 @@ class AuthorizationServerSecurityConfiguration {
     PasswordChangeService passwordChangeService(UserAccountService users, JdbcClient jdbcClient,
                                                 PasswordEncoder passwordEncoder, PasswordPolicy passwordPolicy,
                                                 AccountLockout lockout, AuthSessionService sessions,
-                                                AccountMailer mailer, AccountLinks links,
+                                                AccountMailDispatcher mailer, AccountLinks links,
                                                 ApplicationEventPublisher events,
                                                 PlatformTransactionManager transactionManager, Clock clock) {
         return new PasswordChangeService(users, jdbcClient, passwordEncoder, passwordPolicy, lockout, sessions, mailer,
@@ -538,8 +547,8 @@ class AuthorizationServerSecurityConfiguration {
     PasswordResetController jacky917PasswordResetController(AuthorizationServerProperties properties,
                                                             UserAccountService users, ActionTokenService tokens,
                                                             PasswordChangeService passwords,
-                                                            PasswordPolicy passwordPolicy, AccountMailer mailer,
-                                                            AccountLinks links) {
+                                                            PasswordPolicy passwordPolicy,
+                                                            AccountMailDispatcher mailer, AccountLinks links) {
         return new PasswordResetController(properties, users, tokens, passwords, passwordPolicy, mailer, links);
     }
 
@@ -549,8 +558,8 @@ class AuthorizationServerSecurityConfiguration {
             havingValue = "true")
     RegistrationService registrationService(AuthorizationServerProperties properties, UserAccountService users,
                                             JdbcClient jdbcClient, PasswordEncoder passwordEncoder,
-                                            ActionTokenService tokens, AccountMailer mailer, AccountLinks links,
-                                            ApplicationEventPublisher events,
+                                            ActionTokenService tokens, AccountMailDispatcher mailer,
+                                            AccountLinks links, ApplicationEventPublisher events,
                                             PlatformTransactionManager transactionManager, Clock clock) {
         AuthorizationServerProperties.Account account = properties.getAccount();
         return new RegistrationService(users, jdbcClient, passwordEncoder, tokens, mailer, links, events,

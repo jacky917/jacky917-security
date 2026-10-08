@@ -8,6 +8,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.task.TaskExecutionAutoConfiguration;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -55,6 +57,17 @@ class AccountConfigurationIntegrationTest {
     }
 
     @Test
+    @DisplayName("背景寄信的 executor 不是 Bean：應用程式仍有 Spring Boot 的 applicationTaskExecutor")
+    void keepsTheApplicationTaskExecutor() {
+        TestDatabases.runner(TestDatabases.SQLITE)
+                .withConfiguration(AutoConfigurations.of(TaskExecutionAutoConfiguration.class))
+                .run(context -> {
+                    assertThat(context).hasBean("applicationTaskExecutor");
+                    assertThat(context).hasSingleBean(AccountMailDispatcher.class);
+                });
+    }
+
+    @Test
     @DisplayName("應用程式自己的 AccountMailer 優先")
     void applicationMailerWins() {
         AccountMailer own = new UnavailableAccountMailer();
@@ -68,7 +81,8 @@ class AccountConfigurationIntegrationTest {
     @DisplayName("開啟註冊卻無法寄信：啟動失敗，訊息說明如何設定（T-ACCT-08）")
     void registrationNeedsMail() {
         assertThatThrownBy(() -> new RegistrationService(mock(UserAccountService.class), mock(JdbcClient.class),
-                mock(PasswordEncoder.class), mock(ActionTokenService.class), new UnavailableAccountMailer(),
+                mock(PasswordEncoder.class), mock(ActionTokenService.class),
+                new AccountMailDispatcher(new UnavailableAccountMailer(), Runnable::run, mock(ApplicationEventPublisher.class)),
                 mock(AccountLinks.class), mock(ApplicationEventPublisher.class), mock(TransactionOperations.class),
                 Duration.ofHours(24), Duration.ofHours(1), Clock.systemUTC()))
                 .isInstanceOf(IllegalStateException.class)

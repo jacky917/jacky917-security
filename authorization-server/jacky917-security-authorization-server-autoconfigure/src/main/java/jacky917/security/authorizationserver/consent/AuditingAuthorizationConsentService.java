@@ -19,6 +19,13 @@ import java.time.Clock;
  * 以另一個服務儲存同意紀錄，並稽核每一次變更（第 3、4 階段設計 §6.2）：儲存時
  * 發布 {@code CONSENT_GRANTED}，刪除時發布 {@code CONSENT_REVOKED}；使用者即
  * 同意紀錄的 principal name（使用者 ID）。
+ * <p>
+ * Spring Authorization Server removes a consent only when the user denies
+ * and nothing is left consented. Withdrawing on the account page does not
+ * pass through here; {@code AuthorizedApplicationService} audits it.
+ * <p>
+ * Spring Authorization Server 只在使用者拒絕、且沒有任何已同意的權限時刪除同意
+ * 紀錄。帳號頁的撤回不經過這裡，由 {@code AuthorizedApplicationService} 稽核。
  *
  * @author Jacky
  * @since 2.1.0

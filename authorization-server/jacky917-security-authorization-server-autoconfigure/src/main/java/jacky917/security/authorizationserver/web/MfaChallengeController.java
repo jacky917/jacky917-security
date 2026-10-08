@@ -41,15 +41,25 @@ import java.util.Optional;
  * 登入的第二步（第 3、4 階段設計 §7.2）：輸入驗證器 App 的驗證碼或復原碼，或
  * 在角色要求時啟用兩步驟驗證。
  * <ul>
- *   <li>Each wrong code is audited as a failed {@code LOGIN}
- *       ({@code MFA_FAILED}) and counts towards the account lock; after
- *       five the pending login ends and the browser goes back to the login
- *       page.
- *       <br>每次輸入錯誤都稽核為失敗的 {@code LOGIN}（{@code MFA_FAILED}），
- *       並計入帳號鎖定；錯誤五次後結束待驗證的登入，瀏覽器回到登入頁。</li>
+ *   <li>Each wrong code on {@code /jacky917/mfa} is audited as a failed
+ *       {@code LOGIN} ({@code MFA_FAILED}) and counts towards the account
+ *       lock; a wrong code while turning it on only counts towards the
+ *       limit. After {@link PendingLogin#MAX_FAILURES} wrong codes the
+ *       pending login ends and the browser goes back to the login page.
+ *       <br>{@code /jacky917/mfa} 的每次輸入錯誤都稽核為失敗的
+ *       {@code LOGIN}（{@code MFA_FAILED}），並計入帳號鎖定；啟用時輸入錯誤
+ *       只計入次數上限。錯誤達 {@code PendingLogin#MAX_FAILURES} 次後結束待驗證
+ *       的登入，瀏覽器回到登入頁。</li>
+ *   <li>When the app's codes cannot be checked (the secret cannot be
+ *       decrypted), the page says so without counting a failure; recovery
+ *       codes still work.
+ *       <br>無法檢查 App 的驗證碼（密鑰無法解密）時，頁面說明原因且不計入
+ *       錯誤；復原碼仍可使用。</li>
  *   <li>Without a pending login, or after it expired, the pages send the
- *       browser to the login page.
- *       <br>沒有待驗證的登入或已逾時時，頁面把瀏覽器導向登入頁。</li>
+ *       browser to the login page, which says that the sign-in took too
+ *       long.
+ *       <br>沒有待驗證的登入或已逾時時，頁面把瀏覽器導向登入頁，並說明登入
+ *       逾時。</li>
  * </ul>
  *
  * @author Jacky
@@ -59,7 +69,6 @@ import java.util.Optional;
 @Controller
 public class MfaChallengeController {
 
-    private static final String SETUP_SECRET_ATTRIBUTE = MfaChallengeController.class.getName() + ".SECRET";
     private static final String[] PAGE_KEYS = {"mfa.title", "mfa.message", "mfa.code", "mfa.submit",
             "mfa.recovery-hint", "mfa.cancel", "mfa.setup.title", "mfa.setup.required", "mfa.setup.scan",
             "mfa.setup.key", "mfa.setup.code", "mfa.setup.submit", "mfa.codes.title", "mfa.codes.message",
@@ -164,13 +173,22 @@ public class MfaChallengeController {
                                    HttpServletResponse response, Model model) throws IOException {
         PendingLogin pending = flow.pending(request);
         if (pending == null || pending.enrollment()) {
-            response.sendRedirect(request.getContextPath() + "/login");
+            // 待驗證的登入已逾時（或從未開始）：說明原因，請使用者重新登入
+            log.info("Two-step verification submitted without a pending login (expired or never started)");
+            response.sendRedirect(request.getContextPath() + "/login?error=mfa_expired");
             return null;
         }
         if (!canLogIn(pending, request, response)) {
             return null;
         }
         MfaService.Verification verification = mfa.verify(pending.userId(), code);
+        if (verification == MfaService.Verification.UNAVAILABLE) {
+            // 不是使用者的錯：不計入錯誤次數，請使用者改用復原碼
+            populate(request, model);
+            model.addAttribute("error", page.message("mfa.error.unavailable", null,
+                    RequestContextUtils.getLocale(request)));
+            return "jacky917/mfa";
+        }
         if (verification == MfaService.Verification.INVALID) {
             return refuse(pending, request, response, model);
         }
@@ -201,7 +219,7 @@ public class MfaChallengeController {
             return "redirect:/login";
         }
         populate(request, model);
-        setup.populate(model, pending.userId(), secret(request), MfaPaths.SETUP);
+        setup.populate(model, pending.userId(), pending.setupSecret(), MfaPaths.SETUP);
         model.addAttribute("required", true);
         return "jacky917/mfa-setup";
     }
@@ -231,13 +249,15 @@ public class MfaChallengeController {
                                    HttpServletResponse response, Model model) throws IOException {
         PendingLogin pending = flow.pending(request);
         if (pending == null || !pending.enrollment()) {
-            response.sendRedirect(request.getContextPath() + "/login");
+            // 待驗證的登入已逾時（或從未開始）：說明原因，請使用者重新登入
+            log.info("Two-step verification submitted without a pending login (expired or never started)");
+            response.sendRedirect(request.getContextPath() + "/login?error=mfa_expired");
             return null;
         }
         if (!canLogIn(pending, request, response)) {
             return null;
         }
-        String secret = secret(request);
+        String secret = pending.setupSecret();
         Optional<List<String>> codes = mfa.enable(pending.userId(), secret, code);
         if (codes.isEmpty()) {
             if (!flow.recordFailure(pending, request)) {
@@ -250,7 +270,6 @@ public class MfaChallengeController {
             model.addAttribute("error", page.message("mfa.error.code", null, RequestContextUtils.getLocale(request)));
             return "jacky917/mfa-setup";
         }
-        request.getSession().removeAttribute(SETUP_SECRET_ATTRIBUTE);
         events.publishEvent(LoginAuditEvent.builder(LoginAuditEventType.MFA_ENABLED, clock.instant(), true)
                 .userId(pending.userId()).request(request).build());
         complete(pending, request, response);
@@ -278,7 +297,8 @@ public class MfaChallengeController {
 
     private void complete(PendingLogin pending, HttpServletRequest request, HttpServletResponse response) {
         flow.complete(pending, request, response);
-        if (pending.continuation() == PendingLogin.Continuation.FEDERATED) {
+        // 第三方登入與以密碼確認的連結：等待中的帳號連結在第二步通過後才建立
+        if (pending.continuation() != PendingLogin.Continuation.PASSWORD) {
             federatedLogins.ifAvailable(handler -> handler.completePendingLink(pending.userId(), request));
         }
     }
@@ -312,16 +332,6 @@ public class MfaChallengeController {
         populate(request, model);
         model.addAttribute("error", page.message("mfa.error.code", null, RequestContextUtils.getLocale(request)));
         return "jacky917/mfa";
-    }
-
-    private String secret(HttpServletRequest request) {
-        // 密鑰在確認之前只存在瀏覽器 Session，重新整理頁面時沿用同一個
-        if (request.getSession().getAttribute(SETUP_SECRET_ATTRIBUTE) instanceof String secret) {
-            return secret;
-        }
-        String secret = MfaSetupSupport.newSecret();
-        request.getSession().setAttribute(SETUP_SECRET_ATTRIBUTE, secret);
-        return secret;
     }
 
     private void populate(HttpServletRequest request, Model model) {

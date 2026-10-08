@@ -38,8 +38,10 @@ import java.time.Instant;
  * @param createdAt          when the account was created
  *                           <br>建立時間
  * @param passwordChangeRequired  whether the user must change the password
- *                           at the next password login
- *                           <br>下一次以密碼登入時是否必須變更密碼
+ *                                after logging in with it; cleared when a
+ *                                new password is set
+ *                                <br>以密碼登入後是否必須變更密碼；設定新密碼
+ *                                時清除
  * @author Jacky
  * @since 2.1.0
  */

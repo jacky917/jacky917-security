@@ -64,8 +64,6 @@ public enum LoginAuditEventType {
      * A user registered an account.
      * <p>
      * 使用者註冊帳號。
-     *
-     * @since 2.1.0
      */
     USER_REGISTERED,
 
@@ -73,8 +71,6 @@ public enum LoginAuditEventType {
      * A user verified their email address.
      * <p>
      * 使用者驗證 Email。
-     *
-     * @since 2.1.0
      */
     EMAIL_VERIFIED,
 
@@ -82,8 +78,6 @@ public enum LoginAuditEventType {
      * A user set a new password through a reset link.
      * <p>
      * 使用者透過重設連結設定新密碼。
-     *
-     * @since 2.1.0
      */
     PASSWORD_RESET,
 
@@ -91,8 +85,6 @@ public enum LoginAuditEventType {
      * A user turned on two-step verification.
      * <p>
      * 使用者啟用兩步驟驗證。
-     *
-     * @since 2.1.0
      */
     MFA_ENABLED,
 
@@ -101,8 +93,6 @@ public enum LoginAuditEventType {
      * administrator.
      * <p>
      * 兩步驟驗證被停用（由使用者或管理員）。
-     *
-     * @since 2.1.0
      */
     MFA_DISABLED,
 
@@ -110,8 +100,6 @@ public enum LoginAuditEventType {
      * A user allowed a third-party application to use some scopes.
      * <p>
      * 使用者允許第三方應用使用某些 scope。
-     *
-     * @since 2.1.0
      */
     CONSENT_GRANTED,
 
@@ -119,8 +107,6 @@ public enum LoginAuditEventType {
      * A user withdrew the access of a third-party application.
      * <p>
      * 使用者撤回第三方應用的授權。
-     *
-     * @since 2.1.0
      */
     CONSENT_REVOKED
 }

@@ -23,6 +23,7 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.function.BooleanSupplier;
 
 /**
  * Sets a user's password and ends their other logins (phase 3 and 4 design
@@ -52,7 +53,7 @@ public class PasswordChangeService {
     private final PasswordPolicy passwordPolicy;
     private final AccountLockout lockout;
     private final AuthSessionService sessions;
-    private final AccountMailer mailer;
+    private final AccountMailDispatcher mailer;
     private final AccountLinks links;
     private final ApplicationEventPublisher events;
     private final TransactionOperations transactions;
@@ -76,8 +77,8 @@ public class PasswordChangeService {
      *                         <br>計入目前密碼的錯誤
      * @param sessions         revokes the other login sessions
      *                         <br>撤銷其他登入 Session
-     * @param mailer           sends the notice
-     *                         <br>寄出通知
+     * @param mailer           sends the notice in the background
+     *                         <br>在背景寄出通知
      * @param links            builds the link in the notice
      *                         <br>產生通知中的連結
      * @param events           publishes the audit events
@@ -90,7 +91,7 @@ public class PasswordChangeService {
      */
     public PasswordChangeService(UserAccountService users, JdbcClient jdbc, PasswordEncoder passwordEncoder,
                                  PasswordPolicy passwordPolicy, AccountLockout lockout, AuthSessionService sessions,
-                                 AccountMailer mailer, AccountLinks links, ApplicationEventPublisher events,
+                                 AccountMailDispatcher mailer, AccountLinks links, ApplicationEventPublisher events,
                                  TransactionOperations transactions, Clock clock) {
         this.users = users;
         this.jdbc = jdbc;
@@ -148,35 +149,43 @@ public class PasswordChangeService {
         if (invalid != null) {
             return invalid;
         }
-        set(user, newPassword, keepSessionId, LoginAuditEventType.PASSWORD_CHANGED, request);
+        set(user, newPassword, keepSessionId, LoginAuditEventType.PASSWORD_CHANGED, () -> true, request);
         return Outcome.CHANGED;
     }
 
     /**
      * Sets the password of a user who proved their identity another way,
-     * for example with a password reset link. Every login session is
-     * revoked.
+     * for example with a password reset link. The proof is used in the same
+     * transaction that sets the password: if setting it fails, the proof
+     * stays unused. Every login session is revoked.
      * <p>
-     * 為以其他方式證明身分（例如重設密碼連結）的使用者設定密碼。所有登入
-     * Session 都會撤銷。
+     * 為以其他方式證明身分（例如重設密碼連結）的使用者設定密碼。證明與設定密碼
+     * 在同一個交易中使用：設定失敗時證明維持未使用。所有登入 Session 都會撤銷。
      *
      * @param user         the user
      *                     <br>使用者
      * @param newPassword  the new password
      *                     <br>新密碼
+     * @param useProof     uses the proof, for example a reset link, inside
+     *                     the transaction; returns {@code false} if it was
+     *                     already used or expired
+     *                     <br>在交易中使用證明（例如重設連結）；已使用或已
+     *                     到期時回傳 {@code false}
      * @param request      the current request, for the audit and the mail
      *                     language
      *                     <br>目前的請求，用於稽核與信件語言
-     * @return {@link Outcome#CHANGED}, or why the password was refused
-     *         <br>{@code CHANGED}，或密碼被拒絕的原因
+     * @return {@link Outcome#CHANGED}, {@link Outcome#PROOF_USED}, or why
+     *         the password was refused
+     *         <br>{@code CHANGED}、{@code PROOF_USED}，或密碼被拒絕的原因
      */
-    public Outcome reset(UserAccount user, String newPassword, HttpServletRequest request) {
+    public Outcome reset(UserAccount user, String newPassword, BooleanSupplier useProof,
+                         HttpServletRequest request) {
         Outcome invalid = validate(user, newPassword);
         if (invalid != null) {
             return invalid;
         }
-        set(user, newPassword, null, LoginAuditEventType.PASSWORD_RESET, request);
-        return Outcome.CHANGED;
+        return set(user, newPassword, null, LoginAuditEventType.PASSWORD_RESET, useProof, request)
+                ? Outcome.CHANGED : Outcome.PROOF_USED;
     }
 
     /**
@@ -206,34 +215,38 @@ public class PasswordChangeService {
         return null;
     }
 
-    private void set(UserAccount user, String newPassword, @Nullable String keepSessionId, LoginAuditEventType type,
-                     HttpServletRequest request) {
+    private boolean set(UserAccount user, String newPassword, @Nullable String keepSessionId, LoginAuditEventType type,
+                        BooleanSupplier useProof, HttpServletRequest request) {
         Instant now = clock.instant();
         String hash = passwordEncoder.encode(newPassword);
-        transactions.executeWithoutResult(status -> {
+        Boolean set = transactions.execute(status -> {
+            if (!useProof.getAsBoolean()) {
+                return false;
+            }
             jdbc.sql("UPDATE app_user SET password_hash = :hash, password_changed_at = :at, "
                             + "password_change_required = :required, failed_login_count = 0, locked_until = NULL, "
                             + "updated_at = :at, row_version = row_version + 1 WHERE id = :id")
                     .param("hash", hash).param("at", Timestamp.from(now)).param("required", false)
                     .param("id", user.id()).update();
             sessions.revokeAll(user.id(), RevokeReason.PASSWORD_CHANGED, keepSessionId);
+            return true;
         });
+        if (!Boolean.TRUE.equals(set)) {
+            return false;
+        }
         log.info("User {} set a new password ({})", user.id(), type);
         events.publishEvent(LoginAuditEvent.builder(type, now, true).userId(user.id())
                 .login(LoginMethod.PASSWORD, LoginMethod.LOCAL_IDP).sessionId(keepSessionId).request(request).build());
         notify(user, RequestContextUtils.getLocale(request));
+        return true;
     }
 
     private void notify(UserAccount user, Locale locale) {
         if (!mailer.isAvailable() || !user.emailVerified() || user.email() == null) {
             return;
         }
-        try {
-            mailer.send(new AccountMail(AccountMail.Type.PASSWORD_CHANGED, user.email(), locale, user.displayName(),
-                    links.to(AccountPaths.FORGOT_PASSWORD), null));
-        } catch (RuntimeException ex) {
-            log.error("Cannot send the password change notice to user {}", user.id(), ex);
-        }
+        mailer.send(new AccountMail(AccountMail.Type.PASSWORD_CHANGED, user.email(), locale, user.displayName(),
+                links.to(AccountPaths.FORGOT_PASSWORD), null), user.id());
     }
 
     /**
@@ -284,6 +297,14 @@ public class PasswordChangeService {
          * <p>
          * 使用者沒有可變更的密碼；可以透過重設連結設定。
          */
-        NO_PASSWORD
+        NO_PASSWORD,
+
+        /**
+         * The proof, for example a reset link, was used or expired before
+         * the password was set; nothing changed.
+         * <p>
+         * 證明（例如重設連結）在設定密碼前已被使用或已到期；沒有任何變更。
+         */
+        PROOF_USED
     }
 }

@@ -40,12 +40,17 @@ import java.util.Set;
  *       scopes consented to before.
  *       <br>頁面顯示 client 的名稱、Logo、說明與連結、要同意的 scope 及其
  *       名稱與說明，以及先前已同意的 scope。</li>
- *   <li>"Allow" posts the shown scopes and those that need no consent to
- *       {@code /oauth2/authorize}; "Deny" posts none, and the client gets
- *       {@code access_denied}.
- *       <br>「允許」把顯示的 scope 與不需要同意的 scope 送到
- *       {@code /oauth2/authorize}；「拒絕」不送任何 scope，client 收到
- *       {@code access_denied}。</li>
+ *   <li>"Allow" posts the checked scopes and those that need no consent to
+ *       {@code /oauth2/authorize}. The other button posts none: on a first
+ *       consent it reads "Deny" and the client gets {@code access_denied};
+ *       when the user consented before, it reads "Don't allow the new
+ *       permissions", because Spring Authorization Server then continues
+ *       with the scopes consented to before.
+ *       <br>「允許」把勾選的 scope 與不需要同意的 scope 送到
+ *       {@code /oauth2/authorize}。另一個按鈕不送任何 scope：第一次同意時顯示
+ *       「拒絕」，client 收到 {@code access_denied}；先前已同意過時顯示「不允許
+ *       新的權限」，因為此時 Spring Authorization Server 會以先前同意的 scope
+ *       繼續。</li>
  * </ul>
  *
  * @author Jacky
@@ -62,8 +67,8 @@ public class ConsentController {
     public static final String CONSENT_PATH = "/oauth2/consent";
 
     private static final String[] PAGE_KEYS = {"consent.title", "consent.requested", "consent.previous",
-            "consent.allow", "consent.deny", "consent.homepage", "consent.privacy", "consent.terms",
-            "consent.hint"};
+            "consent.allow", "consent.deny", "consent.deny-new", "consent.homepage", "consent.privacy", "consent.terms",
+            "consent.hint", "consent.hint-previous"};
 
     private final RegisteredClientRepository clients;
     private final ClientProfileRepository profiles;

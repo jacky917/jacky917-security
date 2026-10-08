@@ -322,22 +322,17 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
     }
 
     /**
-     * Completes a link waiting for this user: logging in with a provider
-     * already linked to the user confirms it. A link that cannot be
-     * completed is logged, audited and reported through
+     * Completes a link waiting for this user, if the browser has one:
+     * logging in with a provider already linked to the user, or confirming
+     * with the password, confirms it. Two-step verification calls it once
+     * the second step passes, so a link is never created before that. A
+     * link that cannot be completed is logged, audited and reported through
      * {@link #LINK_ERROR_ATTRIBUTE}; the login itself goes on.
      * <p>
-     * 完成等待此使用者確認的連結：以已連結到該使用者的提供者登入即代表確認。無法
-     * 完成的連結會記錄日誌、稽核，並透過 {@code LINK_ERROR_ATTRIBUTE} 回報；登入
-     * 本身照常繼續。
-     */
-    /**
-     * Completes the link of an external account that waited for this
-     * login, if the browser has one; also called after two-step
-     * verification completes a login through an identity provider.
-     * <p>
-     * 若瀏覽器有等待此次登入的外部帳號連結，完成它；兩步驟驗證完成第三方登入
-     * 後也會呼叫。
+     * 若瀏覽器有等待此使用者確認的連結，完成它：以已連結到該使用者的提供者
+     * 登入，或以密碼確認，即代表確認。兩步驟驗證在第二步通過後呼叫它，因此
+     * 連結不會在那之前建立。無法完成的連結會記錄日誌、稽核，並透過
+     * {@code LINK_ERROR_ATTRIBUTE} 回報；登入本身照常繼續。
      *
      * @param userId   the user who logged in
      *                 <br>登入的使用者

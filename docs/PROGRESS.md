@@ -1114,3 +1114,23 @@
   - 使用指南移除「預覽版」，依賴改為以 BOM 引用；README 模組表、CHANGELOG（Unreleased）列出第 3、4 階段的功能；GitHub Packages 指南與專案結構文件更新。
   - 範例登入服務：`mfa.required-roles: AS_ADMIN`、開啟註冊並以 `account.mail.log-links` 示範寄信；E2E 指南說明如何試用帳號頁、忘記密碼、註冊與兩步驟驗證。
 - **未做**: 實際發佈（版本號仍為 `2.1.0-SNAPSHOT`）。
+
+## Step 57: Authorization Server——多面向審查後的修正
+- **Status**: 🟢 Completed
+- **審查**: code-reviewer、silent-failure-hunter、pr-test-analyzer、comment-analyzer（兩輪）、type-design-analyzer，範圍為 `main...claude/as-phase-3`。
+- **Critical**:
+  - 密碼政策改為最多 72 bytes（UTF-8）：Spring Security 7.1 拒絕雜湊更長的密碼，原本會 500，並用掉重設連結、讓註冊頁可用來判斷帳號是否存在。
+  - 重設密碼的 token 與設定密碼在同一個交易中使用，並檢查結果（`PasswordChangeService.reset` 接受在交易中使用的證明，`Outcome.PROOF_USED`）。
+- **Important（安全）**:
+  - 註冊屬於未驗證地址或不能登入之帳號的 Email 時不寄任何信；重設連結使用時也要求 Email 已驗證、帳號啟用中。
+  - 登入時強制啟用兩步驟驗證的密鑰改存在待驗證的登入中（隨取消、逾時一起消失）；帳號頁的密鑰綁定使用者。
+  - 以密碼確認帳號連結時，擁有者需要第二步則在第二步通過後才建立連結。
+  - 同意畫面：已同意過時按鈕改為「不允許新的權限」並說明先前的同意仍有效（Spring Authorization Server 的行為，已以測試確認）。
+- **Important（其他）**:
+  - 帳號信件改由 `AccountMailDispatcher` 在背景寄出（虛擬執行緒），失敗原因分類記錄並發布 `AccountMailFailedEvent`，metric `jacky917.as.mail.failures`；`AccountMail` 建立時要求連結與有效期；沒有寄信方式時啟動記錄 INFO。
+  - 兩步驟驗證：密鑰無法解密時顯示說明、不計入錯誤，復原碼仍可用；以長度區分驗證碼與復原碼；同時啟用兩次不再 500；逾時回到登入頁並說明。
+  - 管理 API：型別錯誤與缺少參數指出欄位、本文不是 JSON 的說明、資料庫約束衝突回 409、顯示名稱長度檢查；第三方以外的舊 client 更新時保留信任等級；管理員重設兩步驟驗證也寫入使用者的 `MFA_DISABLED` 稽核。
+  - IP 限流也涵蓋變更密碼表單。
+- **測試**: 新增 72 bytes 密碼、未驗證地址的註冊、重設連結的有效條件、寄信失敗、第三方登入與帳號連結的兩步驟驗證、待驗證期間停用、強制變更密碼與兩步驟驗證、停用的伺服器端檢查、密鑰不沿用、逾時、密鑰無法解密、重新產生復原碼、撤回授權的隔離、第三方 token 不能呼叫管理 API、稽核操作者、錯誤回應、權限矩陣、SQLite 從 1.0.6 升級保留稽核資料、`AccountMailDispatcher`；稽核值測試改為走訪所有 enum。
+- **重新審查**: 修正後再由 code-reviewer 審查一次：背景寄信的 executor 原本註冊成 Bean，會讓 Spring Boot 不建立應用程式的 `applicationTaskExecutor`，改由 `AccountMailDispatcher` 自己持有並在關閉時停止（新增測試）；`AuthorizationServerMetrics` 錯位的 Javadoc 已修正。
+- **文件**: 註解與行為不符之處修正（CSP、`countsTowardsLock`、內建角色、IP 限流、同意畫面、連結等），變更的 Javadoc 行寬不超過 80 欄；使用指南 §9.1 補上 client／scope／API resource 的權限，帳號自助、兩步驟驗證、metrics 更新。Migration 的註解不修改（Flyway 的 checksum 包含註解）。

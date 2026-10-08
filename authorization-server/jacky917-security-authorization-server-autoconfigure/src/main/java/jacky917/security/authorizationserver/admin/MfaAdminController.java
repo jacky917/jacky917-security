@@ -1,8 +1,11 @@
 package jacky917.security.authorizationserver.admin;
 
+import jacky917.security.authorizationserver.audit.LoginAuditEvent;
+import jacky917.security.authorizationserver.audit.LoginAuditEventType;
 import jacky917.security.authorizationserver.mfa.MfaService;
 import jacky917.security.authorizationserver.user.UserAccountService;
 import org.jspecify.annotations.Nullable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -12,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -34,7 +38,9 @@ public class MfaAdminController {
     private final MfaService mfa;
     private final UserAccountService users;
     private final AdminAuditService audit;
+    private final ApplicationEventPublisher events;
     private final TransactionOperations transactions;
+    private final Clock clock;
 
     /**
      * Creates the controller.
@@ -45,17 +51,25 @@ public class MfaAdminController {
      *                      <br>查詢與停用兩步驟驗證
      * @param users         checks that the user exists
      *                      <br>確認使用者存在
-     * @param audit         records the reset
-     *                      <br>記錄重設
+     * @param audit         records the reset in {@code admin_audit_log}
+     *                      <br>在 {@code admin_audit_log} 記錄重設
+     * @param events        records it in the user's {@code login_audit} as
+     *                      {@code MFA_DISABLED}
+     *                      <br>在使用者的 {@code login_audit} 記錄
+     *                      {@code MFA_DISABLED}
      * @param transactions  turns it off and records it together
      *                      <br>在同一個交易中停用並記錄
+     * @param clock         the clock
+     *                      <br>時鐘
      */
     public MfaAdminController(MfaService mfa, UserAccountService users, AdminAuditService audit,
-                              TransactionOperations transactions) {
+                              ApplicationEventPublisher events, TransactionOperations transactions, Clock clock) {
         this.mfa = mfa;
         this.users = users;
         this.audit = audit;
+        this.events = events;
         this.transactions = transactions;
+        this.clock = clock;
     }
 
     /**
@@ -103,6 +117,8 @@ public class MfaAdminController {
             audit.record("USER_MFA_RESET", AdminAuditTarget.USER, userId, Map.of("mfaEnabled", true),
                     Map.of("mfaEnabled", false));
         });
+        events.publishEvent(LoginAuditEvent.builder(LoginAuditEventType.MFA_DISABLED, clock.instant(), true)
+                .userId(userId).currentRequest().build());
     }
 
     private void requireUser(String userId) {

@@ -26,13 +26,15 @@ import java.util.regex.Pattern;
  *       with {@code as:} belong to the authorization server and cannot be
  *       created.
  *       <br>代碼依資料模型 §5.1：角色為大寫（{@code CONTENT_MANAGER}），權限為
- *       小寫的 {@code 資源:動作}（{@code order:read}）。以 {@code as:} 開頭的
+ *       小寫的「資源:動作」（{@code order:read}）。以 {@code as:} 開頭的
  *       權限屬於 Authorization Server，不能新增。</li>
  *   <li>Built-in roles and permissions keep their codes and cannot be
- *       deleted; only their names and descriptions can change, and
- *       {@code AS_ADMIN} always keeps every {@code as:} permission.
- *       <br>內建的角色與權限不能改代碼、不能刪除，只能修改名稱與說明；
- *       {@code AS_ADMIN} 一律保有所有 {@code as:} 權限。</li>
+ *       deleted. The permissions of {@code AS_ADMIN} cannot change
+ *       ({@code 409}); other roles, built-in ones included, can change their
+ *       name, description and permissions.
+ *       <br>內建的角色與權限不能改代碼、不能刪除。{@code AS_ADMIN} 的權限不能
+ *       變更（{@code 409}）；其他角色（包含內建角色）可以變更名稱、說明與
+ *       權限。</li>
  *   <li>A role that users still have, or a permission that a role or scope
  *       still uses, cannot be deleted.
  *       <br>仍有使用者的角色、仍被角色或 scope 使用的權限不能刪除。</li>

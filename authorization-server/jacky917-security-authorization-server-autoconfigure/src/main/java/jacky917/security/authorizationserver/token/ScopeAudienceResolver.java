@@ -9,15 +9,16 @@ import java.util.Set;
 /**
  * Gives each access token the API resources of its scopes as audience
  * ({@code token.audience-strategy: per-scope}, D07-C): the distinct
- * {@code app_scope.api_resource_code} values of the granted scopes, in
- * code order. A token none of whose scopes belongs to an API resource, for
- * example one with only {@code openid}, gets {@code token.audience}.
+ * {@code app_scope.api_resource_code} values of the granted scopes,
+ * ordered by API resource code. A token none of whose scopes belongs to
+ * an API resource, for example one with only {@code openid}, gets
+ * {@code token.audience}.
  * <p>
  * 以 scope 所屬的 API resource 作為 Access Token 的 audience
  * （{@code token.audience-strategy: per-scope}，D07-C）：授予的 scope 的
- * {@code app_scope.api_resource_code}（去除重複，依代碼排序）。沒有任何 scope
- * 屬於 API resource 的 token（例如只有 {@code openid}）使用
- * {@code token.audience}。
+ * {@code app_scope.api_resource_code}（去除重複，依 API resource 代碼
+ * 排序）。沒有任何 scope 屬於 API resource 的 token（例如只有
+ * {@code openid}）使用 {@code token.audience}。
  *
  * @author Jacky
  * @since 2.1.0
@@ -35,9 +36,11 @@ public class ScopeAudienceResolver implements AudienceResolver {
      * @param jdbc      the JDBC client of the authorization server database
      *                  <br>Authorization Server 資料庫的 JDBC client
      * @param fallback  the audience of tokens whose scopes belong to no API
-     *                  resource; must not be empty
+     *                  resource; never empty, because the configuration
+     *                  requires a {@code token.audience}
      *                  <br>scope 都不屬於任何 API resource 的 token 所用的
-     *                  audience；不可為空
+     *                  audience；設定一定有 {@code token.audience}，因此不會
+     *                  為空
      */
     public ScopeAudienceResolver(JdbcClient jdbc, List<String> fallback) {
         this.jdbc = jdbc;

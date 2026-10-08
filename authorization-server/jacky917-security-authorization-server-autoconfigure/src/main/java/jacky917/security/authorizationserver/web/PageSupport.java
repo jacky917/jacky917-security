@@ -30,15 +30,16 @@ public class PageSupport {
 
     /**
      * The content security policy of the authorization server's pages:
-     * resources and framing only from this server, images also from
-     * {@code https} addresses. It has no {@code form-action}, because
-     * browsers apply it to the redirects after a form, and the login and
-     * consent forms end at a client's redirect URI.
+     * resources only from this server, images also from {@code https:}
+     * and {@code data:} addresses (logos, the QR code), and no framing at
+     * all. It has no {@code form-action}, because browsers apply it to the
+     * redirects after a form, and the login and consent forms end at a
+     * client's redirect URI.
      * <p>
-     * Authorization Server 頁面的內容安全政策：資源與嵌入只限本伺服器，圖片另
-     * 可來自 {@code https} 網址。不設 {@code form-action}，因為瀏覽器會把它
-     * 套用到表單之後的重導，而登入與同意表單最後都會導向 client 的
-     * redirect URI。
+     * Authorization Server 頁面的內容安全政策：資源只限本伺服器，圖片另可來自
+     * {@code https:} 與 {@code data:} 網址（Logo、QR code），且完全禁止被嵌入。
+     * 不設 {@code form-action}，因為瀏覽器會把它套用到表單之後的重導，而登入與
+     * 同意表單最後都會導向 client 的 redirect URI。
      */
     public static final String CONTENT_SECURITY_POLICY =
             "default-src 'self'; img-src 'self' https: data:; frame-ancestors 'none'";

@@ -17,8 +17,8 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  *
  * @param userId     the user, or {@code null} for a client acting for itself
  *                   ({@code client_credentials})
- *                   <br>使用者；client 以自身身分呼叫（{@code client_credentials}）
- *                   時為 {@code null}
+ *                   <br>使用者；client 以自身身分呼叫
+ *                   （{@code client_credentials}）時為 {@code null}
  * @param clientId   the OAuth {@code client_id} that obtained the token, or
  *                   {@code null} if unknown
  *                   <br>取得 token 的 OAuth {@code client_id}；不明時為

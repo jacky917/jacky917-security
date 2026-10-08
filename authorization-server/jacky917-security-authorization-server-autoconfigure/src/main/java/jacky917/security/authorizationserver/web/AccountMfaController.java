@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.support.RequestContextUtils;
 
+import java.io.Serializable;
 import java.time.Clock;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -26,10 +27,11 @@ import java.util.Optional;
 /**
  * Two-step verification on the account page (phase 3 and 4 design §7.1):
  * turning it on with an authenticator app, replacing the recovery codes
- * and turning it off. Replacing and turning off need a current code.
+ * and turning it off. Replacing needs a code from the app; turning off
+ * accepts a code from the app or a recovery code.
  * <p>
  * 帳號頁的兩步驟驗證（第 3、4 階段設計 §7.1）：以驗證器 App 啟用、取代復原碼
- * 與停用。取代與停用需要目前的驗證碼。
+ * 與停用。取代需要 App 的驗證碼；停用可使用 App 的驗證碼或復原碼。
  * <p>
  * Users with a role in {@code mfa.required-roles} cannot turn it off.
  * <p>
@@ -121,9 +123,10 @@ public class AccountMfaController {
     public String enable(@RequestParam String code, Authentication authentication, HttpServletRequest request,
                          Model model) {
         String userId = authentication.getName();
-        Optional<List<String>> codes = mfa.enable(userId, secret(request), code);
+        Optional<List<String>> codes = mfa.enable(userId, secret(request, userId), code);
         if (codes.isEmpty()) {
-            return page(userId, request, model, "mfa.error.code");
+            // 已啟用（例如另一個分頁剛啟用）時顯示狀態，而不是「驗證碼錯誤」
+            return page(userId, request, model, mfa.isEnabled(userId) ? null : "mfa.error.code");
         }
         request.getSession().removeAttribute(SECRET_ATTRIBUTE);
         events.publishEvent(LoginAuditEvent.builder(LoginAuditEventType.MFA_ENABLED, clock.instant(), true)
@@ -180,7 +183,11 @@ public class AccountMfaController {
         if (mfa.isRequired(userId)) {
             return page(userId, request, model, "mfa.account.required");
         }
-        if (mfa.verify(userId, code) == MfaService.Verification.INVALID) {
+        MfaService.Verification verification = mfa.verify(userId, code);
+        if (verification == MfaService.Verification.UNAVAILABLE) {
+            return page(userId, request, model, "mfa.error.unavailable");
+        }
+        if (verification == MfaService.Verification.INVALID) {
             return page(userId, request, model, "mfa.error.code");
         }
         if (mfa.disable(userId)) {
@@ -198,7 +205,7 @@ public class AccountMfaController {
         }
         Optional<MfaService.Status> status = mfa.status(userId);
         if (status.isEmpty()) {
-            setup.populate(model, userId, secret(request), MfaPaths.ACCOUNT);
+            setup.populate(model, userId, secret(request, userId), MfaPaths.ACCOUNT);
             model.addAttribute("required", false);
             return "jacky917/mfa-setup";
         }
@@ -216,13 +223,23 @@ public class AccountMfaController {
         return "jacky917/mfa-codes";
     }
 
-    private String secret(HttpServletRequest request) {
-        // 密鑰在確認之前只存在瀏覽器 Session，重新整理頁面時沿用同一個
-        if (request.getSession().getAttribute(SECRET_ATTRIBUTE) instanceof String secret) {
-            return secret;
+    private String secret(HttpServletRequest request, String userId) {
+        // 密鑰在確認之前只存在瀏覽器 Session，重新整理頁面時沿用同一個；綁定使用者，同一個瀏覽器換人登入時不會沿用
+        if (request.getSession().getAttribute(SECRET_ATTRIBUTE) instanceof PendingSecret pending
+                && pending.userId().equals(userId)) {
+            return pending.secret();
         }
         String secret = MfaSetupSupport.newSecret();
-        request.getSession().setAttribute(SECRET_ATTRIBUTE, secret);
+        request.getSession().setAttribute(SECRET_ATTRIBUTE, new PendingSecret(userId, secret));
         return secret;
+    }
+
+    /**
+     * A secret shown on the setup page and not confirmed yet.
+     *
+     * @param userId  the user it was shown to
+     * @param secret  the Base32 secret
+     */
+    private record PendingSecret(String userId, String secret) implements Serializable {
     }
 }

@@ -73,6 +73,17 @@ class AccountMailTest {
         AccountMailer mailer = new UnavailableAccountMailer();
         assertThat(mailer.isAvailable()).isFalse();
         assertThatThrownBy(() -> mailer.send(new AccountMail(AccountMail.Type.PASSWORD_RESET, "a@example.com",
-                Locale.ENGLISH, null, null, null))).isInstanceOf(IllegalStateException.class);
+                Locale.ENGLISH, null, "https://x", Duration.ofHours(1)))).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("缺少連結或有效期的信件無法建立；密碼已變更的通知不需要有效期")
+    void refusesIncompleteMails() {
+        assertThatThrownBy(() -> new AccountMail(AccountMail.Type.EMAIL_VERIFICATION, "a@example.com", Locale.ENGLISH,
+                null, null, Duration.ofHours(1))).isInstanceOf(NullPointerException.class).hasMessage("link");
+        assertThatThrownBy(() -> new AccountMail(AccountMail.Type.PASSWORD_RESET, "a@example.com", Locale.ENGLISH,
+                null, "https://x", null)).isInstanceOf(NullPointerException.class).hasMessageContaining("validFor");
+        assertThat(new AccountMail(AccountMail.Type.PASSWORD_CHANGED, "a@example.com", Locale.ENGLISH, null,
+                "https://x", null).validFor()).isNull();
     }
 }

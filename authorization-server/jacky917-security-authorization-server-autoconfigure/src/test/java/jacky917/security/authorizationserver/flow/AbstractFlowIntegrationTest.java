@@ -169,6 +169,17 @@ abstract class AbstractFlowIntegrationTest {
      * 以指定的瀏覽器 Session 登入（可模擬同一個瀏覽器再次登入）。
      */
     LoggedIn logInAndExchangeCode(String username, MockHttpSession browser) throws Exception {
+        return logInAndExchangeCode(username, browser, PASSWORD);
+    }
+
+    /**
+     * 以指定的密碼登入。
+     */
+    LoggedIn logInAndExchangeCode(String username, String password) throws Exception {
+        return logInAndExchangeCode(username, new MockHttpSession(), password);
+    }
+
+    LoggedIn logInAndExchangeCode(String username, MockHttpSession browser, String password) throws Exception {
         String verifier = randomVerifier();
         MockHttpSession session = browser;
 
@@ -182,7 +193,7 @@ abstract class AbstractFlowIntegrationTest {
         // 2. 登入頁有表單與 CSRF token；3. 送出帳密 → 回到原本的授權請求
         String csrf = csrfToken(session);
         MvcResult login = mockMvc.perform(post("/login").session(session)
-                        .param("username", username).param("password", PASSWORD).param("_csrf", csrf))
+                        .param("username", username).param("password", password).param("_csrf", csrf))
                 .andExpect(status().is3xxRedirection()).andReturn();
         String savedRequest = login.getResponse().getRedirectedUrl();
         assertThat(savedRequest).startsWith("http://localhost/oauth2/authorize");

@@ -21,11 +21,13 @@ import java.util.List;
  * 設計 §6.3）。
  * <p>
  * Withdrawing deletes the consent and every authorization of that client
- * for the user, so its refresh tokens stop working at once; the next
- * authorization request asks for consent again.
+ * for the user, so its refresh tokens stop working at once; access tokens
+ * already issued stay valid until they expire. The next authorization
+ * request asks for consent again.
  * <p>
  * 撤回時刪除同意紀錄，以及該 client 對此使用者的所有授權，Refresh Token 因此
- * 立即失效；下一次授權請求會再次要求同意。
+ * 立即失效；已簽發的 Access Token 仍有效至到期。下一次授權請求會再次要求
+ * 同意。
  * <p>
  * It works for suspended clients too, and audits {@code CONSENT_REVOKED}.
  * <p>
