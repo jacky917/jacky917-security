@@ -377,6 +377,17 @@ abstract class AbstractAuthorizationFlowIntegrationTest extends AbstractFlowInte
     }
 
     @Test
+    @DisplayName("未開啟註冊、無法寄信（預設）：登入頁沒有註冊與忘記密碼的連結，這些頁面不存在")
+    void accountPagesNeedConfiguration() throws Exception {
+        String login = mockMvc.perform(get("/login")).andExpect(status().isOk()).andReturn().getResponse()
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(login).doesNotContain("/jacky917/register").doesNotContain("/jacky917/password/forgot");
+        mockMvc.perform(get("/jacky917/register")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/jacky917/verify-email").param("token", "x")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/jacky917/password/forgot")).andExpect(status().isNotFound());
+    }
+
+    @Test
     @DisplayName("沒有 PKCE 的授權請求被拒絕（T-CLIENT-02）")
     void authorizationRequestWithoutPkceIsRejected() throws Exception {
         String url = UriComponentsBuilder.fromPath("/oauth2/authorize")

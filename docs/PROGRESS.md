@@ -1045,3 +1045,15 @@
 - **Commands Run & Results**:
   - `AccountSelfServiceIntegrationTest` 新增 3 個（兩種資料庫）：只對已驗證的 Email 寄信且畫面相同（T-ACCT-03）、重設流程與 token 只能用一次（T-ACCT-04）、連結過期與 60 秒內只寄一封（T-ACCT-07）。
 
+## Step 50: Authorization Server——工作 24（註冊與 Email 驗證），群組 B 完成
+- **Status**: 🟢 Completed
+- **變更**:
+  - `RegistrationService`：新地址建立 `USER`、Email 未驗證的帳號並寄出驗證信（稽核 `USER_REGISTERED`）；未完成的註冊（未驗證、從未登入、沒有帳號名稱與外部帳號）被取代；既有帳號只寄「帳號已存在」通知與重設連結。無法寄信時建構失敗，因此開啟註冊卻沒有寄信方式會啟動失敗。
+  - `RegistrationController`：`GET/POST /jacky917/register`（三種情況畫面相同）、`POST /jacky917/verify-email/resend`、`GET/POST /jacky917/verify-email`（開啟連結只顯示表單；確認時必須輸入註冊時的密碼，稽核 `EMAIL_VERIFIED`）。只在 `account.registration.enabled=true` 時存在。
+  - 登入頁在開啟註冊時顯示「建立帳號」；`LoginAttemptGuard` 也涵蓋驗證與重新寄送的 POST。
+  - 使用指南：新增「帳號自助功能」、`account.*` 與 `bootstrap-admin.password-change-required` 設定、上線檢查清單；移除限制表中的「註冊、忘記密碼」。
+- **Decisions**:
+  - **DEC-115**: Email 驗證必須同時擁有連結與註冊時設定的密碼。註冊時就設定密碼的設計下，只靠連結驗證會讓以他人地址註冊的人在對方點開連結後擁有該帳號（設計 §12.2）。
+- **Commands Run & Results**:
+  - `AccountSelfServiceIntegrationTest` 新增 4 個（兩種資料庫）：註冊與驗證（T-ACCT-05）、既有 Email 不透露資訊（T-ACCT-06）、取代未完成的註冊與舊連結無法以舊密碼驗證、表單錯誤與重新寄送。
+  - `AccountConfigurationIntegrationTest`：開啟註冊但無法寄信時失敗（T-ACCT-08）。`AuthorizationFlowIntegrationTest`：預設設定下登入頁沒有註冊與忘記密碼連結，頁面 404。

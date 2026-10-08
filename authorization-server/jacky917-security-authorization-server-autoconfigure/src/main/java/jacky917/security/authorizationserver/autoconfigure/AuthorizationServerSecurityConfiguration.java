@@ -7,6 +7,7 @@ import jacky917.security.authorizationserver.account.AccountMailer;
 import jacky917.security.authorizationserver.account.ActionTokenService;
 import jacky917.security.authorizationserver.account.PasswordChangeRequiredFilter;
 import jacky917.security.authorizationserver.account.PasswordChangeService;
+import jacky917.security.authorizationserver.account.RegistrationService;
 import jacky917.security.authorizationserver.audit.JdbcLoginAuditListener;
 import jacky917.security.authorizationserver.audit.LoginAuditRepository;
 import jacky917.security.authorizationserver.authentication.AccountLockout;
@@ -44,12 +45,14 @@ import jacky917.security.authorizationserver.user.PasswordPolicy;
 import jacky917.security.authorizationserver.web.AccountController;
 import jacky917.security.authorizationserver.web.AccountPasswordController;
 import jacky917.security.authorizationserver.web.PasswordResetController;
+import jacky917.security.authorizationserver.web.RegistrationController;
 import jacky917.security.authorizationserver.web.AccountLinkController;
 import jacky917.security.authorizationserver.web.IdentityProviders;
 import jacky917.security.authorizationserver.web.LoginController;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
@@ -455,6 +458,31 @@ class AuthorizationServerSecurityConfiguration {
                                                             PasswordPolicy passwordPolicy, AccountMailer mailer,
                                                             AccountLinks links) {
         return new PasswordResetController(properties, users, tokens, passwords, passwordPolicy, mailer, links);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = AuthorizationServerProperties.PREFIX, name = "account.registration.enabled",
+            havingValue = "true")
+    RegistrationService registrationService(AuthorizationServerProperties properties, UserAccountService users,
+                                            JdbcClient jdbcClient, PasswordEncoder passwordEncoder,
+                                            ActionTokenService tokens, AccountMailer mailer, AccountLinks links,
+                                            ApplicationEventPublisher events,
+                                            PlatformTransactionManager transactionManager, Clock clock) {
+        AuthorizationServerProperties.Account account = properties.getAccount();
+        return new RegistrationService(users, jdbcClient, passwordEncoder, tokens, mailer, links, events,
+                new TransactionTemplate(transactionManager), account.getEmailVerificationTtl(),
+                account.getPasswordResetTtl(), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = AuthorizationServerProperties.PREFIX, name = "account.registration.enabled",
+            havingValue = "true")
+    RegistrationController jacky917RegistrationController(AuthorizationServerProperties properties,
+                                                          RegistrationService registrations,
+                                                          PasswordPolicy passwordPolicy) {
+        return new RegistrationController(properties, registrations, passwordPolicy);
     }
 
     @Bean

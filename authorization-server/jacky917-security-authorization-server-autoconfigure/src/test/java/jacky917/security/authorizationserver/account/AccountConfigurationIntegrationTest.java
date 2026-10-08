@@ -8,7 +8,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -16,10 +20,11 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 /**
- * 寄信方式的選擇（D26）與一次性 token（D28），在 SQLite 與 PostgreSQL 上執行。
+ * 寄信方式的選擇（D26）、註冊對寄信的要求與一次性 token（D28），在 SQLite 與 PostgreSQL 上執行。
  */
 @DisplayName("帳號信件的設定與一次性 token（SQLite／PostgreSQL）")
 class AccountConfigurationIntegrationTest {
@@ -57,6 +62,18 @@ class AccountConfigurationIntegrationTest {
                 .withBean(JavaMailSender.class, () -> mock(JavaMailSender.class))
                 .withBean("myMailer", AccountMailer.class, () -> own)
                 .run(context -> assertThat(context).getBean(AccountMailer.class).isSameAs(own));
+    }
+
+    @Test
+    @DisplayName("開啟註冊卻無法寄信：啟動失敗，訊息說明如何設定（T-ACCT-08）")
+    void registrationNeedsMail() {
+        assertThatThrownBy(() -> new RegistrationService(mock(UserAccountService.class), mock(JdbcClient.class),
+                mock(PasswordEncoder.class), mock(ActionTokenService.class), new UnavailableAccountMailer(),
+                mock(AccountLinks.class), mock(ApplicationEventPublisher.class), mock(TransactionOperations.class),
+                Duration.ofHours(24), Duration.ofHours(1), Clock.systemUTC()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("account.registration.enabled")
+                .hasMessageContaining("spring.mail.host");
     }
 
     @ParameterizedTest(name = "{0}")

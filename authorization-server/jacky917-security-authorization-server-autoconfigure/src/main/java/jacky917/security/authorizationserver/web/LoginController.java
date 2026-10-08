@@ -52,20 +52,25 @@ public class LoginController {
     public static final String SIGNED_IN_PATH = "/jacky917/signed-in";
 
     private static final String[] PAGE_KEYS = {"login.title", "login.username", "login.password", "login.submit",
-            "login.or", "signed-in.title", "signed-in.message", "signed-in.account", "login.forgot"};
+            "login.or", "signed-in.title", "signed-in.message", "signed-in.account", "login.forgot",
+            "login.register"};
 
     private final AuthorizationServerProperties.Branding branding;
     private final PageSupport page;
     private final IdentityProviders providers;
     private final AccountMailer mailer;
+    private final boolean registration;
 
     /**
      * Creates the controller.
      * <p>
      * 建立 controller。
      *
-     * @param properties           the authorization server properties
-     *                             <br>Authorization Server 設定屬性
+     * @param properties           the authorization server properties; they
+     *                             also decide whether the registration link
+     *                             is shown
+     *                             <br>Authorization Server 設定屬性，也決定是否
+     *                             顯示註冊連結
      * @param providers            the identity providers shown as buttons
      *                             <br>顯示為按鈕的身分提供者
      * @param mailer               decides whether the forgotten password link
@@ -78,6 +83,7 @@ public class LoginController {
         this.page = new PageSupport(branding);
         this.mailer = mailer;
         this.providers = providers;
+        this.registration = properties.getAccount().getRegistration().isEnabled();
     }
 
     /**
@@ -173,5 +179,6 @@ public class LoginController {
         }
         model.addAttribute("providers", buttons);
         model.addAttribute("forgotPassword", mailer.isAvailable());
+        model.addAttribute("registration", registration);
     }
 }

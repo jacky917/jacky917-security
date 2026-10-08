@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${text['verify.title'] + ' · ' + productName}">Confirm your email</title>
+    <link rel="stylesheet" th:href="@{/jacky917/authorization-server.css}">
+    <link rel="stylesheet" th:href="@{/jacky917/theme.css}">
+</head>
+<body>
+<main class="card">
+    <header>
+        <img th:if="${logoUrl}" th:src="${logoUrl}" alt="" class="logo">
+        <p class="product" th:text="${productName}">jacky917</p>
+        <h1 th:text="${text['verify.title']}">Confirm your email</h1>
+    </header>
+    <p th:if="${done}" class="notice" role="status" th:text="${text['verify.done']}">
+        Your email is confirmed. You can sign in now.</p>
+    <p th:if="${!valid}" class="error" role="alert" th:text="${text['verify.invalid']}">
+        This link is no longer valid.</p>
+    <th:block th:if="${valid and done == null}">
+        <p th:text="${text['verify.message']}">Enter the password you chose to confirm this email.</p>
+        <p th:if="${error}" class="error" role="alert" th:text="${error}">The password is wrong.</p>
+        <!-- th:action 讓 Spring Security 自動加入 CSRF 欄位 -->
+        <form method="post" th:action="@{/jacky917/verify-email}">
+            <input type="hidden" name="token" th:value="${token}">
+            <label for="password" th:text="${text['verify.password']}">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+            <button type="submit" th:text="${text['verify.submit']}">Confirm</button>
+        </form>
+    </th:block>
+    <p><a class="link" th:href="@{/login}" th:text="${text['verify.sign-in']}">Go to sign in</a></p>
+</main>
+</body>
+</html>

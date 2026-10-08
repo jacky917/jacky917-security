@@ -46,6 +46,13 @@ public final class AccountPaths {
     public static final String VERIFY_EMAIL = "/jacky917/verify-email";
 
     /**
+     * Sending the verification link again.
+     * <p>
+     * 重新寄出驗證連結。
+     */
+    public static final String RESEND_VERIFICATION = "/jacky917/verify-email/resend";
+
+    /**
      * Browser session attribute marking a login that must change its
      * password before doing anything else.
      * <p>

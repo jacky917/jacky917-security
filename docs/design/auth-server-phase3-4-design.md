@@ -379,7 +379,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 21 | 寄信 SPI：`AccountMailer`（`SpringAccountMailer`、`LoggingAccountMailer`、`UnavailableAccountMailer`）、`AccountMailContent`、`ActionTokenService`、`AccountLinks`、`account.*` 屬性 | ✅ |
 | 22 | 變更密碼、強制變更：`PasswordChangeService`、`AccountPasswordController`、`PasswordChangeRequiredFilter`（兩條 filter chain）、`bootstrap-admin.password-change-required` | ✅ |
 | 23 | 忘記密碼：`PasswordResetController`（`/jacky917/password/forgot`、`/jacky917/password/reset`）、登入頁的連結、IP 限流涵蓋這些表單 | ✅ |
-| 24 | 註冊與 Email 驗證 | |
+| 24 | 註冊與 Email 驗證：`RegistrationService`、`RegistrationController`（`/jacky917/register`、`/jacky917/verify-email`、`/jacky917/verify-email/resend`）、登入頁的連結；使用指南「帳號自助功能」 | ✅ |
 | 25 | 第三方 client、scope、API resource 管理 | |
 | 26 | 同意畫面、撤回授權 | |
 | 27 | `aud` 依 scope 決定 | |
@@ -392,4 +392,6 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 |---|---|---|---|
 | 稽核查詢的位置（工作 18） | 工作 20 | 與 Admin API 基礎一起於工作 18 實作 | 需要一個唯讀端點驗證 filter chain 與權限 |
 | 刷新時的「密碼在登入後變更」檢查（工作 22） | 詳細設計 §5.4：`password_changed_at > session.created_at` 時拒絕並撤銷 | 移除此檢查；每一種變更密碼的方式（管理員設定、重設連結、使用者自行變更）都明確撤銷登入 Session（`PASSWORD_CHANGED`） | 使用者自行變更時必須保留進行變更的那一個 Session；原本的檢查會在下一次刷新時把它撤銷 |
+| Email 驗證（工作 24） | §5.4：開啟連結後按確認即完成 | 確認時必須輸入註冊時設定的密碼 | 註冊時就設定密碼，若只靠連結驗證，以他人地址註冊的人在對方點開連結後就擁有該帳號；未完成的註冊被取代時也一樣。要求密碼後，必須同時擁有信箱與密碼才能完成 |
+| 重新寄送驗證信（工作 24） | §5.4：可重新寄送 | 獨立的 `POST /jacky917/verify-email/resend`，只對未完成的註冊寄信，畫面一律相同 | 寄送畫面不保留密碼，重新寄送不能再走註冊表單 |
 | `admin_audit_log` 的對象種類（工作 18） | 資料模型 §8.3 的 7 種 | V1_1_0 加入 `API_RESOURCE` | API resource 的管理也要稽核；SQLite 無法修改約束，與 `login_audit` 一起重建 |

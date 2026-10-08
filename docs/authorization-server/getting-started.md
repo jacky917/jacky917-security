@@ -146,6 +146,12 @@ public class AuthServerApplication {
 | `login-protection.max-failures-per-ip-per-minute` | `20` | 1～10000。同一個 IP 最近一分鐘失敗達此次數後，該 IP 的登入一律拒絕（顯示「嘗試次數過多」）。IP 取自 `getRemoteAddr()`，在反向代理之後必須設定 `server.forward-headers-strategy` |
 | `password.bcrypt-strength` | `12` | 10～14；調高後，使用者下次登入時自動重新雜湊 |
 | `bootstrap-admin.username`／`password`／`email` | — | 第一位管理員 |
+| `bootstrap-admin.password-change-required` | `true` | 第一位管理員首次登入時必須先變更密碼 |
+| `account.registration.enabled` | `false` | 開放以 Email 註冊（見 [帳號自助功能](#帳號自助功能)）；需要寄信方式，否則啟動失敗 |
+| `account.email-verification-ttl` | `24h` | 1 小時～7 天。註冊驗證連結的有效期 |
+| `account.password-reset-ttl` | `1h` | 10 分鐘～24 小時。重設密碼連結的有效期 |
+| `account.mail.from` | — | 寄件者；使用 `spring.mail.*` 寄信時必填 |
+| `account.mail.log-links` | `false` | 沒有 SMTP 時把信件連結寫入日誌（只用於開發） |
 | `branding.product-name` | `jacky917` | 登入頁上的產品名稱 |
 | `branding.logo-url` | — | `https://` 網址或本伺服器上的路徑 |
 | `branding.primary-color` | `#2563eb` | `#rgb` 或 `#rrggbb` |
@@ -453,6 +459,23 @@ spring:
 
 每次登出都寫入稽核紀錄（`login_audit` 的 `LOGOUT`）。已簽發的 Access Token 仍有效至到期（最長 `token.access-token-ttl`），見 [限制 §6](../resource-server/limitations.md#6-token-無法撤銷)。帳號頁的時間以伺服器的預設時區顯示。
 
+### 帳號自助功能
+
+| 功能 | 路徑 | 需要 |
+|---|---|---|
+| 變更密碼 | `/jacky917/account/password`（帳號頁有連結） | — |
+| 登入後強制變更密碼 | 登入後先導向變更密碼頁，變更後繼續原本的授權請求 | 使用者被標記為必須變更（第一位管理員預設如此） |
+| 忘記密碼 | `/jacky917/password/forgot`（登入頁的「忘記密碼？」） | 寄信方式 |
+| 註冊與 Email 驗證 | `/jacky917/register`（登入頁的「建立帳號」） | 寄信方式與 `account.registration.enabled=true` |
+
+寄信方式依序選擇：應用程式自己的 `AccountMailer` Bean；有 `JavaMailSender`（加入 `spring-boot-starter-mail` 並設定 `spring.mail.host`）時以它寄出，此時 `account.mail.from` 必填；`account.mail.log-links=true` 時只把連結寫入日誌（開發用）；都沒有時不提供需要寄信的頁面。信件內容有英文與繁體中文（依使用者瀏覽器的語言）；要使用自己的版面或寄信服務時，提供自己的 `AccountMailer` Bean（`send(AccountMail)` 收到種類、收件者、語言、名稱、連結與有效期）。
+
+- **變更密碼**：必須輸入目前的密碼（錯誤會計入帳號鎖定）。變更後其他裝置登出，進行變更的裝置維持登入，並寄出通知到已驗證的 Email。
+- **忘記密碼**：只對可登入帳號的已驗證 Email 寄出連結；頁面一律顯示相同的訊息，不透露帳號是否存在。開啟連結只顯示表單，送出新密碼時才使用連結（郵件掃描器預先開啟不會用掉它）。設定後所有裝置登出，暫時鎖定解除。
+- **註冊**：建立擁有 `USER` 角色、Email 未驗證的帳號，寄出驗證連結；驗證前無法登入。驗證時必須再輸入註冊時設定的密碼，因此以他人地址註冊的人無法在對方開啟連結時取得帳號。Email 已屬於其他帳號時不變更任何資料，改寄「帳號已存在」通知（附重設密碼連結）；未完成的註冊（未驗證、從未登入）可以被新的註冊取代。各種情況的畫面都相同。
+- 同一位使用者、同一種信件 60 秒內最多寄一封。這些表單與登入頁共用 IP 限流。
+- 稽核（`login_audit`）：`PASSWORD_CHANGED`（失敗時 `BAD_CREDENTIALS`）、`PASSWORD_RESET`、`USER_REGISTERED`、`EMAIL_VERIFIED`（密碼錯誤時 `BAD_CREDENTIALS`）。
+
 > [!WARNING]
 > 在同一台主機上以不同埠號執行登入服務與 BFF 時（例如 `localhost:9000` 與 `localhost:8082`），兩者預設的 `JSESSIONID` Cookie 會互相覆蓋（瀏覽器的 Cookie 不區分埠號），登入流程會失敗。請為登入服務設定不同的 Cookie 名稱：`server.servlet.session.cookie.name: JACKY917_AS_SESSION`。
 
@@ -527,7 +550,6 @@ curl -X POST https://auth.example.com/admin/api/users \
 |---|---|---|
 | 第三方 client、同意畫面 | 不支援（設定第三方 client 會啟動失敗） | 第 3 階段 |
 | 管理畫面 | 不提供；以[管理 API](#9-管理-api) 自行整合 | — |
-| 註冊、忘記密碼 | 不支援 | 依需求 |
 | MySQL | 不支援 | 第 5 階段 |
 
 ---
@@ -540,5 +562,6 @@ curl -X POST https://auth.example.com/admin/api/users \
 - [ ] SQLite：只有一個實例；資料庫檔案權限為 `600`；有定期以 `VACUUM INTO` 備份
 - [ ] PostgreSQL：專屬資料庫、應用程式帳號只有必要權限（[資料模型 §13.3](../design/auth-server-data-model.md#133-資料庫帳號與權限)）
 - [ ] 全程 HTTPS；反向代理有正確傳遞 `X-Forwarded-*`（`server.forward-headers-strategy`）
-- [ ] 第一位管理員登入後已變更密碼
+- [ ] 第一位管理員已登入並變更密碼（`bootstrap-admin.password-change-required` 預設會要求），之後從設定移除 `bootstrap-admin.password`
+- [ ] 使用忘記密碼或註冊時：已設定 `spring.mail.*` 與 `account.mail.from`，正式環境沒有開啟 `account.mail.log-links`
 - [ ] 已了解 [§10 目前的限制](#10-目前的限制)
