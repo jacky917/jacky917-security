@@ -373,9 +373,22 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 
 | # | 工作 | 狀態 |
 |---|---|---|
-| 18～29 | 見 §9 | 進行中 |
+| 18 | Admin API 基礎：Order 2 filter chain（`AdminJwtAuthenticationConverter`）、Problem Details、分頁、`AdminAuditService`、稽核查詢端點；migration V1_1_0 | ✅ |
+| 19 | 使用者管理 | |
+| 20 | 角色、權限 | |
+| 21 | 寄信 SPI | |
+| 22 | 變更密碼、強制變更 | |
+| 23 | 忘記密碼 | |
+| 24 | 註冊與 Email 驗證 | |
+| 25 | 第三方 client、scope、API resource 管理 | |
+| 26 | 同意畫面、撤回授權 | |
+| 27 | `aud` 依 scope 決定 | |
+| 28 | 兩步驟驗證 | |
+| 29 | 發佈準備 | |
 
 ### 12.2 與設計不同的地方
 
 | 項目 | 設計 | 實作 | 理由 |
 |---|---|---|---|
+| 稽核查詢的位置（工作 18） | 工作 20 | 與 Admin API 基礎一起於工作 18 實作 | 需要一個唯讀端點驗證 filter chain 與權限 |
+| `admin_audit_log` 的對象種類（工作 18） | 資料模型 §8.3 的 7 種 | V1_1_0 加入 `API_RESOURCE` | API resource 的管理也要稽核；SQLite 無法修改約束，與 `login_audit` 一起重建 |

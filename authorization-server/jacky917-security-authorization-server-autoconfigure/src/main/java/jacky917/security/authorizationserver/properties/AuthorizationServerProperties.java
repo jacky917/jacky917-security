@@ -157,6 +157,13 @@ public class AuthorizationServerProperties implements Validator {
      */
     private Cleanup cleanup = new Cleanup();
 
+    /**
+     * The administration API under {@code /admin/api}.
+     * <p>
+     * {@code /admin/api} 之下的管理 API。
+     */
+    private AdminApi adminApi = new AdminApi();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -175,6 +182,7 @@ public class AuthorizationServerProperties implements Validator {
         properties.getPassword().validate(errors);
         properties.getLoginProtection().validate(errors);
         properties.getCleanup().validate(errors);
+        properties.getAdminApi().validate(properties.getToken(), errors);
         properties.getBootstrapAdmin().validate(errors);
         properties.getBranding().validate(errors);
         properties.getClients().forEach((clientId, client) -> client.validate(clientId, errors));
@@ -222,6 +230,59 @@ public class AuthorizationServerProperties implements Validator {
     private static void rejectOutOfRange(Errors errors, String field, Duration value, Duration min, Duration max) {
         if (value == null || value.compareTo(min) < 0 || value.compareTo(max) > 0) {
             errors.rejectValue(field, "range", field + " must be between " + min + " and " + max);
+        }
+    }
+
+    /**
+     * The administration API, bound from {@code .admin-api.*} (phase 3 and
+     * 4 design §4).
+     * <p>
+     * 管理 API，綁定自 {@code .admin-api.*}（第 3、4 階段詳細設計 §4）。
+     */
+    @Getter
+    @Setter
+    public static class AdminApi {
+
+        /**
+         * Whether the administration API is available.
+         * <p>
+         * 是否提供管理 API。
+         */
+        private boolean enabled = true;
+
+        /**
+         * The {@code aud} value an access token must contain to call the
+         * API; defaults to the first {@code token.audience}.
+         * <p>
+         * 呼叫此 API 的 Access Token 必須包含的 {@code aud} 值；預設為
+         * {@code token.audience} 的第一個值。
+         */
+        private String audience;
+
+        /**
+         * Returns the audience the API accepts.
+         * <p>
+         * 回傳此 API 接受的 audience。
+         *
+         * @param token  the token settings, for the default
+         *               <br>Token 設定，用於預設值
+         * @return {@code audience}, or the first {@code token.audience}
+         *         <br>{@code audience}；未設定時為 {@code token.audience} 的
+         *         第一個值
+         */
+        public String effectiveAudience(Token token) {
+            if (audience != null && !audience.isBlank()) {
+                return audience;
+            }
+            return token.getAudience().get(0);
+        }
+
+        void validate(Token token, Errors errors) {
+            if (enabled && (audience == null || audience.isBlank())
+                    && (token.getAudience() == null || token.getAudience().isEmpty())) {
+                errors.rejectValue("adminApi.audience", "required",
+                        "admin-api.audience is required when token.audience is empty");
+            }
         }
     }
 

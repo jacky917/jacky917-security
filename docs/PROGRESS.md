@@ -971,3 +971,16 @@
 - **Next TODO**:
   - 工作 18：Admin API 基礎與 migration V1_1_0。
 
+---
+## Step 44: Authorization Server——工作 18（Admin API 基礎）
+- **Status**: 🟢 Completed
+- **變更**:
+  - Migration V1_1_0（兩種資料庫）：`app_user.password_change_required`；`login_audit` 新增 7 種事件（註冊、Email 驗證、重設密碼、兩步驟驗證的啟用與停用、同意與撤回）；`admin_audit_log` 新增對象種類 `API_RESOURCE`。SQLite 無法修改約束，以重建資料表的方式完成。
+  - `/admin/api/**` 的 Order 2 filter chain：只接受本 AS 簽發、`aud` 包含 `admin-api.audience` 的 Bearer token；使用者 token 以 `permissions` 中的 `as:*`、`client_credentials` token 以 `as:*` scope 授權；無狀態、無 CSRF。
+  - `AdminApiExceptionHandler`（RFC 9457 Problem Details，只處理管理 API 的 controller）、`PageResult`、`AdminAuditService`（`admin_audit_log`，在呼叫端的交易中寫入）、`AdminOperator`。
+  - 稽核查詢：`GET /admin/api/audit/logins`、`GET /admin/api/audit/admin`（篩選、分頁、新的在前）。
+  - 屬性：`admin-api.enabled`、`admin-api.audience`。
+- **Commands Run & Results**:
+  - 新增 `AdminApiIntegrationTest`（SQLite、PostgreSQL 各 6 個）：401／403、`client_credentials` 的 scope、稽核查詢與篩選、Problem Details、新的稽核值可以寫入。
+  - `mvn -B -o test`（AS 模組）：**SUCCESS**，357 個測試。
+

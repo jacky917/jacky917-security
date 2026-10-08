@@ -62,7 +62,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "jacky917.security.authorization-server.clients.report-batch.scopes=report.generate",
         "jacky917.security.authorization-server.clients.suspended.secret=suspended-secret",
         "jacky917.security.authorization-server.clients.suspended.grant-types=client_credentials",
-        "jacky917.security.authorization-server.clients.suspended.scopes=report.generate"
+        "jacky917.security.authorization-server.clients.suspended.scopes=report.generate",
+        "jacky917.security.authorization-server.clients.admin-sync.secret=sync-secret",
+        "jacky917.security.authorization-server.clients.admin-sync.grant-types=client_credentials",
+        "jacky917.security.authorization-server.clients.admin-sync.scopes=as:audit:read,as:user:read"
 })
 @AutoConfigureMockMvc
 abstract class AbstractFlowIntegrationTest {
