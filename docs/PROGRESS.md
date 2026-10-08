@@ -774,3 +774,17 @@
 - **Next TODO**:
   - 發佈 2.0.0：修改 `<revision>` 為 `2.0.0`，建立 `v2.0.0` tag 與 Release。
   - `1.x` 分支是否也加入 MIT（目前只有 `main` 有 `LICENSE`）。
+
+---
+## Step 32: 準備發佈 2.0.0（M3）
+- **Status**: 🟢 發佈 commit 已準備（等待合併後建立 `v2.0.0` Release）
+- **變更**：`<revision>` 改為 `2.0.0`；README、使用指南、GitHub Packages 指南移除「尚未發佈」的說明並改用 `2.0.0`；新增 `CHANGELOG.md`；`1.x` 分支另開 PR 加入 MIT（PR #6）。
+- **發佈前演練（與 publish.yml 相同的檢查）**:
+  - tag 檢查：`revision=2.0.0`，與 `v2.0.0` 一致。
+  - 授權條款檢查：`declared licenses: MIT License`。
+  - `mvn -B -o clean verify`：**SUCCESS**，242 個測試。
+  - 會發佈的模組（版本 2.0.0）：`jacky917-security-core`、`-annotations`、`-resource-server-autoconfigure`、`-resource-server-starter`、`-bom`、舊座標 relocation `com.github.jacky917:jacky917-security-starter`，以及根 parent POM；Authorization Server、範例、E2E 皆為 `maven.deploy.skip=true`。
+- **發佈步驟**：合併本 PR → 在 GitHub 建立 tag `v2.0.0` 與 Release（內容可使用 `CHANGELOG.md` 的 2.0.0 一節）→ 發佈流程自動檢查、測試並部署。
+- **Next TODO**:
+  - 發佈後把 `main` 的 `<revision>` 改為 `2.1.0-SNAPSHOT`。
+  - 以外部專案從 GitHub Packages 實際下載 2.0.0 驗證（含舊座標的 relocation）。

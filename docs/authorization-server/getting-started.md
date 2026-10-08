@@ -3,7 +3,7 @@
 `jacky917-security-authorization-server-starter` 把 Spring Authorization Server 組裝成一個可以直接使用的登入服務：帳號密碼與 Google 登入、OAuth 2.0／OpenID Connect、簽章金鑰管理，資料預設存在 SQLite，只改設定就能切換到 PostgreSQL。
 
 > [!IMPORTANT]
-> **預覽版（第 1 階段）**：尚未發佈到 GitHub Packages，請 clone 本 repo 後執行 `mvn -DskipTests install` 在本機使用。上線前請先讀 [§9 目前的限制](#9-目前的限制第-1-階段)。
+> **預覽版（第 1 階段）**：不隨 2.0.0 發佈（2.1.0 起發佈到 GitHub Packages）。目前請 clone 本 repo 後執行 `mvn -DskipTests install` 在本機使用。上線前請先讀 [§9 目前的限制](#9-目前的限制第-1-階段)。
 
 ## 目錄
 
@@ -49,7 +49,7 @@ flowchart LR
 <dependency>
     <groupId>io.github.jacky917</groupId>
     <artifactId>jacky917-security-authorization-server-starter</artifactId>
-    <version>2.0.0-SNAPSHOT</version>   <!-- 預覽版：只能在本機 mvn install 後使用 -->
+    <version>2.0.0</version>   <!-- 預覽版：不在 GitHub Packages 上，只能在本機 mvn install 後使用 -->
 </dependency>
 ```
 
