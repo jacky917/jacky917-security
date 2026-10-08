@@ -324,9 +324,10 @@ class AuthorizationServerSecurityConfiguration {
     OAuth2TokenCustomizer<JwtEncodingContext> jacky917TokenCustomizer(
             AudienceResolver audienceResolver, AuthorityResolver authorityResolver,
             ClientProfileRepository clientProfiles, SessionAuthorizationRepository links, AuthSessionService sessions,
-            UserAccountService users, ObjectProvider<TokenClaimsContributor> contributors, Clock clock) {
+            UserAccountService users, ObjectProvider<TokenClaimsContributor> contributors, ApplicationEventPublisher events,
+            Clock clock) {
         return new Jacky917TokenCustomizer(audienceResolver, authorityResolver, clientProfiles, links, sessions, users,
-                contributors.orderedStream().toList(), clock);
+                contributors.orderedStream().toList(), events, clock);
     }
 
     @Bean

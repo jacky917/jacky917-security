@@ -11,6 +11,7 @@ import jacky917.security.authorizationserver.user.UserStatus;
 import jacky917.security.core.Jacky917ClaimNames;
 import jacky917.security.core.TrustLevel;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
@@ -79,6 +80,7 @@ public class Jacky917TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodin
     private final AuthSessionService sessions;
     private final UserAccountService users;
     private final List<TokenClaimsContributor> contributors;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     /**
@@ -100,13 +102,16 @@ public class Jacky917TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodin
      *                           <br>使用者帳號
      * @param contributors       application claims, called last
      *                           <br>應用程式的 claim，最後呼叫
+     * @param events             publishes {@link AccessTokenIssuedEvent}
+     *                           <br>發布 {@code AccessTokenIssuedEvent}
      * @param clock              the clock for status checks
      *                           <br>判斷狀態所用的時鐘
      */
     public Jacky917TokenCustomizer(AudienceResolver audienceResolver, AuthorityResolver authorityResolver,
                                    ClientProfileRepository clientProfiles, SessionAuthorizationRepository links,
                                    AuthSessionService sessions, UserAccountService users,
-                                   List<TokenClaimsContributor> contributors, Clock clock) {
+                                   List<TokenClaimsContributor> contributors, ApplicationEventPublisher events,
+                                   Clock clock) {
         this.audienceResolver = audienceResolver;
         this.authorityResolver = authorityResolver;
         this.clientProfiles = clientProfiles;
@@ -114,6 +119,7 @@ public class Jacky917TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodin
         this.sessions = sessions;
         this.users = users;
         this.contributors = List.copyOf(contributors);
+        this.events = events;
         this.clock = clock;
     }
 
@@ -133,6 +139,7 @@ public class Jacky917TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodin
         }
         if (AuthorizationGrantType.CLIENT_CREDENTIALS.equals(context.getAuthorizationGrantType())) {
             contribute(context, Optional.empty());
+            issued(context, accessToken);
             return;
         }
 
@@ -174,6 +181,14 @@ public class Jacky917TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodin
             }
         }
         contribute(context, Optional.of(user));
+        issued(context, accessToken);
+    }
+
+    private void issued(JwtEncodingContext context, boolean accessToken) {
+        if (accessToken) {
+            events.publishEvent(new AccessTokenIssuedEvent(context.getRegisteredClient().getClientId(),
+                    context.getAuthorizationGrantType().getValue()));
+        }
     }
 
     /**

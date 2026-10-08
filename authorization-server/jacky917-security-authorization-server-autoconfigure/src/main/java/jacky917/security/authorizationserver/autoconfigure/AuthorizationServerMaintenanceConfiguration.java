@@ -3,12 +3,14 @@ package jacky917.security.authorizationserver.autoconfigure;
 import jacky917.security.authorizationserver.keys.SigningKeyService;
 import jacky917.security.authorizationserver.keys.SigningKeyStore;
 import jacky917.security.authorizationserver.maintenance.DataCleanup;
+import jacky917.security.authorizationserver.maintenance.DataCleanupEvent;
 import jacky917.security.authorizationserver.maintenance.MaintenanceScheduler;
 import jacky917.security.authorizationserver.maintenance.ScheduledJobLock;
 import jacky917.security.authorizationserver.maintenance.SigningKeyRotation;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -84,6 +86,10 @@ class AuthorizationServerMaintenanceConfiguration {
      *                    <br>清理
      * @param properties  the authorization server properties
      *                    <br>Authorization Server 設定屬性
+     * @param events      publishes a {@link DataCleanupEvent} per cleanup
+     *                    that changed rows
+     *                    <br>每一項有變更資料的清理發布一個
+     *                    {@code DataCleanupEvent}
      * @param clock       the clock
      *                    <br>時鐘
      * @return the scheduler
@@ -92,32 +98,34 @@ class AuthorizationServerMaintenanceConfiguration {
     @Bean
     @ConditionalOnMissingBean
     MaintenanceScheduler maintenanceScheduler(ScheduledJobLock lock, SigningKeyRotation rotation, DataCleanup cleanup,
-                                              AuthorizationServerProperties properties, Clock clock) {
+                                              AuthorizationServerProperties properties,
+                                              ApplicationEventPublisher events, Clock clock) {
         List<MaintenanceScheduler.Job> jobs = new ArrayList<>();
         if (properties.getKeys().isRotationEnabled()) {
             jobs.add(new MaintenanceScheduler.Job("signing-key-rotation", Duration.ofHours(1), rotation::rotate));
         }
         if (properties.getCleanup().isEnabled()) {
             jobs.add(new MaintenanceScheduler.Job("cleanup-authorizations", Duration.ofMinutes(15),
-                    () -> report("authorizations", cleanup::deleteExpiredAuthorizations)));
+                    () -> report(events, "authorizations", cleanup::deleteExpiredAuthorizations)));
             jobs.add(new MaintenanceScheduler.Job("cleanup-sessions", Duration.ofHours(1), () -> {
-                report("refresh_token_history", cleanup::deleteExpiredRefreshTokenHistory);
-                report("expired auth_session", cleanup::expireSessions);
-                report("auth_session", cleanup::deleteOldSessions);
+                report(events, "refresh_token_history", cleanup::deleteExpiredRefreshTokenHistory);
+                report(events, "expired_sessions", cleanup::expireSessions);
+                report(events, "auth_session", cleanup::deleteOldSessions);
             }));
             jobs.add(new MaintenanceScheduler.Job("cleanup-daily", Duration.ofDays(1), () -> {
-                report("user_action_token", cleanup::deleteOldActionTokens);
-                report("audit", cleanup::deleteOldAudits);
-                report("signing_key", cleanup::deleteOldSigningKeys);
+                report(events, "user_action_token", cleanup::deleteOldActionTokens);
+                report(events, "audit", cleanup::deleteOldAudits);
+                report(events, "signing_key", cleanup::deleteOldSigningKeys);
             }));
         }
         return new MaintenanceScheduler(MaintenanceScheduler.newTaskScheduler(), lock, jobs, clock);
     }
 
-    private static void report(String what, Supplier<Integer> cleanup) {
+    private static void report(ApplicationEventPublisher events, String target, Supplier<Integer> cleanup) {
         int count = cleanup.get();
         if (count > 0) {
-            log.info("Cleanup: {} {} rows", what, count);
+            log.info("Cleanup: {} {} rows", target, count);
+            events.publishEvent(new DataCleanupEvent(target, count));
         }
     }
 }

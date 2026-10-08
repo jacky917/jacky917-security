@@ -41,6 +41,7 @@
 |   |       |   |               |   |-- AuthorizationServerDatabaseConfiguration.java
 |   |       |   |               |   |-- AuthorizationServerKeysConfiguration.java
 |   |       |   |               |   |-- AuthorizationServerMaintenanceConfiguration.java
+|   |       |   |               |   |-- AuthorizationServerObservabilityAutoConfiguration.java
 |   |       |   |               |   |-- AuthorizationServerSecurityConfiguration.java
 |   |       |   |               |   |-- AuthorizationServerSessionRegistryAutoConfiguration.java
 |   |       |   |               |   `-- AuthorizationServerUsersConfiguration.java
@@ -83,13 +84,18 @@
 |   |       |   |               |   `-- SigningKeyStore.java
 |   |       |   |               |-- maintenance
 |   |       |   |               |   |-- DataCleanup.java
+|   |       |   |               |   |-- DataCleanupEvent.java
 |   |       |   |               |   |-- MaintenanceScheduler.java
 |   |       |   |               |   |-- ScheduledJobLock.java
 |   |       |   |               |   `-- SigningKeyRotation.java
+|   |       |   |               |-- observability
+|   |       |   |               |   |-- AuthorizationServerMetrics.java
+|   |       |   |               |   `-- SigningKeyHealthIndicator.java
 |   |       |   |               |-- properties
 |   |       |   |               |   `-- AuthorizationServerProperties.java
 |   |       |   |               |-- refresh
 |   |       |   |               |   |-- RefreshTokenHistoryRepository.java
+|   |       |   |               |   |-- RefreshTokenRejectedEvent.java
 |   |       |   |               |   |-- RefreshTokenReuseDetector.java
 |   |       |   |               |   |-- ReuseDetectingRefreshTokenProvider.java
 |   |       |   |               |   `-- RotatedRefreshToken.java
@@ -108,6 +114,7 @@
 |   |       |   |               |   |-- Hashes.java
 |   |       |   |               |   `-- UuidV7.java
 |   |       |   |               |-- token
+|   |       |   |               |   |-- AccessTokenIssuedEvent.java
 |   |       |   |               |   |-- AudienceResolver.java
 |   |       |   |               |   |-- AuthorityResolver.java
 |   |       |   |               |   |-- ConfiguredAudienceResolver.java
@@ -203,6 +210,7 @@
 |   |           |               |   |-- AbstractMaintenanceIntegrationTest.java
 |   |           |               |   |-- ExternalProvidersIntegrationTest.java
 |   |           |               |   |-- ManualOnlyAccountLinkingIntegrationTest.java
+|   |           |               |   |-- ObservabilityIntegrationTest.java
 |   |           |               |   |-- PostgresqlAccountLinkingIntegrationTest.java
 |   |           |               |   |-- PostgresqlAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- PostgresqlGoogleLoginIntegrationTest.java
@@ -222,6 +230,8 @@
 |   |           |               |   `-- SigningKeyIntegrationTest.java
 |   |           |               |-- maintenance
 |   |           |               |   `-- MaintenanceSchedulerTest.java
+|   |           |               |-- observability
+|   |           |               |   `-- SigningKeyHealthIndicatorTest.java
 |   |           |               |-- properties
 |   |           |               |   `-- AuthorizationServerPropertiesTest.java
 |   |           |               |-- refresh
@@ -482,6 +492,9 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/ActiveKeyJwtEncoder.java` | `as-autoconfigure` | Token 簽章 | 一律以目前金鑰與其演算法簽章（RS256／ES256）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../support/Columns.java` | `as-autoconfigure` | 欄位長度 | 外部來源值的欄位長度上限與截斷（不切斷 emoji）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/RotatingJwkSource.java` | `as-autoconfigure` | JWKS | 公開 `NEXT`、`ACTIVE`、`RETIRING` 的公鑰。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerObservabilityAutoConfiguration.java` | `as-autoconfigure` | 監控配置（§8） | 有 `MeterRegistry` 時註冊 metrics；有 Spring Boot 健康檢查時註冊 `signingKey`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../observability/AuthorizationServerMetrics.java`、`SigningKeyHealthIndicator.java` | `as-autoconfigure` | Metrics、健康檢查 | 由事件計數（登入、簽發、刷新拒絕、清理）；gauge（有效 Session、金鑰使用天數）；沒有 `ACTIVE` 金鑰時 `DOWN`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../token/AccessTokenIssuedEvent.java`、`refresh/RefreshTokenRejectedEvent.java`、`maintenance/DataCleanupEvent.java` | `as-autoconfigure` | 事件 | 供 metrics 與應用程式監聽。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerSessionRegistryAutoConfiguration.java` | `as-autoconfigure` | 多實例（D10） | 應用程式使用 Spring Session 時，OIDC 的 Session registry 改讀共用的 Session 儲存（跨實例時 ID Token 才有 `sid`）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerMaintenanceConfiguration.java` | `as-autoconfigure` | 排程配置 | 金鑰輪換（每小時）、清理（15 分鐘、每小時、每天）；`keys.rotation-enabled`、`cleanup.enabled`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../maintenance/SigningKeyRotation.java` | `as-autoconfigure` | 金鑰輪換（§5.7） | `NEXT` 預告 → 啟用（舊金鑰 `RETIRING`）→ 退役；每一步先檢查狀態。 |
@@ -550,6 +563,7 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*MaintenanceIntegrationTest.java` | `as-test` | 整合測試 | T-KEY-02（預告、啟用、退役與舊 token 的驗證）、T-CLEAN-01、Session 的過期與刪除、其他資料的清理與小批次、排程鎖；SQLite 與 PostgreSQL。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../maintenance/MaintenanceSchedulerTest.java` | `as-test` | 單元測試 | 第一次執行時間、取得鎖才執行、失敗不拋出。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../autoconfigure/SessionRegistryAutoConfigurationTest.java` | `as-test` | 單元測試 | 有 Spring Session 時註冊共用的 registry；沒有或停用時不註冊。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/ObservabilityIntegrationTest.java`、`observability/SigningKeyHealthIndicatorTest.java` | `as-test` | 整合與單元測試 | 以實際的登入、刷新、重用驗證每個 metric 與 gauge；健康檢查的 UP／DOWN 與逾期標示。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../federation/GitHubFederatedUserInfoMapperTest.java` | `as-test` | 單元測試 | 支援的 registration、缺少 id、沒有 access token。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/FakeOidcProvider.java` | `as-test` | 測試用 OIDC 提供者 | JDK `HttpServer`：token、JWKS、userinfo；每個測試類別各自啟動與關閉，每次登入以授權碼區分。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/MutableClock.java` | `as-test` | 可推移的時鐘 | 測試到期行為（Session 90 天、登入 Session 過期）。 |

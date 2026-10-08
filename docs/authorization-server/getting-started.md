@@ -1,9 +1,9 @@
 # Authorization Server 使用指南（2.1.0 preview）
 
-`jacky917-security-authorization-server-starter` 把 Spring Authorization Server 組裝成一個可以直接使用的登入服務：帳號密碼與 Google 登入、OAuth 2.0／OpenID Connect、簽章金鑰管理，資料預設存在 SQLite，只改設定就能切換到 PostgreSQL。
+`jacky917-security-authorization-server-starter` 把 Spring Authorization Server 組裝成一個可以直接使用的登入服務：帳號密碼與 Google、GitHub、LINE 登入、OAuth 2.0／OpenID Connect、Refresh Token 重用偵測、登出與帳號頁、登入保護與稽核、簽章金鑰的自動輪換，資料預設存在 SQLite，只改設定就能切換到 PostgreSQL（可多實例）。
 
 > [!IMPORTANT]
-> **預覽版（第 1 階段）**：不隨 2.0.0 發佈（2.1.0 起發佈到 GitHub Packages）。目前請 clone 本 repo 後執行 `mvn -DskipTests install` 在本機使用。上線前請先讀 [§9 目前的限制](#9-目前的限制第-1-階段)。
+> **預覽版（第 1、2 階段已實作，尚未發佈）**：不隨 2.0.0 發佈（2.1.0 起發佈到 GitHub Packages）。目前請 clone 本 repo 後執行 `mvn -DskipTests install` 在本機使用。上線前請先讀 [§9 目前的限制](#9-目前的限制)。
 
 ## 目錄
 
@@ -15,7 +15,7 @@
 6. [第三方登入（Google、GitHub、LINE）](#6-第三方登入googlegithubline)
 7. [Token 內容](#7-token-內容)
 8. [業務 API 與 BFF 的設定](#8-業務-api-與-bff-的設定)
-9. [目前的限制（第 1 階段）](#9-目前的限制第-1-階段)
+9. [目前的限制](#9-目前的限制)
 10. [上線檢查清單](#10-上線檢查清單)
 
 ---
@@ -233,6 +233,25 @@ Starter 以自己的執行緒執行下列工作（不會啟用應用程式的 `@
 
 每次刪除最多 `cleanup.batch-size` 筆，不會長時間鎖住資料表。
 
+### 4.5 監控（metrics、健康檢查、事件）
+
+應用程式有 Micrometer 時（例如 `spring-boot-starter-actuator`），starter 提供下列 metrics：
+
+| 名稱 | 類型 | 標籤 | 用途 |
+|---|---|---|---|
+| `jacky917.as.login` | counter | `idp`、`result`（`success` 或失敗原因） | 登入成功率、暴力破解偵測 |
+| `jacky917.as.token.issued` | counter | `grant_type`、`client_id` | 簽發量 |
+| `jacky917.as.refresh.reuse_detected` | counter | `client_id` | **告警**：大於 0 代表 Refresh Token 可能外洩 |
+| `jacky917.as.refresh.grace_rejected` | counter | `client_id` | 併發刷新；持續增加代表 client 沒有讓同一個使用者的刷新依序執行 |
+| `jacky917.as.refresh.rejected` | counter | `reason` | 所有被拒絕的刷新 |
+| `jacky917.as.session.active` | gauge | — | 有效的登入 Session 數 |
+| `jacky917.as.signing_key.age` | gauge（天） | — | 目前金鑰的使用天數；**超過 `keys.rotation-period` + 2 天時告警**（輪換排程沒有執行） |
+| `jacky917.as.cleanup.deleted` | counter | `table` | 清理是否正常 |
+
+有 Spring Boot 的健康檢查時，`/actuator/health` 另外包含 `signingKey`：沒有 `ACTIVE` 簽章金鑰時為 `DOWN`；詳細資料有金鑰 ID、演算法、使用天數與 `rotationOverdue`（不含任何金鑰內容）。資料庫連線由 Spring Boot 本身的檢查回報。可以 `management.health.signingkey.enabled=false` 關閉。
+
+應用程式也可以直接監聽 starter 發布的事件（例如轉送到 SIEM）：`LoginAuditEvent`（所有登入、登出、連結與重用的稽核）、`AccessTokenIssuedEvent`、`RefreshTokenRejectedEvent`、`DataCleanupEvent`。
+
 ## 5. Client（BFF、批次程式、App）
 
 第 1 階段的 client 在設定中宣告，每次啟動時建立或更新（以設定為準）。
@@ -429,7 +448,7 @@ spring:
 
 ---
 
-## 9. 目前的限制（第 1 階段）
+## 9. 目前的限制
 
 | 項目 | 現況 | 預計 |
 |---|---|---|
@@ -448,4 +467,4 @@ spring:
 - [ ] PostgreSQL：專屬資料庫、應用程式帳號只有必要權限（[資料模型 §13.3](../design/auth-server-data-model.md#133-資料庫帳號與權限)）
 - [ ] 全程 HTTPS；反向代理有正確傳遞 `X-Forwarded-*`（`server.forward-headers-strategy`）
 - [ ] 第一位管理員登入後已變更密碼
-- [ ] 已了解 [§9 目前的限制](#9-目前的限制第-1-階段)
+- [ ] 已了解 [§9 目前的限制](#9-目前的限制)

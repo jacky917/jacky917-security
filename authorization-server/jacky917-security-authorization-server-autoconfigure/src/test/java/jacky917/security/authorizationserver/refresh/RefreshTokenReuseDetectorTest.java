@@ -111,7 +111,8 @@ class RefreshTokenReuseDetectorTest {
             when(history.find(anyString(), any())).thenReturn(Optional.empty());
             assertRefused();
             verify(sessions, never()).revoke(anyString(), any());
-            verify(events, never()).publishEvent(any(Object.class));
+            verify(events).publishEvent(new RefreshTokenRejectedEvent(RefreshTokenRejectedEvent.Reason.UNKNOWN_TOKEN, null));
+            verify(events, never()).publishEvent(any(LoginAuditEvent.class));
         }
 
         @Test
@@ -120,7 +121,9 @@ class RefreshTokenReuseDetectorTest {
             rotatedAt(NOW.minus(GRACE));
             assertRefused();
             verify(sessions, never()).revoke(anyString(), any());
-            verify(events, never()).publishEvent(any(Object.class));
+            verify(events).publishEvent(new RefreshTokenRejectedEvent(RefreshTokenRejectedEvent.Reason.CONCURRENT,
+                    "client-1"));
+            verify(events, never()).publishEvent(any(LoginAuditEvent.class));
         }
 
         @Test
@@ -131,6 +134,8 @@ class RefreshTokenReuseDetectorTest {
             verify(sessions).revoke(ASID, RevokeReason.REUSE_DETECTED);
             ArgumentCaptor<LoginAuditEvent> event = ArgumentCaptor.forClass(LoginAuditEvent.class);
             verify(events).publishEvent(event.capture());
+            verify(events).publishEvent(new RefreshTokenRejectedEvent(RefreshTokenRejectedEvent.Reason.REUSE_DETECTED,
+                    "client-1"));
             assertThat(event.getValue().type()).isEqualTo(LoginAuditEventType.TOKEN_REFRESH_REUSE);
             assertThat(event.getValue().userId()).isEqualTo(USER);
             assertThat(event.getValue().sessionId()).isEqualTo(ASID);

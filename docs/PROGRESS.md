@@ -920,3 +920,19 @@
 - **Decision Log**:
   - **DEC-106**: Spring Session JDBC 為選用：多實例時由應用程式加入依賴。
 
+---
+## Step 41: Authorization Server 第 2 階段——工作 17（Metrics、健康檢查），第 2 階段完成
+- **Status**: 🟢 Completed（第 2 階段：工作 11～17 全部完成，尚未發佈）
+- **變更**:
+  - `AuthorizationServerMetrics`（應用程式有 Micrometer 時）：`jacky917.as.login`、`token.issued`、`refresh.reuse_detected`、`refresh.grace_rejected`、`refresh.rejected`、`session.active`、`signing_key.age`、`cleanup.deleted`。
+  - `SigningKeyHealthIndicator`（應用程式有 Spring Boot 健康檢查時）：沒有 `ACTIVE` 金鑰時 `DOWN`；`rotationOverdue`。
+  - 新事件：`AccessTokenIssuedEvent`、`RefreshTokenRejectedEvent`、`DataCleanupEvent`；Micrometer 與 `spring-boot-health` 為選用依賴。
+  - 使用指南：§4.5 監控；「目前的限制」只剩第 3 階段以後的項目。
+- **查證**：Spring Boot 4.1.1 的 `HealthIndicator` 位於 `org.springframework.boot.health.contributor`（`spring-boot-health`）；metrics 自動配置類別名稱已對照 jar。
+- **Commands Run & Results**:
+  - 新增 `ObservabilityIntegrationTest`（3 個）、`SigningKeyHealthIndicatorTest`（2 個）；`Jacky917TokenCustomizerTest`、`RefreshTokenReuseDetectorTest` 加上事件的檢查。
+  - 第一次執行時 `session.active` 為 0：測試在重用偵測撤銷 Session 之後才讀 gauge，改為登入後立即讀取。
+  - `mvn -B -o clean verify`：**SUCCESS**，377 個測試（Resource Server 47、Authorization Server 303、範例 14、E2E 6）。
+  - `CHANGELOG.md` 新增 `[Unreleased]`：Authorization Server starter（第 1、2 階段）。
+- **待使用者決定**：第 2 階段已合併到 `main`（`2.1.0-SNAPSHOT`），原規劃的 2.2.0 是否改為隨 2.1.0 發佈、AS 是否在 2.1.0 即轉為正式版。
+

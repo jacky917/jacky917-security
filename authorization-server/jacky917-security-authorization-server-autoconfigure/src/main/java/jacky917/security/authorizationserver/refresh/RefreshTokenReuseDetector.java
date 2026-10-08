@@ -62,6 +62,11 @@ import java.util.Optional;
  * 請求；超過寬限期則撤銷登入 Session（最新的 Refresh Token 也一併失效），並發布
  * {@code TOKEN_REFRESH_REUSE} 事件。所有拒絕一律回傳 {@code invalid_grant}，
  * 不揭露原因（詳細設計 §7.1）。
+ * <p>
+ * Every refusal also publishes a {@link RefreshTokenRejectedEvent} with the
+ * reason, after the transaction has ended.
+ * <p>
+ * 每次拒絕也會在交易結束後發布帶有原因的 {@code RefreshTokenRejectedEvent}。
  *
  * @author Jacky
  * @since 2.1.0
@@ -168,8 +173,8 @@ public class RefreshTokenReuseDetector {
     public Authentication authenticate(OAuth2RefreshTokenAuthenticationToken request, AuthenticationProvider delegate) {
         Outcome outcome = transactions.execute(status -> attempt(request, delegate));
         // 交易提交後才發布：稽核不描述已回滾的變更
-        if (outcome != null && outcome.event() != null) {
-            events.publishEvent(outcome.event());
+        if (outcome != null) {
+            outcome.events().forEach(events::publishEvent);
         }
         if (outcome == null || outcome.result() == null) {
             throw new OAuth2AuthenticationException(OAuth2ErrorCodes.INVALID_GRANT);
@@ -185,22 +190,23 @@ public class RefreshTokenReuseDetector {
             return rotatedOrUnknown(token, now);
         }
         AuthSession session = links.findSessionId(authorization.getId()).flatMap(sessions::find).orElse(null);
+        String clientId = authorization.getRegisteredClientId();
         if (session == null) {
             log.warn("Refusing to refresh authorization {}: it has no login session", authorization.getId());
-            return Outcome.REFUSED;
+            return Outcome.refused(RefreshTokenRejectedEvent.Reason.SESSION_NOT_ACTIVE, clientId);
         }
         if (session.status() != AuthSessionStatus.ACTIVE || !session.expiresAt().isAfter(now)) {
             // 已撤銷的 Session 沒有授權可刷新；過期的由清理排程改為 EXPIRED
             log.info("Refusing to refresh: login session {} is {}", session.sessionId(),
                     session.status() == AuthSessionStatus.ACTIVE ? "expired" : session.status());
-            return Outcome.REFUSED;
+            return Outcome.refused(RefreshTokenRejectedEvent.Reason.SESSION_NOT_ACTIVE, clientId);
         }
         RevokeReason problem = userProblem(session, users.findById(session.userId()));
         if (problem != null) {
             sessions.revoke(session.sessionId(), problem);
             log.info("Refusing to refresh: revoked login session {} of user {} ({})", session.sessionId(),
                     session.userId(), problem);
-            return Outcome.REFUSED;
+            return Outcome.refused(RefreshTokenRejectedEvent.Reason.USER_NOT_ACTIVE, clientId);
         }
 
         Authentication result = delegate.authenticate(request);
@@ -209,7 +215,7 @@ public class RefreshTokenReuseDetector {
             remember(token, authorization, session, now);
         }
         sessions.touch(session.sessionId());
-        return new Outcome(result, null);
+        return new Outcome(result, List.of());
     }
 
     /**
@@ -230,13 +236,13 @@ public class RefreshTokenReuseDetector {
     private Outcome rotatedOrUnknown(String token, Instant now) {
         RotatedRefreshToken rotated = history.find(RefreshTokenHistoryRepository.hash(token), now).orElse(null);
         if (rotated == null) {
-            return Outcome.REFUSED;
+            return Outcome.refused(RefreshTokenRejectedEvent.Reason.UNKNOWN_TOKEN, null);
         }
         if (!now.isAfter(rotated.rotatedAt().plus(gracePeriod))) {
             // D19：併發刷新造成，不撤銷
             log.debug("Refusing a refresh token rotated {} ago (within the grace period) for client {}",
                     Duration.between(rotated.rotatedAt(), now), rotated.registeredClientId());
-            return Outcome.REFUSED;
+            return Outcome.refused(RefreshTokenRejectedEvent.Reason.CONCURRENT, rotated.registeredClientId());
         }
         if (rotated.sessionId() != null) {
             sessions.revoke(rotated.sessionId(), RevokeReason.REUSE_DETECTED);
@@ -251,7 +257,8 @@ public class RefreshTokenReuseDetector {
                 .failureReason("REUSE_DETECTED")
                 .currentRequest()
                 .build();
-        return new Outcome(null, event);
+        return new Outcome(null, List.of(event, new RefreshTokenRejectedEvent(
+                RefreshTokenRejectedEvent.Reason.REUSE_DETECTED, rotated.registeredClientId())));
     }
 
     private @Nullable RevokeReason userProblem(AuthSession session, Optional<UserAccount> found) {
@@ -278,7 +285,9 @@ public class RefreshTokenReuseDetector {
                 session.sessionId(), session.userId(), authorization.getRegisteredClientId(), issuedAt, now, expiresAt));
     }
 
-    private record Outcome(@Nullable Authentication result, @Nullable LoginAuditEvent event) {
-        static final Outcome REFUSED = new Outcome(null, null);
+    private record Outcome(@Nullable Authentication result, List<Object> events) {
+        static Outcome refused(RefreshTokenRejectedEvent.Reason reason, @Nullable String registeredClientId) {
+            return new Outcome(null, List.of(new RefreshTokenRejectedEvent(reason, registeredClientId)));
+        }
     }
 }

@@ -18,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -53,6 +54,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -79,6 +81,7 @@ class Jacky917TokenCustomizerTest {
     private AuthSessionService sessions;
     private UserAccountService users;
     private final List<TokenClaimsContributor> contributors = new ArrayList<>();
+    private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
 
     @BeforeEach
     void setUp() {
@@ -125,6 +128,16 @@ class Jacky917TokenCustomizerTest {
             Map<String, Object> claims = customize(OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.CLIENT_CREDENTIALS);
             assertThat(claims).containsEntry("client_id", "web-bff").doesNotContainKeys("asid", "idp", "roles", "permissions");
             verifyNoInteractions(users, sessions, authorities);
+            verify(events).publishEvent(new AccessTokenIssuedEvent("web-bff", "client_credentials"));
+        }
+
+        @Test
+        @DisplayName("Access Token 發布 AccessTokenIssuedEvent；ID Token 不發布")
+        void publishesIssuedEventForAccessTokensOnly() {
+            customize(OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.REFRESH_TOKEN);
+            customize(new OAuth2TokenType(OidcParameterNames.ID_TOKEN), AuthorizationGrantType.REFRESH_TOKEN);
+            verify(events).publishEvent(new AccessTokenIssuedEvent("web-bff", "refresh_token"));
+            verifyNoMoreInteractions(events);
         }
     }
 
@@ -259,7 +272,7 @@ class Jacky917TokenCustomizerTest {
                 .authorizationGrantType(grantType)
                 .build();
         new Jacky917TokenCustomizer(new ConfiguredAudienceResolver(List.of("jacky917-api")), authorities, profiles, links,
-                sessions, users, contributors, Clock.fixed(NOW, ZoneOffset.UTC)).customize(context);
+                sessions, users, contributors, events, Clock.fixed(NOW, ZoneOffset.UTC)).customize(context);
         return claims.build().getClaims();
     }
 

@@ -2,6 +2,21 @@
 
 格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，版本號遵循 [語意化版本](https://semver.org/lang/zh-TW/)。
 
+## [Unreleased]
+
+### 新增：Authorization Server starter（預覽）
+
+`jacky917-security-authorization-server-starter`：OAuth 2.0／OpenID Connect 登入服務，見 [使用指南](docs/authorization-server/getting-started.md)。
+
+- 帳號密碼與 Google、GitHub、LINE 登入；授權碼 + PKCE、`client_credentials`；Token 帶 `asid`、角色與權限（每次簽發都從資料庫讀取）。
+- Refresh Token 每次輪換；寬限期後重用即撤銷整個登入 Session。
+- RP-Initiated Logout 撤銷登入 Session；帳號頁（登入中的裝置、登出單一或所有裝置、連結與解除連結第三方帳號）。
+- 第三方登入的 Email 屬於既有帳號時，登入原帳號確認後才連結。
+- 登入保護（連續失敗鎖定、IP 限流）與稽核紀錄（`login_audit`）。
+- 簽章金鑰（RS256／ES256，AES-256-GCM 加密保存）自動輪換；過期資料定期清理；多實例時以資料庫鎖確保排程只執行一次。
+- 預設 SQLite，只改設定即可切換 PostgreSQL；多實例搭配 Spring Session JDBC。
+- 選用的 Micrometer metrics 與 `signingKey` 健康檢查。
+
 ## [2.0.0] - 2026-10-08
 
 **破壞性更新**：升級到 Spring Boot 4.1，Maven 座標改名。從 1.x 升級請先讀 [升級到 2.0](docs/guides/upgrade-to-2.0.md)。

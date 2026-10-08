@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | ✅ 第 1 階段已實作（2.1.0 preview），見 [§13 實施紀錄](#13-實施紀錄)；第 2 階段（工作 11～17）進行中 |
+| 狀態 | ✅ 第 1 階段已實作（2.1.0 preview），見 [§13 實施紀錄](#13-實施紀錄)；第 2 階段（工作 11～17）已實作 |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -998,7 +998,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 14 | 帳號連結：確認頁 `/jacky917/link-account`（原帳號密碼或已連結的提供者）、`account-linking.mode`、帳號頁的連結與解除連結；GitHub（`GitHubFederatedUserInfoMapper`）、LINE（HS256 ID Token） | ✅ |
 | 15 | 排程：`SigningKeyRotation`、`DataCleanup`、`ScheduledJobLock`（`shedlock` 表）、`MaintenanceScheduler` | ✅ |
 | 16 | 多實例：Spring Session JDBC（應用程式加入依賴即啟用）、`SpringSessionBackedSessionRegistry`、多實例 E2E 測試 | ✅ |
-| 17 | Metrics、健康檢查 | ⏳ |
+| 17 | Metrics（`AuthorizationServerMetrics`）、健康檢查（`SigningKeyHealthIndicator`）、事件（`AccessTokenIssuedEvent`、`RefreshTokenRejectedEvent`、`DataCleanupEvent`） | ✅ |
+| — | **第 2 階段完成**（尚未發佈；原規劃為 2.2.0，見 §13.2 最後一列） | |
 
 ### 13.2 與設計不同的地方
 
@@ -1087,4 +1088,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | Spring Session JDBC（工作 16，D10） | Starter 一律使用 | **選用**：應用程式加入 `spring-boot-starter-session-jdbc` 時由 Spring Boot 啟用；`SPRING_SESSION` 表由 starter 的 migration 建立 | 單一實例（預設 SQLite）不需要，記憶體中的 Session 較快；Spring Boot 的自動配置在依賴存在時就會啟用，不必另外設定 |
 | OIDC 的 Session registry（工作 16） | 第 2 階段改用 Spring Session 的實作 | 有 `FindByIndexNameSessionRepository` 時註冊 `SpringSessionBackedSessionRegistry` | 已查證：Spring Authorization Server 7.1.1 預設的 registry 在記憶體中，token 端點以它產生 ID Token 的 `sid`；token 請求落在另一個實例時會找不到 Session |
 | 多實例測試（工作 16） | Testcontainers 啟動多個實例 | E2E 模組在同一個 JVM 啟動兩個登入服務（embedded PostgreSQL），前面放一個輪流轉送、沒有黏性的代理（`X-Forwarded-*`） | 連續請求一定落在不同實例，比隨機分配更嚴格；以記憶體 Session 執行時兩個測試都失敗（已實測） |
+| Metrics 的來源（工作 17） | 各元件直接呼叫 Micrometer | 元件發布 application event（`LoginAuditEvent`、`AccessTokenIssuedEvent`、`RefreshTokenRejectedEvent`、`DataCleanupEvent`），`AuthorizationServerMetrics` 監聽並計數；gauge 在讀取時查詢資料庫 | 元件不依賴 Micrometer（選用依賴）；應用程式也能監聽同樣的事件。`refresh.rejected{reason}` 為新增的 metric |
+| `client_id` 標籤（工作 17） | — | 重用與併發的事件只帶 registered client 的內部 ID，metrics 以 `RegisteredClientRepository` 換成 `client_id` 並快取 | 標籤值與 Token 的 `client_id` 一致，便於查詢 |
+| 健康檢查（工作 17，§8.4） | 資料庫連線、`ACTIVE` 金鑰 | 只新增 `signingKey`（另有 `rotationOverdue` 詳細資料）；資料庫由 Spring Boot 的 `db` 檢查負責 | 不重複實作 Spring Boot 已有的檢查 |
+| 第 2 階段的發佈版本 | 2.2.0（AS 轉為正式） | 第 2 階段在 2.1.0 發佈前就已合併到 `main`，目前隨 2.1.0 一起發佈；是否在 2.1.0 即轉為正式（不再標示預覽）**待使用者決定** | 2.1.0 尚未發佈 |
 
