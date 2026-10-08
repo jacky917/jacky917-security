@@ -2,6 +2,7 @@ package jacky917.security.authorizationserver.authentication;
 
 import jacky917.security.authorizationserver.audit.LoginAuditEvent;
 import jacky917.security.authorizationserver.audit.LoginAuditRepository;
+import jacky917.security.authorizationserver.audit.LoginFailureReason;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link LoginAttemptGuard} 的單元測試：只檢查 POST /login，最近一分鐘的失敗次數達上限時拒絕。
+ * {@link LoginAttemptGuard} 的單元測試：只檢查兩個密碼表單（POST /login 與 POST /jacky917/link-account），
+ * 以解碼後的路徑比對；最近一分鐘的失敗次數達上限時拒絕。
  */
 @DisplayName("LoginAttemptGuard")
 class LoginAttemptGuardTest {
@@ -65,7 +67,7 @@ class LoginAttemptGuardTest {
         ArgumentCaptor<LoginAuditEvent> event = ArgumentCaptor.forClass(LoginAuditEvent.class);
         verify(events).publishEvent(event.capture());
         assertThat(event.getValue().success()).isFalse();
-        assertThat(event.getValue().failureReason()).isEqualTo("RATE_LIMITED");
+        assertThat(event.getValue().failureReason()).isEqualTo(LoginFailureReason.RATE_LIMITED);
         assertThat(event.getValue().usernameAttempted()).isEqualTo("alice");
         assertThat(event.getValue().ipAddress()).isEqualTo("10.0.0.1");
     }
@@ -83,8 +85,46 @@ class LoginAttemptGuardTest {
         verifyNoInteractions(events);
     }
 
+    @Test
+    @DisplayName("帳號連結確認頁也是密碼表單：達到上限時同樣拒絕")
+    void linkAccountFormIsGuarded() throws Exception {
+        when(audits.countFailedLogins("10.0.0.1", NOW.minusSeconds(60))).thenReturn(3);
+        MockHttpServletRequest request = post("/jacky917/link-account", "10.0.0.1");
+        MockFilterChain chain = new MockFilterChain();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        guard.doFilter(request, response, chain);
+        assertThat(chain.getRequest()).isNull();
+        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=rate_limited");
+    }
+
+    @Test
+    @DisplayName("編碼過的路徑（/%6Cogin = /login）不能略過檢查")
+    void encodedPathIsGuarded() throws Exception {
+        when(audits.countFailedLogins("10.0.0.1", NOW.minusSeconds(60))).thenReturn(3);
+        MockFilterChain chain = new MockFilterChain();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        guard.doFilter(post("/%6Cogin", "10.0.0.1"), response, chain);
+        assertThat(chain.getRequest()).as("不交給下一個 filter").isNull();
+        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=rate_limited");
+    }
+
+    @Test
+    @DisplayName("部署在 context path 之下：比對 context path 之後的路徑，重導也帶 context path")
+    void contextPath() throws Exception {
+        when(audits.countFailedLogins("10.0.0.1", NOW.minusSeconds(60))).thenReturn(3);
+        MockHttpServletRequest request = post("/auth/login", "10.0.0.1");
+        request.setContextPath("/auth");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        guard.doFilter(request, response, new MockFilterChain());
+        assertThat(response.getRedirectedUrl()).isEqualTo("/auth/login?error=rate_limited");
+    }
+
     private static MockHttpServletRequest login(String ip) {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        return post("/login", ip);
+    }
+
+    private static MockHttpServletRequest post(String uri, String ip) {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", uri);
         request.setRemoteAddr(ip);
         request.setParameter("username", "alice");
         return request;

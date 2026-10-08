@@ -2,6 +2,7 @@ package jacky917.security.authorizationserver.refresh;
 
 import jacky917.security.authorizationserver.audit.LoginAuditEvent;
 import jacky917.security.authorizationserver.audit.LoginAuditEventType;
+import jacky917.security.authorizationserver.audit.LoginFailureReason;
 import jacky917.security.authorizationserver.database.AuthorizationServerDialect;
 import jacky917.security.authorizationserver.session.AuthSession;
 import jacky917.security.authorizationserver.session.AuthSessionService;
@@ -63,10 +64,19 @@ import java.util.Optional;
  * {@code TOKEN_REFRESH_REUSE} 事件。所有拒絕一律回傳 {@code invalid_grant}，
  * 不揭露原因（詳細設計 §7.1）。
  * <p>
- * Every refusal also publishes a {@link RefreshTokenRejectedEvent} with the
- * reason, after the transaction has ended.
+ * Every refusal by this detector also publishes a
+ * {@link RefreshTokenRejectedEvent} with the reason, after the transaction
+ * has ended; refusals of Spring's provider, such as an expired refresh
+ * token, do not. Only a reuse is written to the audit, every time it
+ * happens, even after the session was revoked; a session revoked because
+ * its user can no longer log in keeps the reason in
+ * {@code auth_session.revoke_reason}.
  * <p>
- * 每次拒絕也會在交易結束後發布帶有原因的 {@code RefreshTokenRejectedEvent}。
+ * 此偵測器的每次拒絕也會在交易結束後發布帶有原因的
+ * {@code RefreshTokenRejectedEvent}；Spring provider 的拒絕（例如 Refresh Token
+ * 已過期）則不會。只有重用會寫入稽核，且每次發生都寫入，即使 Session 已被撤銷；
+ * 因使用者無法登入而撤銷的 Session，原因保存在
+ * {@code auth_session.revoke_reason}。
  *
  * @author Jacky
  * @since 2.1.0
@@ -172,7 +182,8 @@ public class RefreshTokenReuseDetector {
      */
     public Authentication authenticate(OAuth2RefreshTokenAuthenticationToken request, AuthenticationProvider delegate) {
         Outcome outcome = transactions.execute(status -> attempt(request, delegate));
-        // 交易提交後才發布：稽核不描述已回滾的變更
+        // 交易提交後才發布：稽核不描述已回滾的變更；而且稽核 listener 同步寫入同一個資料庫，
+        // 在交易內發布時 SQLite（IMMEDIATE）會等待本交易持有的寫入鎖直到逾時
         if (outcome != null) {
             outcome.events().forEach(events::publishEvent);
         }
@@ -195,7 +206,7 @@ public class RefreshTokenReuseDetector {
             log.warn("Refusing to refresh authorization {}: it has no login session", authorization.getId());
             return Outcome.refused(RefreshTokenRejectedEvent.Reason.SESSION_NOT_ACTIVE, clientId);
         }
-        if (session.status() != AuthSessionStatus.ACTIVE || !session.expiresAt().isAfter(now)) {
+        if (!session.isUsable(now)) {
             // 已撤銷的 Session 沒有授權可刷新；過期的由清理排程改為 EXPIRED
             log.info("Refusing to refresh: login session {} is {}", session.sessionId(),
                     session.status() == AuthSessionStatus.ACTIVE ? "expired" : session.status());
@@ -203,9 +214,9 @@ public class RefreshTokenReuseDetector {
         }
         RevokeReason problem = userProblem(session, users.findById(session.userId()));
         if (problem != null) {
-            sessions.revoke(session.sessionId(), problem);
-            log.info("Refusing to refresh: revoked login session {} of user {} ({})", session.sessionId(),
-                    session.userId(), problem);
+            boolean revoked = sessions.revoke(session.sessionId(), problem);
+            log.info("Refusing to refresh: user {} cannot log in ({}); login session {} {}", session.userId(),
+                    problem, session.sessionId(), revoked ? "revoked" : "was already revoked");
             return Outcome.refused(RefreshTokenRejectedEvent.Reason.USER_NOT_ACTIVE, clientId);
         }
 
@@ -244,17 +255,21 @@ public class RefreshTokenReuseDetector {
                     Duration.between(rotated.rotatedAt(), now), rotated.registeredClientId());
             return Outcome.refused(RefreshTokenRejectedEvent.Reason.CONCURRENT, rotated.registeredClientId());
         }
-        if (rotated.sessionId() != null) {
-            sessions.revoke(rotated.sessionId(), RevokeReason.REUSE_DETECTED);
+        String sessionOutcome;
+        if (rotated.sessionId() == null) {
+            sessionOutcome = "it has no login session";
+        } else if (sessions.revoke(rotated.sessionId(), RevokeReason.REUSE_DETECTED)) {
+            sessionOutcome = "revoked login session " + rotated.sessionId();
+        } else {
+            sessionOutcome = "login session " + rotated.sessionId() + " was already revoked";
         }
-        log.warn("Refresh token reuse detected: a token rotated at {} was used again; revoked login session {} of "
-                + "user {} (client {})", rotated.rotatedAt(), rotated.sessionId(), rotated.userId(),
-                rotated.registeredClientId());
+        log.warn("Refresh token reuse detected: a token rotated at {} was used again; {} of user {} (client {})",
+                rotated.rotatedAt(), sessionOutcome, rotated.userId(), rotated.registeredClientId());
         LoginAuditEvent event = LoginAuditEvent.builder(LoginAuditEventType.TOKEN_REFRESH_REUSE, now, false)
                 .userId(rotated.userId())
                 .registeredClientId(rotated.registeredClientId())
                 .sessionId(rotated.sessionId())
-                .failureReason("REUSE_DETECTED")
+                .failureReason(LoginFailureReason.REUSE_DETECTED)
                 .currentRequest()
                 .build();
         return new Outcome(null, List.of(event, new RefreshTokenRejectedEvent(

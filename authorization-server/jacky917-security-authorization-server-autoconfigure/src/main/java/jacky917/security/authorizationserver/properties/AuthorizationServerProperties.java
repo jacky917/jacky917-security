@@ -1,5 +1,6 @@
 package jacky917.security.authorizationserver.properties;
 
+import jacky917.security.authorizationserver.user.LockoutPolicy;
 import jacky917.security.core.TrustLevel;
 import lombok.Getter;
 import lombok.Setter;
@@ -501,6 +502,21 @@ public class AuthorizationServerProperties implements Validator {
          * 一律拒絕，直到最近一分鐘內的失敗次數低於上限。
          */
         private int maxFailuresPerIpPerMinute = 20;
+
+        /**
+         * Returns the account lockout of these properties.
+         * <p>
+         * 回傳這些屬性對應的帳號鎖定政策。
+         *
+         * @return the policy
+         *         <br>帳號鎖定政策
+         * @throws IllegalArgumentException if the properties were not
+         *         validated and are out of range
+         *         <br>若屬性未經驗證且超出範圍
+         */
+        public LockoutPolicy toLockoutPolicy() {
+            return new LockoutPolicy(maxFailures, lockDuration);
+        }
 
         void validate(Errors errors) {
             if (maxFailures < 1 || maxFailures > 20) {

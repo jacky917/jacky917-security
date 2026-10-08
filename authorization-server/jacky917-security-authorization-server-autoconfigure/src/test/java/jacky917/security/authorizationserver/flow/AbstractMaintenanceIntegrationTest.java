@@ -4,7 +4,10 @@ import jacky917.security.authorizationserver.keys.SigningKey;
 import jacky917.security.authorizationserver.keys.SigningKeyService;
 import jacky917.security.authorizationserver.keys.SigningKeyStatus;
 import jacky917.security.authorizationserver.keys.SigningKeyStore;
+import jacky917.security.authorizationserver.maintenance.CleanupTarget;
 import jacky917.security.authorizationserver.maintenance.DataCleanup;
+import jacky917.security.authorizationserver.maintenance.DataCleanupEvent;
+import jacky917.security.authorizationserver.maintenance.MaintenanceFailedEvent;
 import jacky917.security.authorizationserver.maintenance.ScheduledJobLock;
 import jacky917.security.authorizationserver.maintenance.SigningKeyRotation;
 import org.junit.jupiter.api.DisplayName;
@@ -16,10 +19,15 @@ import tools.jackson.databind.JsonNode;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -76,24 +84,50 @@ abstract class AbstractMaintenanceIntegrationTest extends AbstractFlowIntegratio
     }
 
     @Test
-    @DisplayName("清理授權：token 全部過期的刪除；沒有 token 的授權超過 1 小時才刪除（等待同意中的不刪）（T-CLEAN-01）")
+    @DisplayName("清理授權：token 全部過期的刪除；Access Token 過期但 Refresh Token 有效的保留；沒有 token 的授權超過 "
+            + "1 小時才刪除（等待同意中的不刪）（T-CLEAN-01）")
     void deletesExpiredAuthorizations() throws Exception {
         createUser("cleanup-user", null);
         LoggedIn expired = logInAndExchangeCode("cleanup-user");
+        LoggedIn refreshable = logInAndExchangeCode("cleanup-user");
         LoggedIn alive = logInAndExchangeCode("cleanup-user");
-        Timestamp past = Timestamp.from(Instant.now().minusSeconds(60));
-        jdbc.sql("UPDATE oauth2_authorization SET authorization_code_expires_at = :past, access_token_expires_at = :past, "
-                        + "refresh_token_expires_at = :past, oidc_id_token_expires_at = :past WHERE id = "
-                        + "(SELECT authorization_id FROM session_authorization WHERE session_id = :asid)")
-                .param("past", past).param("asid", expired.asid()).update();
+        Timestamp past = Timestamp.from(clock.instant().minusSeconds(60));
+        Timestamp future = Timestamp.from(clock.instant().plus(Duration.ofDays(1)));
+        expireTokens(expired.asid(), past, past);
+        // Access Token 早已過期是常態：只要 Refresh Token 仍有效，刪除就會讓使用者被迫重新登入
+        expireTokens(refreshable.asid(), past, future);
         String recentPending = pendingAuthorization(alive.asid(), Duration.ofMinutes(10));
         String oldPending = pendingAuthorization(alive.asid(), Duration.ofHours(2));
 
-        assertThat(cleanup.deleteExpiredAuthorizations()).isEqualTo(2);
+        assertThat(cleanup.deleteExpiredAuthorizations()).isGreaterThanOrEqualTo(2);
         assertThat(authorizationCount(expired.asid())).isZero();
+        assertThat(authorizationCount(refreshable.asid())).as("Refresh Token 仍有效").isEqualTo(1);
+        assertThat(refresh(refreshable.tokens().get("refresh_token").asString()).has("access_token"))
+                .as("清理之後仍可刷新").isTrue();
         assertThat(exists(oldPending)).isFalse();
         assertThat(exists(recentPending)).as("可能正在等使用者同意").isTrue();
         assertThat(authorizationCount(alive.asid())).as("有效的授權與等待中的授權").isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("清理的每一步各自執行：一步失敗時其他步驟照常執行，並發布失敗事件")
+    void cleanupStepsRunIndependently() {
+        String userId = createUser("independent-cleanup", null);
+        Instant now = clock.instant();
+        String oldAudit = audit(userId, now.minus(Duration.ofDays(181)));
+        SigningKeyStore failingKeys = mock(SigningKeyStore.class);
+        when(failingKeys.deleteRetiredBefore(any())).thenThrow(new org.springframework.dao
+                .DataAccessResourceFailureException("database is down"));
+        List<Object> published = new ArrayList<>();
+        DataCleanup withFailingKeys = new DataCleanup(jdbc, failingKeys, 1000, Duration.ofDays(180),
+                Duration.ofDays(730), published::add, clock);
+
+        assertThat(withFailingKeys.runEach(List.of(CleanupTarget.SIGNING_KEYS, CleanupTarget.AUDITS)))
+                .containsOnlyKeys(CleanupTarget.AUDITS);
+        assertThat(auditExists(oldAudit)).as("金鑰清理失敗後仍清理稽核紀錄").isFalse();
+        assertThat(published).contains(new MaintenanceFailedEvent("cleanup.signing_keys"));
+        assertThat(published).filteredOn(DataCleanupEvent.class::isInstance)
+                .extracting(event -> ((DataCleanupEvent) event).target()).containsExactly(CleanupTarget.AUDITS);
     }
 
     @Test
@@ -126,21 +160,29 @@ abstract class AbstractMaintenanceIntegrationTest extends AbstractFlowIntegratio
     void deletesOtherExpiredData() {
         String userId = createUser("other-cleanup", null);
         Instant now = clock.instant();
+        List<String> expiredHistory = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
-            history("expired-" + i, now.minusSeconds(1));
+            expiredHistory.add(history("expired-" + i, now.minusSeconds(1)));
         }
-        history("alive", now.plusSeconds(3600));
-        DataCleanup smallBatches = new DataCleanup(jdbc, keyStore, 2, Duration.ofDays(180), Duration.ofDays(730), clock);
-        assertThat(smallBatches.deleteExpiredRefreshTokenHistory()).isEqualTo(5);
-        assertThat(jdbc.sql("SELECT COUNT(*) FROM refresh_token_history").query(Integer.class).single()).isEqualTo(1);
+        String aliveHistory = history("alive", now.plusSeconds(3600));
+        DataCleanup smallBatches = new DataCleanup(jdbc, keyStore, 2, Duration.ofDays(180), Duration.ofDays(730),
+                event -> { }, clock);
+        assertThat(smallBatches.deleteExpiredRefreshTokenHistory()).as("每批 2 筆，5 筆也全部刪完")
+                .isGreaterThanOrEqualTo(5);
+        assertThat(expiredHistory).noneMatch(this::historyExists);
+        assertThat(historyExists(aliveHistory)).isTrue();
 
-        actionToken(userId, now.minus(Duration.ofDays(8)));
-        actionToken(userId, now.minus(Duration.ofDays(6)));
-        assertThat(cleanup.deleteOldActionTokens()).isEqualTo(1);
+        String oldToken = actionToken(userId, now.minus(Duration.ofDays(8)));
+        String recentToken = actionToken(userId, now.minus(Duration.ofDays(6)));
+        assertThat(cleanup.deleteOldActionTokens()).isGreaterThanOrEqualTo(1);
+        assertThat(actionTokenExists(oldToken)).isFalse();
+        assertThat(actionTokenExists(recentToken)).isTrue();
 
-        audit(userId, now.minus(Duration.ofDays(181)));
-        audit(userId, now.minus(Duration.ofDays(179)));
-        assertThat(cleanup.deleteOldAudits()).isEqualTo(1);
+        String oldAudit = audit(userId, now.minus(Duration.ofDays(181)));
+        String recentAudit = audit(userId, now.minus(Duration.ofDays(179)));
+        assertThat(cleanup.deleteOldAudits()).isGreaterThanOrEqualTo(1);
+        assertThat(auditExists(oldAudit)).isFalse();
+        assertThat(auditExists(recentAudit)).isTrue();
 
         SigningKey retired = keyService.generate(SigningKeyStatus.NEXT);
         keyStore.save(new SigningKey(retired.kid(), retired.algorithm(), retired.keySize(), retired.publicJwk(),
@@ -157,6 +199,8 @@ abstract class AbstractMaintenanceIntegrationTest extends AbstractFlowIntegratio
         assertThat(lock.tryLock(name, Duration.ofMinutes(10))).isFalse();
         clock.advance(Duration.ofMinutes(11));
         assertThat(lock.tryLock(name, Duration.ofMinutes(10))).isTrue();
+        lock.release(name);
+        assertThat(lock.tryLock(name, Duration.ofMinutes(10))).as("失敗後釋放的鎖可以立即再取得").isTrue();
     }
 
     private java.util.List<String> jwksKids() throws Exception {
@@ -187,6 +231,36 @@ abstract class AbstractMaintenanceIntegrationTest extends AbstractFlowIntegratio
         return id;
     }
 
+    /**
+     * 改寫授權中各 token 的到期時間；簽發時間一併提前到更早，讓授權仍能被讀取（到期必須晚於簽發）。
+     */
+    private void expireTokens(String asid, Timestamp accessAndCode, Timestamp refresh) {
+        Timestamp issued = Timestamp.from(accessAndCode.toInstant().minus(Duration.ofHours(1)));
+        jdbc.sql("UPDATE oauth2_authorization SET authorization_code_issued_at = :issued, "
+                        + "authorization_code_expires_at = :past, access_token_issued_at = :issued, "
+                        + "access_token_expires_at = :past, refresh_token_issued_at = :issued, "
+                        + "refresh_token_expires_at = :refresh, oidc_id_token_issued_at = :issued, "
+                        + "oidc_id_token_expires_at = :past WHERE id = "
+                        + "(SELECT authorization_id FROM session_authorization WHERE session_id = :asid)")
+                .param("issued", issued).param("past", accessAndCode).param("refresh", refresh).param("asid", asid)
+                .update();
+    }
+
+    private boolean historyExists(String hash) {
+        return jdbc.sql("SELECT COUNT(*) FROM refresh_token_history WHERE token_hash = :hash").param("hash", hash)
+                .query(Integer.class).single() > 0;
+    }
+
+    private boolean actionTokenExists(String hash) {
+        return jdbc.sql("SELECT COUNT(*) FROM user_action_token WHERE token_hash = :hash").param("hash", hash)
+                .query(Integer.class).single() > 0;
+    }
+
+    private boolean auditExists(String marker) {
+        return jdbc.sql("SELECT COUNT(*) FROM login_audit WHERE user_agent = :marker").param("marker", marker)
+                .query(Integer.class).single() > 0;
+    }
+
     private boolean exists(String authorizationId) {
         return jdbc.sql("SELECT COUNT(*) FROM oauth2_authorization WHERE id = :id").param("id", authorizationId)
                 .query(Integer.class).single() > 0;
@@ -202,23 +276,34 @@ abstract class AbstractMaintenanceIntegrationTest extends AbstractFlowIntegratio
                 + "WHERE session_id = :id").param("at", Timestamp.from(at)).param("id", asid).update();
     }
 
-    private void history(String token, Instant expiresAt) {
+    private String history(String token, Instant expiresAt) {
+        String hash = jacky917.security.authorizationserver.support.Hashes.sha256Hex(token + UUID.randomUUID());
         jdbc.sql("INSERT INTO refresh_token_history (token_hash, authorization_id, registered_client_id, issued_at, "
                         + "rotated_at, expires_at) VALUES (:hash, 'a', 'c', :at, :at, :expires)")
-                .param("hash", jacky917.security.authorizationserver.support.Hashes.sha256Hex(token + UUID.randomUUID()))
+                .param("hash", hash)
                 .param("at", Timestamp.from(clock.instant())).param("expires", Timestamp.from(expiresAt)).update();
+        return hash;
     }
 
-    private void actionToken(String userId, Instant expiresAt) {
+    private String actionToken(String userId, Instant expiresAt) {
+        String hash = jacky917.security.authorizationserver.support.Hashes.sha256Hex(UUID.randomUUID().toString());
         jdbc.sql("INSERT INTO user_action_token (token_hash, user_id, purpose, expires_at, created_at) "
                         + "VALUES (:hash, :user, 'LINK_ACCOUNT', :expires, :created)")
-                .param("hash", jacky917.security.authorizationserver.support.Hashes.sha256Hex(UUID.randomUUID().toString()))
+                .param("hash", hash)
                 .param("user", userId).param("expires", Timestamp.from(expiresAt))
                 .param("created", Timestamp.from(expiresAt.minus(Duration.ofMinutes(10)))).update();
+        return hash;
     }
 
-    private void audit(String userId, Instant at) {
-        jdbc.sql("INSERT INTO login_audit (occurred_at, event_type, user_id, success) VALUES (:at, 'LOGIN', :user, :ok)")
-                .param("at", Timestamp.from(at)).param("user", userId).param("ok", true).update();
+    /**
+     * 寫入一筆稽核紀錄；以 User-Agent 欄位中的隨機標記識別，回傳該標記。
+     */
+    private String audit(String userId, Instant at) {
+        String marker = UUID.randomUUID().toString();
+        jdbc.sql("INSERT INTO login_audit (occurred_at, event_type, user_id, success, user_agent) "
+                        + "VALUES (:at, 'LOGIN', :user, :ok, :marker)")
+                .param("at", Timestamp.from(at)).param("user", userId).param("ok", true).param("marker", marker)
+                .update();
+        return marker;
     }
 }

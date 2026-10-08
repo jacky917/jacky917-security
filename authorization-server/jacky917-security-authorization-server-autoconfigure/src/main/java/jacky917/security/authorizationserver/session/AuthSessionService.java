@@ -151,18 +151,21 @@ public class AuthSessionService {
     }
 
     /**
-     * Revokes an active session and deletes every authorization issued from
-     * it (data model §11.4). Does nothing if the session is not active.
+     * Marks the session {@code REVOKED} if it is still active, and always
+     * deletes every authorization issued from it (data model §11.4), so a
+     * session that was already revoked or expired keeps no usable token.
      * <p>
-     * 撤銷有效的 Session，並刪除由它簽發的所有授權（資料模型 §11.4）。Session
-     * 不是 {@code ACTIVE} 時不做任何事。
+     * Session 仍為 {@code ACTIVE} 時標記為 {@code REVOKED}，並一律刪除由它簽發的
+     * 所有授權（資料模型 §11.4），因此已撤銷或已過期的 Session 不會留下可用的
+     * token。
      *
      * @param sessionId  the session id
      *                   <br>Session ID
      * @param reason     why it is revoked
      *                   <br>撤銷原因
-     * @return {@code true} if the session was active and is now revoked
-     *         <br>Session 原本有效且已被撤銷時為 {@code true}
+     * @return {@code true} only if the session was active and is now
+     *         revoked
+     *         <br>只有 Session 原本有效且已被撤銷時為 {@code true}
      */
     public boolean revoke(String sessionId, RevokeReason reason) {
         Boolean revoked = transactions.execute(status -> {
@@ -197,16 +200,16 @@ public class AuthSessionService {
      *                         all
      *                         <br>要保留的 Session（例如變更密碼的那一個）；
      *                         {@code null} 表示全部撤銷
-     * @return the ids of the revoked sessions
-     *         <br>被撤銷的 Session ID
+     * @return the ids of the sessions that this call revoked
+     *         <br>此次呼叫撤銷的 Session ID
      */
     public List<String> revokeAll(String userId, RevokeReason reason, @Nullable String keepSessionId) {
         List<String> revoked = transactions.execute(status -> {
             List<String> ids = jdbc.sql("SELECT session_id FROM auth_session WHERE user_id = :user AND status = 'ACTIVE'")
                     .param("user", userId).query(String.class).list().stream()
                     .filter(id -> !id.equals(keepSessionId)).toList();
-            ids.forEach(id -> revoke(id, reason));
-            return ids;
+            // 只回傳此次實際撤銷的：同時被其他請求撤銷的不算
+            return ids.stream().filter(id -> revoke(id, reason)).toList();
         });
         return revoked == null ? List.of() : revoked;
     }

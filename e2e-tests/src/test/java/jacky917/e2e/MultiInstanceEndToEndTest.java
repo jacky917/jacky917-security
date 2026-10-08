@@ -24,8 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 多實例（D10、工作 16）：兩個登入服務共用一個 PostgreSQL，前面是輪流轉送、沒有黏性的負載平衡器。
- * 同一個瀏覽器的連續請求一定落在不同的實例上，因此登入頁的 CSRF、被中斷的授權請求、授權碼、Token、登出
- * 都必須跨實例運作：瀏覽器 Session 存在 Spring Session JDBC，授權與登入 Session 存在共用的資料庫。
+ * 經過代理的每個請求依序輪流分配（瀏覽器、BFF、Resource Server 共用同一個計數器），同一個瀏覽器的請求
+ * 因此會分散到兩個實例上，登入頁的 CSRF、被中斷的授權請求、授權碼、Token、登出都必須跨實例運作：瀏覽器 Session 存在 Spring Session JDBC，授權與登入 Session 存在共用的資料庫。
  */
 @DisplayName("多實例端對端測試（兩個登入服務 + PostgreSQL + Spring Session JDBC）")
 class MultiInstanceEndToEndTest {

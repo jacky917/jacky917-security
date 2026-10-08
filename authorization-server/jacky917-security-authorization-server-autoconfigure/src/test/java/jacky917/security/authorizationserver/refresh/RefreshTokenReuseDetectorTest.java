@@ -172,25 +172,31 @@ class RefreshTokenReuseDetectorTest {
         }
 
         @Test
-        @DisplayName("登入 Session 已撤銷或已過期：invalid_grant，不再撤銷")
-        void unusableSession() {
+        @DisplayName("登入 Session 已撤銷：invalid_grant，不再撤銷")
+        void revokedSession() {
             when(sessions.find(ASID)).thenReturn(Optional.of(session(AuthSessionStatus.REVOKED, NOW.plusSeconds(60))));
-            assertRefused();
-            when(sessions.find(ASID)).thenReturn(Optional.of(session(AuthSessionStatus.ACTIVE, NOW)));
             assertRefused();
             verify(sessions, never()).revoke(anyString(), any());
             verify(delegate, never()).authenticate(any());
         }
 
         @Test
-        @DisplayName("使用者已停用、被管理員鎖定或已刪除：撤銷 Session（USER_DISABLED）")
-        void inactiveUser() {
-            for (Optional<UserAccount> found : List.of(Optional.of(user(UserStatus.DISABLED, null, null)),
-                    Optional.of(user(UserStatus.LOCKED, null, null)), Optional.<UserAccount>empty())) {
-                when(users.findById(USER)).thenReturn(found);
-                assertRefused();
-            }
-            verify(sessions, org.mockito.Mockito.times(3)).revoke(ASID, RevokeReason.USER_DISABLED);
+        @DisplayName("登入 Session 已到期（清理排程尚未執行）：invalid_grant，不撤銷")
+        void expiredSession() {
+            when(sessions.find(ASID)).thenReturn(Optional.of(session(AuthSessionStatus.ACTIVE, NOW)));
+            assertRefused();
+            verify(sessions, never()).revoke(anyString(), any());
+            verify(delegate, never()).authenticate(any());
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "{0}")
+        @org.junit.jupiter.params.provider.ValueSource(strings = {"DISABLED", "LOCKED", "DELETED", "missing"})
+        @DisplayName("使用者已停用、被管理員鎖定、已刪除或不存在：撤銷 Session（USER_DISABLED）")
+        void inactiveUser(String status) {
+            when(users.findById(USER)).thenReturn("missing".equals(status) ? Optional.empty()
+                    : Optional.of(user(UserStatus.valueOf(status), null, null)));
+            assertRefused();
+            verify(sessions).revoke(ASID, RevokeReason.USER_DISABLED);
             verify(delegate, never()).authenticate(any());
         }
 

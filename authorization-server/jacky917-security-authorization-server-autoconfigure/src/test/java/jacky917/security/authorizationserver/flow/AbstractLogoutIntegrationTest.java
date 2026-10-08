@@ -1,7 +1,10 @@
 package jacky917.security.authorizationserver.flow;
 
+import jacky917.security.authorizationserver.session.AuthSessionService;
+import jacky917.security.authorizationserver.session.RevokeReason;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
@@ -11,7 +14,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
-import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +27,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 登出與帳號頁（詳細設計 §5.5、§5.6，T-LOGOUT-01～04）：登出會撤銷整個登入 Session，Refresh Token 立即失效。
  */
 abstract class AbstractLogoutIntegrationTest extends AbstractFlowIntegrationTest {
+
+    @Autowired
+    AuthSessionService sessions;
 
     @Test
     @DisplayName("RP-Initiated Logout：撤銷 Session、刪除授權、Refresh Token 失效、寫入稽核、導回 client（T-LOGOUT-01）")
@@ -78,11 +83,12 @@ abstract class AbstractLogoutIntegrationTest extends AbstractFlowIntegrationTest
     void logoutWithExpiredIdToken() throws Exception {
         createUser("expired-id-token", null);
         LoggedIn result = logInAndExchangeCode("expired-id-token");
-        // 模擬 2 小時前簽發、1 小時前到期的 ID Token
+        // 只改授權中記錄的 ID Token 時間（送出的 JWT 本身仍未過期）：讓 Spring 依授權中的資料判斷 ID Token
+        // 已過期，模擬 2 小時前簽發、1 小時前到期
         jdbc.sql("UPDATE oauth2_authorization SET oidc_id_token_issued_at = :issued, oidc_id_token_expires_at = :expired "
                         + "WHERE principal_name = :user")
-                .param("issued", Timestamp.from(Instant.now().minusSeconds(7200)))
-                .param("expired", Timestamp.from(Instant.now().minusSeconds(3600)))
+                .param("issued", Timestamp.from(clock.instant().minusSeconds(7200)))
+                .param("expired", Timestamp.from(clock.instant().minusSeconds(3600)))
                 .param("user", result.userId()).update();
         mockMvc.perform(get(logoutUrl(result.tokens().get("id_token").asString(), LOGGED_OUT_URI, null)).session(new MockHttpSession()))
                 .andExpect(status().is3xxRedirection());
@@ -184,6 +190,26 @@ abstract class AbstractLogoutIntegrationTest extends AbstractFlowIntegrationTest
         assertRefreshRefused(phone);
         assertThat(jdbc.sql("SELECT COUNT(*) FROM login_audit WHERE event_type = 'LOGOUT' AND user_id = :user")
                 .param("user", laptop.userId()).query(Integer.class).single()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("revokeAll：保留指定的 Session，撤銷其他的並刪除其授權；只回傳此次實際撤銷的 Session")
+    void revokeAllKeepsOneSession() throws Exception {
+        createUser("revoke-all", null);
+        LoggedIn kept = logInAndExchangeCode("revoke-all");
+        LoggedIn other = logInAndExchangeCode("revoke-all");
+        LoggedIn alreadyRevoked = logInAndExchangeCode("revoke-all");
+        sessions.revoke(alreadyRevoked.asid(), RevokeReason.LOGOUT);
+
+        assertThat(sessions.revokeAll(kept.userId(), RevokeReason.PASSWORD_CHANGED, kept.asid()))
+                .containsExactly(other.asid());
+        assertSession(kept.asid(), "ACTIVE", null);
+        assertSession(other.asid(), "REVOKED", "PASSWORD_CHANGED");
+        assertSession(alreadyRevoked.asid(), "REVOKED", "LOGOUT");
+        assertThat(authorizationCount(other.asid())).isZero();
+        assertThat(refresh(kept).has("access_token")).isTrue();
+
+        assertThat(sessions.revokeAll(kept.userId(), RevokeReason.LOGOUT_ALL, null)).containsExactly(kept.asid());
     }
 
     /**

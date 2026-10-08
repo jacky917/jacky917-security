@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpSession;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataAccessException;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
@@ -20,8 +21,11 @@ import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 
 import java.time.Clock;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Ends the login session on logout, not only the browser login (detailed
@@ -36,13 +40,17 @@ import java.util.Map;
  * long as its authorization exists. Every session found is revoked with
  * {@link RevokeReason#LOGOUT}, which deletes its authorizations so its
  * refresh tokens stop working; a {@code LOGOUT} audit event is published
- * for each. The browser login is then ended.
+ * for each session that was still active. The browser login is then
+ * ended, even when revoking a session failed: the failure is logged as an
+ * error, because that session and its refresh tokens stay valid.
  * <p>
  * 登入 Session 以兩種方式找到：Authorization Server 的瀏覽器 Session，以及
  * RP-Initiated Logout 時 {@code id_token_hint} 所屬的授權。後者在瀏覽器
  * Session 已過期、甚至 ID Token 本身已過期時仍可使用，只要授權仍存在。找到的
  * Session 都以 {@code LOGOUT} 撤銷，並刪除其授權，Refresh Token 因此失效；每個
- * Session 各發布一個 {@code LOGOUT} 稽核事件。最後結束瀏覽器的登入。
+ * 原本有效的 Session 各發布一個 {@code LOGOUT} 稽核事件。最後結束瀏覽器的登入；
+ * 即使撤銷 Session 失敗也會結束：失敗記錄為錯誤，因為該 Session 與其 Refresh
+ * Token 仍然有效。
  * <p>
  * A session from the browser is revoked only when it belongs to the user
  * logged in to that browser.
@@ -110,8 +118,19 @@ public class Jacky917LogoutHandler implements LogoutHandler {
                         .ifPresent(asid -> found.put(asid, authorization.getRegisteredClientId()));
             }
         }
-        found.forEach((asid, clientId) -> end(asid, RevokeReason.LOGOUT, clientId, request));
-        browserLogout.logout(request, response, authentication);
+        try {
+            found.forEach((asid, clientId) -> {
+                try {
+                    end(asid, RevokeReason.LOGOUT, clientId, request);
+                } catch (DataAccessException ex) {
+                    log.error("Cannot revoke login session {} on logout; it stays active and its refresh tokens keep "
+                            + "working", asid, ex);
+                }
+            });
+        } finally {
+            // 無論撤銷是否成功，都結束瀏覽器的登入：共用電腦上按下登出後不能仍是登入狀態
+            browserLogout.logout(request, response, authentication);
+        }
     }
 
     /**
@@ -138,15 +157,45 @@ public class Jacky917LogoutHandler implements LogoutHandler {
         if (session == null || !sessions.revoke(sessionId, reason)) {
             return false;
         }
-        log.info("Revoked login session {} of user {} ({})", sessionId, session.userId(), reason);
+        audit(session, reason, registeredClientId, request);
+        return true;
+    }
+
+    /**
+     * Revokes every active login session of a user in one transaction, and
+     * publishes a {@code LOGOUT} audit event for each one revoked.
+     * <p>
+     * 在同一個交易中撤銷使用者所有有效的登入 Session，並為每個被撤銷的 Session
+     * 發布 {@code LOGOUT} 稽核事件。
+     *
+     * @param userId   the user
+     *                 <br>使用者
+     * @param reason   why they end
+     *                 <br>結束原因
+     * @param request  the current request, for the audit
+     *                 <br>目前的請求，用於稽核
+     * @return the number of sessions revoked
+     *         <br>被撤銷的 Session 數量
+     */
+    public int endAll(String userId, RevokeReason reason, HttpServletRequest request) {
+        List<AuthSession> active = sessions.findActive(userId);
+        Set<String> revoked = new HashSet<>(sessions.revokeAll(userId, reason, null));
+        // 稽核在交易提交之後發布
+        active.stream().filter(session -> revoked.contains(session.sessionId()))
+                .forEach(session -> audit(session, reason, null, request));
+        return revoked.size();
+    }
+
+    private void audit(AuthSession session, RevokeReason reason, @Nullable String registeredClientId,
+                       HttpServletRequest request) {
+        log.info("Revoked login session {} of user {} ({})", session.sessionId(), session.userId(), reason);
         events.publishEvent(LoginAuditEvent.builder(LoginAuditEventType.LOGOUT, clock.instant(), true)
                 .userId(session.userId())
-                .login(session.loginMethod().name(), session.idp())
+                .login(session.loginMethod(), session.idp())
                 .registeredClientId(registeredClientId)
-                .sessionId(sessionId)
+                .sessionId(session.sessionId())
                 .request(request)
                 .build());
-        return true;
     }
 
     private static @Nullable String browserUser(@Nullable Authentication authentication) {

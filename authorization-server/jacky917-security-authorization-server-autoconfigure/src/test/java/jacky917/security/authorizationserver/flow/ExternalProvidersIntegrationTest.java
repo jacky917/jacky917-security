@@ -82,7 +82,7 @@ class ExternalProvidersIntegrationTest extends AbstractGoogleIntegrationTest {
     }
 
     @Test
-    @DisplayName("GitHub：subject 為數字 id；Email 取自主要且已驗證的地址（公開 Email 不採信）")
+    @DisplayName("GitHub：subject 為數字 id；Email 取自主要且已驗證的地址（公開 Email 不採信）（T-FED-05）")
     void gitHubUsesThePrimaryVerifiedEmail() throws Exception {
         long id = GITHUB_IDS.incrementAndGet();
         String email = "octo-" + id + "@example.com";
@@ -121,6 +121,52 @@ class ExternalProvidersIntegrationTest extends AbstractGoogleIntegrationTest {
     }
 
     @Test
+    @DisplayName("GitHub 的 /user/emails 故障（500）：登入失敗，不建立帳號（否則已有帳號的使用者會得到重複的帳號）")
+    void gitHubEmailFailureFailsTheLogin() throws Exception {
+        long id = GITHUB_IDS.incrementAndGet();
+        String email = "outage-" + id + "@example.com";
+        users.createUser(new NewUser(null, email, true, "correct horse battery", null, Set.of()));
+        int usersBefore = jdbc.sql("SELECT COUNT(*) FROM app_user").query(Integer.class).single();
+        Flow flow = startFlow();
+        assertThat(gitHubCallback(flow.session, id, "outage" + id,
+                List.of(Map.of("email", email, "primary", true, "verified", true)), 500))
+                .isEqualTo("/login?error=federation");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM app_user").query(Integer.class).single()).isEqualTo(usersBefore);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM user_federated_identity WHERE provider = 'github' "
+                + "AND provider_subject = :id").param("id", String.valueOf(id)).query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    @DisplayName("GitHub 的主要 Email 未驗證：不採用（不比對既有帳號、不儲存）")
+    void gitHubIgnoresAnUnverifiedPrimaryEmail() throws Exception {
+        long id = GITHUB_IDS.incrementAndGet();
+        String email = "unverified-" + id + "@example.com";
+        users.createUser(new NewUser(null, email, true, "correct horse battery", null, Set.of()));
+        Flow flow = startFlow();
+        assertThat(gitHubCallback(flow.session, id, "unverified" + id,
+                List.of(Map.of("email", email, "primary", true, "verified", false))))
+                .as("不導向連結確認頁").startsWith("http://localhost/oauth2/authorize");
+        assertThat(jdbc.sql("SELECT u.email FROM app_user u JOIN user_federated_identity f ON f.user_id = u.id "
+                        + "WHERE f.provider = 'github' AND f.provider_subject = :id").param("id", String.valueOf(id))
+                .query(String.class).optional()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("LINE 的 ID Token 以錯誤的 channel secret 簽章（偽造）：登入失敗並稽核，不建立使用者")
+    void lineRejectsForgedIdTokens() throws Exception {
+        String subject = "U" + UUID.randomUUID().toString().replace("-", "");
+        LINE.signNextLoginWith("ffffffffffffffffffffffffffffffff");
+        Flow flow = startFlow();
+        assertThat(providerCallback(LINE, flow.session, "line", subject, subject + "@line.example.com", true,
+                "Forged")).isEqualTo("/login?error=federation");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM user_federated_identity WHERE provider = 'line' "
+                + "AND provider_subject = :s").param("s", subject).query(Integer.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM login_audit WHERE event_type = 'LOGIN' AND success = :ok "
+                + "AND failure_reason = 'FEDERATION'").param("ok", false).query(Integer.class).single())
+                .as("提供者登入失敗也寫入稽核").isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
     @DisplayName("LINE：以 channel secret 驗證 HS256 的 ID Token；沒有 email_verified，因此不儲存 Email")
     void lineVerifiesHs256IdTokens() throws Exception {
         String subject = "U" + UUID.randomUUID().toString().replace("-", "");
@@ -146,12 +192,17 @@ class ExternalProvidersIntegrationTest extends AbstractGoogleIntegrationTest {
 
     private String gitHubCallback(MockHttpSession session, long id, String login, List<Map<String, Object>> emails)
             throws Exception {
+        return gitHubCallback(session, id, login, emails, 200);
+    }
+
+    private String gitHubCallback(MockHttpSession session, long id, String login, List<Map<String, Object>> emails,
+                                  int emailsStatus) throws Exception {
         String toGitHub = mockMvc.perform(get("/oauth2/authorization/github").session(session))
                 .andExpect(status().is3xxRedirection()).andReturn().getResponse().getRedirectedUrl();
         assertThat(toGitHub).startsWith(GITHUB.baseUrl());
         String state = URLDecoder.decode(UriComponentsBuilder.fromUriString(toGitHub).build().getQueryParams()
                 .getFirst("state"), StandardCharsets.UTF_8);
-        String code = GITHUB.prepare(id, login, "Octo " + id, emails);
+        String code = GITHUB.prepare(id, login, "Octo " + id, emails, emailsStatus);
         URI callback = UriComponentsBuilder.fromPath("/login/oauth2/code/github")
                 .queryParam("code", code).queryParam("state", state).encode().build().toUri();
         return mockMvc.perform(get(callback).session(session))

@@ -1,5 +1,6 @@
 package jacky917.security.authorizationserver.flow;
 
+import jacky917.security.authorizationserver.user.LockoutPolicy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -28,7 +29,7 @@ abstract class AbstractLoginProtectionIntegrationTest extends AbstractFlowIntegr
     private static final String SIGNED_IN = "/jacky917/signed-in";
 
     @Test
-    @DisplayName("連續 5 次密碼錯誤：鎖定 15 分鐘（正確密碼也無法登入、不延長鎖定），到期後可以登入")
+    @DisplayName("連續 5 次密碼錯誤：鎖定 15 分鐘（正確密碼也無法登入、不延長鎖定），到期後可以登入（T-LOGIN-03）")
     void consecutiveFailuresLockTheAccount() throws Exception {
         String userId = createUser("lock-user", null);
         for (int i = 1; i <= 4; i++) {
@@ -71,7 +72,8 @@ abstract class AbstractLoginProtectionIntegrationTest extends AbstractFlowIntegr
     }
 
     @Test
-    @DisplayName("同一個 IP 最近一分鐘失敗 3 次後：正確密碼也被拒絕（rate_limited，不檢查密碼）；其他 IP 不受影響；一分鐘後恢復")
+    @DisplayName("同一個 IP 最近一分鐘失敗 3 次後：正確密碼也被拒絕（rate_limited，不檢查密碼）；其他 IP 不受影響；一分鐘後恢復"
+            + "（T-LOGIN-05）")
     void failuresFromOneIpAreRateLimited() throws Exception {
         String userId = createUser("rate-user", null);
         for (int i = 1; i <= 3; i++) {
@@ -92,7 +94,7 @@ abstract class AbstractLoginProtectionIntegrationTest extends AbstractFlowIntegr
     }
 
     @Test
-    @DisplayName("不存在的帳號：稽核記錄 UNKNOWN_USER 與輸入的帳號；頁面訊息與密碼錯誤相同")
+    @DisplayName("不存在的帳號：稽核記錄 UNKNOWN_USER 與輸入的帳號；頁面訊息與密碼錯誤相同（T-LOGIN-02）")
     void unknownUserIsAudited() throws Exception {
         assertThat(logIn("ghost", "wrong password!", "10.4.0.1")).isEqualTo("/login?error");
         Map<String, Object> row = jdbc.sql("SELECT user_id, username_attempted, failure_reason FROM login_audit "
@@ -109,6 +111,35 @@ abstract class AbstractLoginProtectionIntegrationTest extends AbstractFlowIntegr
         assertThat(logIn("disabled-login", PASSWORD, "10.5.0.1")).isEqualTo("/login?error");
         assertThat(audits(userId)).containsExactly("LOGIN:DISABLED");
         assertThat(user(userId)).containsEntry("failed_login_count", 0);
+    }
+
+    @Test
+    @DisplayName("併發的密碼錯誤不會互相覆蓋：10 次同時失敗（上限 5）恰好鎖定兩次、計數歸零")
+    void concurrentFailuresAreAllCounted() throws Exception {
+        String userId = createUser("concurrent-failures", null);
+        LockoutPolicy policy = new LockoutPolicy(5, Duration.ofMinutes(15));
+        Instant at = clock.instant();
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(10);
+        List<java.util.concurrent.Future<Boolean>> results = new java.util.ArrayList<>();
+        try {
+            for (int i = 0; i < 10; i++) {
+                results.add(executor.submit(() -> {
+                    start.await();
+                    return users.recordLoginFailure(userId, at, policy);
+                }));
+            }
+            start.countDown();
+            int locks = 0;
+            for (java.util.concurrent.Future<Boolean> result : results) {
+                locks += result.get() ? 1 : 0;
+            }
+            assertThat(locks).as("只有實際造成鎖定的失敗回傳 true").isEqualTo(2);
+        } finally {
+            executor.shutdownNow();
+        }
+        assertThat(user(userId)).as("10 次失敗全部計入").containsEntry("failed_login_count", 0);
+        assertThat(user(userId).get("locked_until")).isNotNull();
     }
 
     private String logIn(String username, String password, String ip) throws Exception {

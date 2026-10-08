@@ -1,6 +1,7 @@
 package jacky917.security.authorizationserver.maintenance;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -17,15 +18,25 @@ import java.util.concurrent.ScheduledFuture;
  * <p>
  * 執行 Authorization Server 的排程工作：金鑰輪換與清理（詳細設計 §5.7、§5.8）。
  * <p>
- * Each job first runs one period after startup, then every period. Across
+ * Each job first runs one period after startup, then every period, so that
+ * restarting several instances does not run every job at once. An
+ * application that restarts more often than a job's period, for example one
+ * deployed every day, never reaches the daily cleanup; run
+ * {@link DataCleanup#runAll()} from an administration task instead. Across
  * several instances, {@link ScheduledJobLock} lets only one of them run a job
- * per period. A failing job is logged and runs again at its next time. The
- * jobs use their own thread and never turn on {@code @Scheduled} in the
- * application.
+ * in each 90% of its period; the other 10% keeps this instance's own next
+ * run from being blocked by its lock. A failing job is logged, reported with
+ * a {@link MaintenanceFailedEvent} and releases its lock, so it runs again at
+ * the next time of any instance. The jobs use their own thread and never
+ * turn on {@code @Scheduled} in the application.
  * <p>
- * 每個工作在啟動後經過一個週期才第一次執行，之後每個週期執行一次。多個實例時，
- * {@code ScheduledJobLock} 讓每個週期只有一個實例執行。失敗的工作記錄日誌，
- * 下一次照常執行。工作使用自己的執行緒，不會啟用應用程式的 {@code @Scheduled}。
+ * 每個工作在啟動後經過一個週期才第一次執行，之後每個週期執行一次，避免同時
+ * 重啟多個實例時所有工作一起執行。重啟頻率高於工作週期的應用程式（例如每天
+ * 部署）永遠等不到每日清理，請改由管理工作呼叫 {@code DataCleanup#runAll()}。
+ * 多個實例時，{@code ScheduledJobLock} 讓每段「週期的 90%」只有一個實例執行；
+ * 保留 10% 是為了不讓本實例的下一次執行被自己的鎖擋住。失敗的工作記錄日誌、以
+ * {@code MaintenanceFailedEvent} 回報並釋放鎖，因此任何實例的下一次排程都會
+ * 重試。工作使用自己的執行緒，不會啟用應用程式的 {@code @Scheduled}。
  *
  * @author Jacky
  * @since 2.1.0
@@ -36,6 +47,7 @@ public class MaintenanceScheduler implements SmartLifecycle {
     private final TaskScheduler scheduler;
     private final ScheduledJobLock lock;
     private final List<Job> jobs;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
     private final List<ScheduledFuture<?>> scheduled = new ArrayList<>();
     private volatile boolean running;
@@ -53,13 +65,18 @@ public class MaintenanceScheduler implements SmartLifecycle {
      *                   <br>讓每個週期只有一個實例執行工作
      * @param jobs       the jobs
      *                   <br>工作
+     * @param events     publishes a {@link MaintenanceFailedEvent} when a
+     *                   job fails
+     *                   <br>工作失敗時發布 {@code MaintenanceFailedEvent}
      * @param clock      the clock
      *                   <br>時鐘
      */
-    public MaintenanceScheduler(TaskScheduler scheduler, ScheduledJobLock lock, List<Job> jobs, Clock clock) {
+    public MaintenanceScheduler(TaskScheduler scheduler, ScheduledJobLock lock, List<Job> jobs,
+                                ApplicationEventPublisher events, Clock clock) {
         this.scheduler = scheduler;
         this.lock = lock;
         this.jobs = List.copyOf(jobs);
+        this.events = events;
         this.clock = clock;
     }
 
@@ -113,13 +130,31 @@ public class MaintenanceScheduler implements SmartLifecycle {
      *             <br>工作
      */
     void run(Job job) {
+        String lockName = "jacky917-as." + job.name();
+        boolean locked = false;
         try {
-            // 持有鎖到下一次排程之前：其他實例在這個週期內不會再執行
-            if (lock.tryLock("jacky917-as." + job.name(), job.period().multipliedBy(9).dividedBy(10))) {
-                job.task().run();
+            // 持有鎖到本實例下一次排程之前；排程時間不同的其他實例在這段時間內不會執行
+            locked = lock.tryLock(lockName, job.period().multipliedBy(9).dividedBy(10));
+            if (!locked) {
+                log.debug("Skipping scheduled job {}: another instance ran it recently", job.name());
+                return;
             }
+            job.task().run();
         } catch (RuntimeException ex) {
-            log.error("Scheduled job {} failed; it runs again in {}", job.name(), job.period(), ex);
+            log.error("Scheduled job {} failed; any instance retries it at its next run, at most {} from now",
+                    job.name(), job.period(), ex);
+            events.publishEvent(new MaintenanceFailedEvent(job.name()));
+            if (locked) {
+                releaseAfterFailure(lockName);
+            }
+        }
+    }
+
+    private void releaseAfterFailure(String lockName) {
+        try {
+            lock.release(lockName);
+        } catch (RuntimeException ex) {
+            log.warn("Cannot release the lock {} after a failure; it expires on its own", lockName, ex);
         }
     }
 

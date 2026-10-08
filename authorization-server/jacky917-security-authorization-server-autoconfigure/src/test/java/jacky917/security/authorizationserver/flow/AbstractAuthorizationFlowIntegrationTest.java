@@ -220,7 +220,8 @@ abstract class AbstractAuthorizationFlowIntegrationTest extends AbstractFlowInte
         LoggedIn result = logInAndExchangeCode("grace-user");
         String old = result.tokens().get("refresh_token").asString();
         JsonNode refreshed = refresh(result);
-        // 寬限期 30 秒；測試本身也需要一點時間，因此推移 29 秒
+        // 寬限期 30 秒。MutableClock 跟著系統時間走，刷新到重用之間的執行時間也會計入，因此推移 29 秒，
+        // 保留約 1 秒給執行時間（超過 1 秒會讓測試不穩定）
         clock.advance(Duration.ofSeconds(29));
         assertRefreshRefused(old);
         assertSession(result.asid(), "ACTIVE", null);
@@ -246,30 +247,46 @@ abstract class AbstractAuthorizationFlowIntegrationTest extends AbstractFlowInte
     }
 
     @Test
-    @DisplayName("同一個 Refresh Token 的兩個併發刷新：一個成功、一個 invalid_grant，Session 不撤銷（T-REFRESH-02）")
+    @DisplayName("同一個 Refresh Token 的兩個併發刷新：一個成功、一個 invalid_grant，Session 不撤銷，成功拿到的新 "
+            + "token 可以再刷新（T-REFRESH-02）")
     void concurrentRefreshesAreSerialized() throws Exception {
         createUser("concurrent-user", null);
         LoggedIn result = logInAndExchangeCode("concurrent-user");
         String token = result.tokens().get("refresh_token").asString();
         java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        // 第一個刷新持有列鎖時多等一下：沒有列鎖或重讀時，第二個刷新必定會在此期間完成並拿到第二組 token
+        holdRefreshLockFor = Duration.ofMillis(300);
+        java.util.List<org.springframework.mock.web.MockHttpServletResponse> responses;
         try {
-            java.util.concurrent.Callable<Integer> request = () -> {
+            java.util.concurrent.Callable<org.springframework.mock.web.MockHttpServletResponse> request = () -> {
                 start.await();
                 return mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
                                 .param("grant_type", "refresh_token").param("refresh_token", token))
-                        .andReturn().getResponse().getStatus();
+                        .andReturn().getResponse();
             };
-            java.util.concurrent.Future<Integer> first = executor.submit(request);
-            java.util.concurrent.Future<Integer> second = executor.submit(request);
+            java.util.concurrent.Future<org.springframework.mock.web.MockHttpServletResponse> first =
+                    executor.submit(request);
+            java.util.concurrent.Future<org.springframework.mock.web.MockHttpServletResponse> second =
+                    executor.submit(request);
             start.countDown();
-            assertThat(java.util.List.of(first.get(), second.get())).containsExactlyInAnyOrder(200, 400);
+            responses = java.util.List.of(first.get(), second.get());
         } finally {
+            holdRefreshLockFor = Duration.ZERO;
             executor.shutdownNow();
         }
+        assertThat(responses).extracting(org.springframework.mock.web.MockHttpServletResponse::getStatus)
+                .containsExactlyInAnyOrder(200, 400);
+        org.springframework.mock.web.MockHttpServletResponse refused = responses.stream()
+                .filter(response -> response.getStatus() == 400).findFirst().orElseThrow();
+        assertThat(refused.getContentAsString()).contains("invalid_grant");
+        org.springframework.mock.web.MockHttpServletResponse issued = responses.stream()
+                .filter(response -> response.getStatus() == 200).findFirst().orElseThrow();
+        String newToken = JSON.readTree(issued.getContentAsString()).get("refresh_token").asString();
         assertSession(result.asid(), "ACTIVE", null);
         assertThat(jdbc.sql("SELECT COUNT(*) FROM refresh_token_history WHERE session_id = :asid")
-                .param("asid", result.asid()).query(Integer.class).single()).isEqualTo(1);
+                .param("asid", result.asid()).query(Integer.class).single()).as("只輪換了一次").isEqualTo(1);
+        assertThat(refresh(newToken).has("access_token")).as("成功的那一次拿到的新 token 可以再刷新").isTrue();
     }
 
     @Test

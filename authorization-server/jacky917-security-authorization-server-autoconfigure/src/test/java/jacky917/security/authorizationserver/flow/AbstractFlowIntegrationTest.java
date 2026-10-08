@@ -1,5 +1,7 @@
 package jacky917.security.authorizationserver.flow;
 
+import jacky917.security.authorizationserver.refresh.RefreshTokenHistoryRepository;
+import jacky917.security.authorizationserver.refresh.RotatedRefreshToken;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.support.TestDatabases;
 import jacky917.security.authorizationserver.token.TokenClaimsContributor;
@@ -70,6 +72,11 @@ abstract class AbstractFlowIntegrationTest {
     static final String REDIRECT_URI = "https://app.example.com/login/oauth2/code/jacky917";
 
     static final String LOGGED_OUT_URI = "https://app.example.com/logged-out";
+
+    /**
+     * 不為零時，刷新在持有授權列鎖的交易中等待這麼久才記錄舊 token，讓併發的刷新穩定地與它重疊。
+     */
+    static volatile java.time.Duration holdRefreshLockFor = java.time.Duration.ZERO;
 
     private static final Pattern CSRF = Pattern.compile("name=\"_csrf\" value=\"([^\"]+)\"");
 
@@ -236,6 +243,24 @@ abstract class AbstractFlowIntegrationTest {
         @Bean
         MutableClock clock() {
             return new MutableClock();
+        }
+
+        /**
+         * 已輪換 Refresh Token 的紀錄；記錄前依 {@code holdRefreshLockFor} 等待（只用於併發測試）。
+         */
+        @Bean
+        RefreshTokenHistoryRepository refreshTokenHistoryRepository(JdbcClient jdbcClient) {
+            return new RefreshTokenHistoryRepository(jdbcClient) {
+                @Override
+                public void save(RotatedRefreshToken token) {
+                    try {
+                        Thread.sleep(holdRefreshLockFor.toMillis());
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                    }
+                    super.save(token);
+                }
+            };
         }
 
         /**

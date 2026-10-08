@@ -6,6 +6,7 @@ import java.io.Serial;
 import java.io.Serializable;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 
 /**
  * A request from the account page to link a provider, kept in the browser
@@ -13,8 +14,9 @@ import java.time.Instant;
  * <p>
  * 帳號頁發出的連結提供者請求，在使用者登入提供者期間保存在瀏覽器 Session 中。
  *
- * @param userId     the user who asked for the link
- *                   <br>提出連結請求的使用者
+ * @param userId     the user who asked for the link; the name of
+ *                   {@code previous}
+ *                   <br>提出連結請求的使用者，即 {@code previous} 的名稱
  * @param provider   the registration id of the provider to link
  *                   <br>要連結之提供者的 registration id
  * @param previous   the browser's login before going to the provider,
@@ -39,12 +41,23 @@ public record LinkIntent(String userId, String provider, Authentication previous
     public static final String SESSION_ATTRIBUTE = LinkIntent.class.getName();
 
     /**
-     * Name of the browser session attribute holding the token of a pending
-     * link from {@link PendingLinkService}.
+     * Creates a request, checking that it belongs to the logged-in user.
      * <p>
-     * 存放 {@code PendingLinkService} 待確認連結 token 的瀏覽器 Session 屬性名稱。
+     * 建立請求，並檢查它屬於已登入的使用者。
+     *
+     * @throws IllegalArgumentException if {@code userId} is not the name of
+     *         {@code previous}
+     *         <br>若 {@code userId} 不是 {@code previous} 的名稱
      */
-    public static final String PENDING_LINK_ATTRIBUTE = LinkIntent.class.getName() + ".PENDING";
+    public LinkIntent {
+        Objects.requireNonNull(userId, "userId");
+        Objects.requireNonNull(provider, "provider");
+        Objects.requireNonNull(previous, "previous");
+        Objects.requireNonNull(createdAt, "createdAt");
+        if (!userId.equals(previous.getName())) {
+            throw new IllegalArgumentException("User " + userId + " does not match the login " + previous.getName());
+        }
+    }
 
     /**
      * How long the user has to finish the provider login.

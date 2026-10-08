@@ -2,7 +2,6 @@ package jacky917.security.authorizationserver.user;
 
 import jacky917.security.authorizationserver.federation.FederatedUserInfo;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -105,26 +104,29 @@ public interface UserAccountService {
 
     /**
      * Records a failed password login. When the consecutive failures reach
-     * {@code maxFailures}, the account is locked until
+     * the policy's {@code maxFailures}, the account is locked until
      * {@code at + lockDuration} and the count starts again from zero.
      * <p>
-     * 記錄一次密碼登入失敗。連續失敗達到 {@code maxFailures} 次時，帳號鎖定到
-     * {@code at + lockDuration}，失敗次數重新從零開始計算。
+     * 記錄一次密碼登入失敗。連續失敗達到政策的 {@code maxFailures} 次時，帳號
+     * 鎖定到 {@code at + lockDuration}，失敗次數重新從零開始計算。
+     * <p>
+     * Concurrent failures must not overwrite each other's count, and only
+     * the failure that actually locked the account returns {@code true}.
+     * <p>
+     * 併發的失敗不可互相覆蓋計數，且只有實際造成鎖定的那一次失敗回傳
+     * {@code true}。
      *
-     * @param userId        the user id
-     *                      <br>使用者 ID
-     * @param at            the time of the failure
-     *                      <br>失敗的時間
-     * @param maxFailures   consecutive failures that lock the account; at
-     *                      least 1
-     *                      <br>鎖定帳號的連續失敗次數，至少為 1
-     * @param lockDuration  how long the account stays locked
-     *                      <br>鎖定的時間
+     * @param userId  the user id
+     *                <br>使用者 ID
+     * @param at      the time of the failure
+     *                <br>失敗的時間
+     * @param policy  when the account is locked
+     *                <br>何時鎖定帳號
      * @return {@code true} if this failure locked the account
      *         <br>此次失敗造成帳號鎖定時為 {@code true}
      * @since 2.1.0
      */
-    boolean recordLoginFailure(String userId, Instant at, int maxFailures, Duration lockDuration);
+    boolean recordLoginFailure(String userId, Instant at, LockoutPolicy policy);
 
     /**
      * Replaces the stored password hash without counting it as a password

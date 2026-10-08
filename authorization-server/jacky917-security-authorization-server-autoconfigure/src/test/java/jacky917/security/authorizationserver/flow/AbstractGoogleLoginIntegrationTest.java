@@ -97,7 +97,8 @@ abstract class AbstractGoogleLoginIntegrationTest extends AbstractGoogleIntegrat
     }
 
     @Test
-    @DisplayName("已驗證的 Email 屬於既有帳號：不建立使用者，導向連結確認頁（D06-C，確認流程見 AbstractAccountLinkingIntegrationTest）")
+    @DisplayName("已驗證的 Email 屬於既有帳號：不建立使用者，導向連結確認頁（T-FED-03、D06-C，確認流程見 "
+            + "AbstractAccountLinkingIntegrationTest）")
     void verifiedEmailOfExistingAccountAsksToLink() throws Exception {
         String email = "owner-" + UUID.randomUUID() + "@example.com";
         users.createUser(new NewUser(null, email, true, "correct horse battery", null, Set.of()));
@@ -118,5 +119,25 @@ abstract class AbstractGoogleLoginIntegrationTest extends AbstractGoogleIntegrat
         assertThat(attemptGoogleLogin(subject, subject + "@gmail.com", true, "Soon Disabled"))
                 .isEqualTo("/login?error=federation");
         assertThat(rejectedAudits()).as("稽核記錄 USER_CANNOT_LOG_IN").isEqualTo(before + 1);
+    }
+
+    @Test
+    @DisplayName("密碼登入失敗造成的暫時鎖定不阻擋第三方登入（DEC-092）；管理員鎖定（status=LOCKED）則拒絕")
+    void temporaryLockOnlyBlocksPasswords() throws Exception {
+        String subject = "google-" + UUID.randomUUID();
+        logInWithGoogle(subject, subject + "@gmail.com", true, "Locked Out").exchange(this);
+        String userId = jdbc.sql("SELECT user_id FROM user_federated_identity WHERE provider_subject = :s")
+                .param("s", subject).query(String.class).single();
+        jdbc.sql("UPDATE app_user SET locked_until = :until WHERE id = :id")
+                .param("until", java.sql.Timestamp.from(clock.instant().plus(java.time.Duration.ofMinutes(10))))
+                .param("id", userId).update();
+        assertThat(logInWithGoogle(subject, subject + "@gmail.com", true, "Locked Out").asid())
+                .as("任何人故意輸錯密碼都能造成暫時鎖定，不能因此擋住第三方登入").isNotNull();
+
+        jdbc.sql("UPDATE app_user SET status = 'LOCKED' WHERE id = :id").param("id", userId).update();
+        int before = rejectedAudits();
+        assertThat(attemptGoogleLogin(subject, subject + "@gmail.com", true, "Locked Out"))
+                .isEqualTo("/login?error=federation");
+        assertThat(rejectedAudits()).isEqualTo(before + 1);
     }
 }

@@ -25,12 +25,14 @@ import java.util.Map;
  * Texts come from the starter's own message bundle
  * ({@code jacky917/authorization-server-messages}) in the request's
  * language, so the application's {@code MessageSource} is not affected.
- * Every login error shows the same text (detailed design §7.2), so the
- * page never reveals whether an account exists or is locked.
+ * Every password login error shows the same text (detailed design §7.2), so
+ * the page never reveals whether an account exists or is locked; rate
+ * limiting, external logins and account links have their own texts.
  * <p>
  * 文字取自 starter 自己的訊息檔（{@code jacky917/authorization-server-messages}），
- * 依請求的語言顯示，不影響應用程式的 {@code MessageSource}。所有登入錯誤都顯示
- * 相同的文字（詳細設計 §7.2），頁面因此不會透露帳號是否存在或被鎖定。
+ * 依請求的語言顯示，不影響應用程式的 {@code MessageSource}。所有密碼登入錯誤都
+ * 顯示相同的文字（詳細設計 §7.2），頁面因此不會透露帳號是否存在或被鎖定；限流、
+ * 第三方登入與帳號連結有各自的文字。
  *
  * @author Jacky
  * @since 2.1.0
@@ -99,6 +101,10 @@ public class LoginController {
                 case "rate_limited" -> "login.error.rate-limited";
                 case "federation" -> "login.error.federation";
                 case "account_exists" -> "login.error.account-exists";
+                case "link_expired" -> "login.error.link-expired";
+                case "link_failed" -> "login.error.link-failed";
+                case "linked_elsewhere" -> "login.error.linked-elsewhere";
+                case "provider_already_linked" -> "login.error.provider-already-linked";
                 default -> "login.error.bad-credentials";
             };
             model.addAttribute("error", page.message(key, null, locale));
@@ -110,9 +116,11 @@ public class LoginController {
 
     /**
      * Shows a confirmation after logging in without an authorization
-     * request, for example by opening the login page directly.
+     * request, for example by opening the login page directly, with the
+     * reason when a pending account link could not be completed.
      * <p>
-     * 在沒有授權請求的情況下登入後（例如直接開啟登入頁）顯示的確認頁。
+     * 在沒有授權請求的情況下登入後（例如直接開啟登入頁）顯示的確認頁；待確認的
+     * 帳號連結無法完成時，一併顯示原因。
      *
      * @param request  the current request, for its language
      *                 <br>目前的請求，用於判斷語言
@@ -123,7 +131,12 @@ public class LoginController {
      */
     @GetMapping(SIGNED_IN_PATH)
     public String signedIn(HttpServletRequest request, Model model) {
-        populate(model, RequestContextUtils.getLocale(request));
+        Locale locale = RequestContextUtils.getLocale(request);
+        populate(model, locale);
+        String linkError = AccountController.takeLinkError(request);
+        if (linkError != null) {
+            model.addAttribute("error", page.message("account.error." + linkError, null, locale));
+        }
         return "jacky917/signed-in";
     }
 

@@ -29,10 +29,16 @@ import java.util.Optional;
  *       <br>{@code NEXT} 金鑰公開滿 {@code announcePeriod} 後成為
  *       {@code ACTIVE}，舊金鑰改為 {@code RETIRING}，仍然公開。</li>
  *   <li>A {@code RETIRING} key is {@code RETIRED}, no longer published, when
- *       every token it signed has expired and resource servers have
- *       refreshed their JWKS cache.
- *       <br>{@code RETIRING} 金鑰簽發的 token 全部到期、且 Resource Server 已
- *       更新 JWKS 快取後，改為 {@code RETIRED}，不再公開。</li>
+ *       every token it may have signed has expired, plus a margin
+ *       ({@link #RETIRE_MARGIN}). Other instances keep signing with it for
+ *       up to {@link SigningKeyService#CACHE_TTL} after the swap, which the
+ *       margin covers. The access token lifetime is the global one; a
+ *       per-client lifetime would have to be taken into account here.
+ *       <br>{@code RETIRING} 金鑰可能簽發的 token 全部到期，再加上一段緩衝
+ *       （{@code RETIRE_MARGIN}）後，改為 {@code RETIRED}，不再公開。其他實例在
+ *       替換後最多 {@code SigningKeyService#CACHE_TTL} 內仍會用它簽章，由緩衝
+ *       涵蓋。Access Token 有效期為全域設定；若日後有個別 client 的有效期，
+ *       此處必須一併考慮。</li>
  * </ol>
  * Each step checks the current status, so running it again, or on several
  * instances, does nothing extra.
@@ -46,11 +52,13 @@ import java.util.Optional;
 public class SigningKeyRotation {
 
     /**
-     * How long resource servers cache the JWKS: Spring Security's default.
+     * The margin added to the longest token lifetime before a retiring key
+     * is retired; it covers the other instances' key cache and clock skew.
      * <p>
-     * Resource Server 快取 JWKS 的時間：Spring Security 的預設值。
+     * 退役前在最長 token 有效期之外再加上的緩衝，涵蓋其他實例的金鑰快取與時鐘
+     * 誤差。
      */
-    public static final Duration JWKS_CACHE_TTL = Duration.ofMinutes(5);
+    public static final Duration RETIRE_MARGIN = Duration.ofMinutes(5);
 
     /**
      * Lifetime of ID tokens issued by Spring Authorization Server.
@@ -96,7 +104,7 @@ public class SigningKeyRotation {
         this.rotationPeriod = rotationPeriod;
         this.announcePeriod = announcePeriod;
         Duration longestToken = accessTokenTtl.compareTo(ID_TOKEN_TTL) > 0 ? accessTokenTtl : ID_TOKEN_TTL;
-        this.retireAfter = longestToken.plus(JWKS_CACHE_TTL);
+        this.retireAfter = longestToken.plus(RETIRE_MARGIN);
         this.clock = clock;
     }
 
@@ -111,11 +119,12 @@ public class SigningKeyRotation {
         Optional<SigningKey> active = store.findActive();
         if (active.isEmpty()) {
             // 正常情況下啟動時已建立；例如金鑰被手動刪除時補上
+            log.warn("There is no ACTIVE signing key; creating one");
             keys.ensureActiveKey();
             return;
         }
         List<SigningKey> next = store.findByStatus(SigningKeyStatus.NEXT);
-        Instant activatedAt = active.get().activatedAt() == null ? active.get().createdAt() : active.get().activatedAt();
+        Instant activatedAt = active.get().signingSince();
         if (next.isEmpty() && !now.isBefore(activatedAt.plus(rotationPeriod).minus(announcePeriod))) {
             SigningKey created = keys.generate(SigningKeyStatus.NEXT);
             store.save(created);
@@ -135,6 +144,10 @@ public class SigningKeyRotation {
             if (Boolean.TRUE.equals(swapped)) {
                 log.info("Signing key {} is now active; {} is retiring", promoted.kid(), active.get().kid());
                 changed = true;
+            } else {
+                // 通常是另一個實例先完成了替換；若每次都發生，表示金鑰狀態被手動改過
+                log.info("Did not promote signing key {} over {}: their status changed during the swap",
+                        promoted.kid(), active.get().kid());
             }
         }
         for (SigningKey retiring : store.findByStatus(SigningKeyStatus.RETIRING)) {

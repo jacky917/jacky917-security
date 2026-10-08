@@ -30,6 +30,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 測試用的 OpenID Connect 提供者（取代 Google）：以 JDK 內建的 HttpServer 提供 token、JWKS、userinfo
  * 端點，以自己的 RSA 金鑰簽 ID Token。Spring 的 oauth2Login 會實際呼叫這些端點並驗證簽章、nonce 與 aud。
+ * 以 {@link #startLine} 啟動時改為模擬 LINE：ID Token 以 channel secret 簽 HS256，且不帶 email_verified；
+ * {@link #signNextLoginWith} 可讓下一次登入的 ID Token 以錯誤的 secret 簽章，模擬偽造的 ID Token。
  * <p>
  * 每一次登入以 {@link #prepare} 回傳的授權碼區分（token 端點依 code、userinfo 端點依 access token 找到
  * 對應的使用者），測試之間不共用狀態；使用完畢以 {@link #close()} 關閉。
@@ -51,6 +53,8 @@ public final class FakeOidcProvider implements AutoCloseable {
     private final HttpServer server;
     private final RSAKey key;
     private final Map<String, Login> logins = new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicReference<byte[]> nextSecret =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
     private FakeOidcProvider(String issuer, String clientId, byte[] macSecret) {
         this.issuer = issuer;
@@ -98,6 +102,13 @@ public final class FakeOidcProvider implements AutoCloseable {
     }
 
     /**
+     * 下一次 {@link #prepare} 登記的登入，ID Token 改以指定的 secret 簽 HS256（只用一次）。
+     */
+    public void signNextLoginWith(String secret) {
+        nextSecret.set(secret.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
      * 登記一次登入：使用者資料與 Spring 在授權請求中送出的 nonce。回傳的授權碼用於導回 Spring。
      */
     public String prepare(String subject, String email, boolean emailVerified, String name, String nonce) {
@@ -113,7 +124,7 @@ public final class FakeOidcProvider implements AutoCloseable {
         claims.put("picture", "https://example.com/" + subject + ".png");
         claims.put("locale", "zh-TW");
         String code = UUID.randomUUID().toString();
-        logins.put(code, new Login(Map.copyOf(claims), nonce));
+        logins.put(code, new Login(Map.copyOf(claims), nonce, nextSecret.getAndSet(null)));
         return code;
     }
 
@@ -145,9 +156,10 @@ public final class FakeOidcProvider implements AutoCloseable {
                     .claim("nonce", login.nonce());
             login.claims().forEach(claims::claim);
             SignedJWT idToken;
-            if (macSecret != null) {
+            byte[] secret = login.forgedSecret() != null ? login.forgedSecret() : macSecret;
+            if (secret != null) {
                 idToken = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims.build());
-                idToken.sign(new MACSigner(macSecret));
+                idToken.sign(new MACSigner(secret));
             } else {
                 idToken = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(),
                         claims.build());
@@ -164,7 +176,7 @@ public final class FakeOidcProvider implements AutoCloseable {
         }
     }
 
-    private record Login(Map<String, Object> claims, String nonce) {
+    private record Login(Map<String, Object> claims, String nonce, byte[] forgedSecret) {
     }
 
     private static void respond(HttpExchange exchange, String body) throws IOException {

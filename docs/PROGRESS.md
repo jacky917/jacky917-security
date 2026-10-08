@@ -934,5 +934,27 @@
   - 第一次執行時 `session.active` 為 0：測試在重用偵測撤銷 Session 之後才讀 gauge，改為登入後立即讀取。
   - `mvn -B -o clean verify`：**SUCCESS**，377 個測試（Resource Server 47、Authorization Server 303、範例 14、E2E 6）。
   - `CHANGELOG.md` 新增 `[Unreleased]`：Authorization Server starter（第 1、2 階段）。
-- **待使用者決定**：第 2 階段已合併到 `main`（`2.1.0-SNAPSHOT`），原規劃的 2.2.0 是否改為隨 2.1.0 發佈、AS 是否在 2.1.0 即轉為正式版。
+- **待使用者決定**：第 2 階段在分支 `claude/as-phase-2`，合併到 `main`（`2.1.0-SNAPSHOT`）之後，原規劃的 2.2.0 是否改為隨 2.1.0 發佈、AS 是否在 2.1.0 即轉為正式版。
 
+---
+## Step 42: Authorization Server 第 2 階段——多面向審查的修正
+- **Status**: 🟢 Completed（尚未發佈）
+- **背景**：對 `claude/as-phase-2`（工作 11～17）做多面向審查（一般品質、測試覆蓋、錯誤處理、註解、型別設計），依審查結果修正全部 Critical、Important 與建議事項。
+- **變更**:
+  - 登入保護：只有 `BadCredentialsException` 計入帳號鎖定，非預期錯誤記為 `ERROR` 不計數；`LoginAttemptGuard` 以解碼後的路徑比對（`/%6Cogin` 不再繞過限流）；鎖定改為兩個條件互斥的 `UPDATE`，只有實際鎖定的那一次回傳 `true`；新增 `LockoutPolicy`、`AccountLockout`（登入頁與連結確認頁共用）。
+  - GitHub：只有 403／404 視為沒有 Email，其他錯誤讓登入失敗（避免建立重複帳號）；支援 GitHub Enterprise Server 的 `/api/v3/user`。
+  - 帳號連結：用掉待確認連結與建立連結在同一個交易（`PendingLinkService#confirm`，連結以 savepoint 加入）；所有失敗都有日誌、`ACCOUNT_LINKED` 失敗稽核與具體訊息；連結確認頁的重導加上 context path；新增 `FederatedLoginFailureHandler`；`unlink` 回傳 `UnlinkResult`。
+  - 登出：撤銷失敗時仍清除瀏覽器登入；「登出所有裝置」在一個交易中完成。
+  - 稽核與 metrics：稽核寫入失敗記錄完整事件並發布 `LoginAuditWriteFailedEvent`；排程每一步各自執行、失敗時釋放鎖並發布 `MaintenanceFailedEvent`；新增 `audit.write_failures`、`maintenance.failures`；`cleanup.deleted` 的標籤改為 `target`；metrics listener 的失敗不影響請求；健康檢查在停用輪換時不回報逾期。
+  - 型別：`LoginAuditEvent` 的失敗原因與登入方式改為 enum；`CleanupTarget`；`FederatedLoginRejectedException` 改用 factory；`AuthSession`、`LinkIntent`、`RotatedRefreshToken`、各事件在建構時檢查。
+  - 註解與文件：修正事實錯誤的 Javadoc，更新使用指南與詳細設計 §7.2、§8.2、§13.2。
+  - 本文件 Step 41 原本寫「第 2 階段已合併到 `main`」，實際尚未合併，已更正。
+- **Commands Run & Results**:
+  - 新增測試：帳號接管情境、連結確認頁的鎖定／停用／連續失敗、Refresh Token 仍有效的授權不被清除、偽造的 LINE ID Token、GitHub 故障、併發的登入失敗、`SigningKeyRotation`、`LinkIntent` 序列化等；併發刷新測試改為必定重疊。
+  - `mvn -B -o verify`：**SUCCESS**（Authorization Server 345 個測試，原本 303 個）；`scripts/check-doc-links.py`：0 個問題。
+- **Decision Log**:
+  - **DEC-107**: 排程工作成功時不提早釋放鎖，失敗時釋放，讓任何實例的下一次排程即可重試。
+  - **DEC-108**: 排程的首次執行維持「啟動後一個週期」；每天部署的應用程式改由管理工作呼叫 `DataCleanup#runAll()`（文件說明），避免重啟時所有工作一起執行。
+  - **DEC-109**: 重用以外的刷新拒絕不寫入稽核（資料庫的事件類型 CHECK 約束不允許新類型），以 metric 與 `auth_session.revoke_reason` 記錄。
+- **Next TODO**:
+  - 合併 PR 後，決定第 2 階段的發佈版本，以及 AS 是否轉為正式版。

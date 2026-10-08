@@ -3,6 +3,7 @@ package jacky917.security.authorizationserver.maintenance;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Clock;
@@ -19,11 +20,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link MaintenanceScheduler} 的單元測試：啟動後經過一個週期才第一次執行、取得鎖才執行、失敗不影響之後的執行。
+ * {@link MaintenanceScheduler} 的單元測試：啟動後經過一個週期才第一次執行、取得鎖才執行、失敗時發布事件並釋放鎖。
  */
 @DisplayName("MaintenanceScheduler")
 class MaintenanceSchedulerTest {
@@ -32,6 +34,7 @@ class MaintenanceSchedulerTest {
 
     private TaskScheduler taskScheduler;
     private ScheduledJobLock lock;
+    private ApplicationEventPublisher events;
     private final AtomicInteger runs = new AtomicInteger();
     private final MaintenanceScheduler.Job job =
             new MaintenanceScheduler.Job("cleanup", Duration.ofMinutes(10), runs::incrementAndGet);
@@ -41,7 +44,9 @@ class MaintenanceSchedulerTest {
     void setUp() {
         taskScheduler = mock(TaskScheduler.class);
         lock = mock(ScheduledJobLock.class);
-        scheduler = new MaintenanceScheduler(taskScheduler, lock, List.of(job), Clock.fixed(NOW, ZoneOffset.UTC));
+        events = mock(ApplicationEventPublisher.class);
+        scheduler = new MaintenanceScheduler(taskScheduler, lock, List.of(job), events,
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -67,12 +72,33 @@ class MaintenanceSchedulerTest {
     }
 
     @Test
-    @DisplayName("工作失敗：記錄錯誤，不拋出（下一次照常執行）")
-    void failuresAreLogged() {
+    @DisplayName("工作失敗：不拋出，發布 MaintenanceFailedEvent，並釋放鎖讓任何實例下一次排程時重試")
+    void failuresAreReportedAndReleaseTheLock() {
         when(lock.tryLock(any(), any())).thenReturn(true);
         MaintenanceScheduler.Job failing = new MaintenanceScheduler.Job("failing", Duration.ofMinutes(10), () -> {
             throw new IllegalStateException("database is down");
         });
         assertThatCode(() -> scheduler.run(failing)).doesNotThrowAnyException();
+        verify(events).publishEvent(new MaintenanceFailedEvent("failing"));
+        verify(lock).release("jacky917-as.failing");
+    }
+
+    @Test
+    @DisplayName("取鎖本身失敗：發布失敗事件，但不釋放不屬於自己的鎖")
+    void lockFailure() {
+        when(lock.tryLock(any(), any())).thenThrow(new IllegalStateException("database is down"));
+        assertThatCode(() -> scheduler.run(job)).doesNotThrowAnyException();
+        verify(events).publishEvent(new MaintenanceFailedEvent("cleanup"));
+        verify(lock, never()).release(any());
+        assertThat(runs).hasValue(0);
+    }
+
+    @Test
+    @DisplayName("成功的工作不提早釋放鎖")
+    void successKeepsTheLock() {
+        when(lock.tryLock(any(), any())).thenReturn(true);
+        scheduler.run(job);
+        verify(lock, never()).release(any());
+        verify(events, never()).publishEvent(any(Object.class));
     }
 }

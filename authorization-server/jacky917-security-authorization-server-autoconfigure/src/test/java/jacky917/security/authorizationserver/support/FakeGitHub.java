@@ -17,7 +17,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 以 JDK 內建 HttpServer 實作的假 GitHub（OAuth 2.0，不是 OIDC）：token、{@code /user}、{@code /user/emails}。
- * {@code /user/emails} 在沒有登記 Email 時回 403，模擬沒有 {@code user:email} scope。
+ * {@code /user/emails} 在沒有登記 Email 時回 403，模擬沒有 {@code user:email} scope；也可以指定其他狀態碼，
+ * 模擬 GitHub 故障。
  */
 public final class FakeGitHub implements AutoCloseable {
 
@@ -38,7 +39,9 @@ public final class FakeGitHub implements AutoCloseable {
             if (login == null) {
                 respond(exchange, 401, "{\"message\":\"Bad credentials\"}");
             } else if (exchange.getRequestURI().getPath().equals("/user/emails")) {
-                if (login.emails() == null) {
+                if (login.emailsStatus() != 200) {
+                    respond(exchange, login.emailsStatus(), "{\"message\":\"Server Error\"}");
+                } else if (login.emails() == null) {
                     respond(exchange, 403, "{\"message\":\"Resource not accessible by integration\"}");
                 } else {
                     respond(exchange, 200, JSON.writeValueAsString(login.emails()));
@@ -62,9 +65,17 @@ public final class FakeGitHub implements AutoCloseable {
      * 登記一次登入：{@code /user} 的內容與 {@code /user/emails} 的清單（{@code null} 表示 403）。
      */
     public String prepare(long id, String login, String name, List<Map<String, Object>> emails) {
+        return prepare(id, login, name, emails, 200);
+    }
+
+    /**
+     * 登記一次登入，{@code /user/emails} 回指定的狀態碼（例如 500 模擬 GitHub 故障）。
+     */
+    public String prepare(long id, String login, String name, List<Map<String, Object>> emails, int emailsStatus) {
         String code = UUID.randomUUID().toString();
         logins.put(code, new Login(Map.of("id", id, "login", login, "name", name,
-                "avatar_url", "https://avatars.example.com/" + id, "email", login + "@public.example.com"), emails));
+                "avatar_url", "https://avatars.example.com/" + id, "email", login + "@public.example.com"), emails,
+                emailsStatus));
         return code;
     }
 
@@ -90,7 +101,7 @@ public final class FakeGitHub implements AutoCloseable {
                 "scope", "read:user,user:email")));
     }
 
-    private record Login(Map<String, Object> user, List<Map<String, Object>> emails) {
+    private record Login(Map<String, Object> user, List<Map<String, Object>> emails, int emailsStatus) {
     }
 
     private static void respond(HttpExchange exchange, int status, String body) throws IOException {

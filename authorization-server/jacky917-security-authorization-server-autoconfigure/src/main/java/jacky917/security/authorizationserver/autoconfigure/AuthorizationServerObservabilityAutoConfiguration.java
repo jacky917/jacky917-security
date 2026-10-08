@@ -37,7 +37,7 @@ import java.time.Clock;
  * @author Jacky
  * @since 2.1.0
  */
-// 類別名稱已對照 Spring Boot 4.1.1 的 jar 確認
+// 類別名稱已對照 Spring Boot 4.1.1 的 jar 確認；升級 Spring Boot 時須重新確認（名稱錯誤時順序設定靜默失效，測試無法發現）
 @AutoConfiguration(after = AuthorizationServerAutoConfiguration.class, afterName = {
         "org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration",
         "org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterRegistryAutoConfiguration"
@@ -71,7 +71,8 @@ public class AuthorizationServerObservabilityAutoConfiguration {
         @ConditionalOnMissingBean(name = "signingKeyHealthIndicator")
         SigningKeyHealthIndicator signingKeyHealthIndicator(SigningKeyStore keys, AuthorizationServerProperties properties,
                                                             Clock clock) {
-            return new SigningKeyHealthIndicator(keys, properties.getKeys().getRotationPeriod(), clock);
+            return new SigningKeyHealthIndicator(keys, properties.getKeys().getRotationPeriod(),
+                    properties.getKeys().isRotationEnabled(), clock);
         }
     }
 }

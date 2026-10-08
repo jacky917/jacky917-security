@@ -3,6 +3,8 @@ package jacky917.security.authorizationserver.refresh;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
+import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * A refresh token that has been replaced by a newer one, kept in
@@ -41,4 +43,26 @@ public record RotatedRefreshToken(
         Instant issuedAt,
         Instant rotatedAt,
         Instant expiresAt) {
+
+    private static final Pattern SHA256_HEX = Pattern.compile("[0-9a-f]{64}");
+
+    /**
+     * Creates the record, checking that it holds a hash and not a token.
+     * <p>
+     * 建立紀錄，並檢查保存的是雜湊而不是 token 本身。
+     *
+     * @throws IllegalArgumentException if {@code tokenHash} is not 64
+     *         lowercase hex characters
+     *         <br>若 {@code tokenHash} 不是 64 個小寫十六進位字元
+     */
+    public RotatedRefreshToken {
+        Objects.requireNonNull(authorizationId, "authorizationId");
+        Objects.requireNonNull(registeredClientId, "registeredClientId");
+        Objects.requireNonNull(issuedAt, "issuedAt");
+        Objects.requireNonNull(rotatedAt, "rotatedAt");
+        Objects.requireNonNull(expiresAt, "expiresAt");
+        if (tokenHash == null || !SHA256_HEX.matcher(tokenHash).matches()) {
+            throw new IllegalArgumentException("tokenHash must be a SHA-256 in lowercase hex");
+        }
+    }
 }

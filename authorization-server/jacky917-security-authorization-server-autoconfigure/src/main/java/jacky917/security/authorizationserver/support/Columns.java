@@ -51,11 +51,6 @@ public final class Columns {
      */
     public static final int USERNAME_ATTEMPTED = 255;
 
-    /**
-     * {@code login_audit.failure_reason}.
-     */
-    public static final int FAILURE_REASON = 32;
-
     private Columns() {
     }
 

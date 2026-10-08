@@ -11,6 +11,17 @@ import java.util.Optional;
  * <p>
  * 簽章金鑰的儲存。預設實作使用 Authorization Server 的資料庫；應用程式可以
  * 自行替換，例如改用金鑰管理服務。
+ * <p>
+ * An implementation must keep at most one {@code ACTIVE} and one
+ * {@code NEXT} key at any time, and {@link #transition} must record the time
+ * in {@code activatedAt}, {@code retiringAt} or {@code retiredAt} for the
+ * status {@code ACTIVE}, {@code RETIRING} or {@code RETIRED}; the rotation
+ * and {@link #deleteRetiredBefore} rely on both.
+ * <p>
+ * 實作必須保證任何時候最多只有一把 {@code ACTIVE} 與一把 {@code NEXT} 金鑰，且
+ * {@code transition} 改為 {@code ACTIVE}、{@code RETIRING}、{@code RETIRED} 時
+ * 必須分別把時間記錄在 {@code activatedAt}、{@code retiringAt}、
+ * {@code retiredAt}；輪換與 {@code deleteRetiredBefore} 都依賴這兩點。
  *
  * @author Jacky
  * @since 2.1.0

@@ -23,13 +23,19 @@ class GitHubFederatedUserInfoMapperTest {
             new InMemoryClientRegistrationRepository(
                     CommonOAuth2Provider.GITHUB.getBuilder("github").clientId("a").clientSecret("b").build(),
                     CommonOAuth2Provider.GITHUB.getBuilder("github-work").clientId("a").clientSecret("b").build(),
+                    CommonOAuth2Provider.GITHUB.getBuilder("ghes").clientId("a").clientSecret("b")
+                            .authorizationUri("https://ghes.example.com/login/oauth/authorize")
+                            .tokenUri("https://ghes.example.com/login/oauth/access_token")
+                            .userInfoUri("https://ghes.example.com/api/v3/user").build(),
                     CommonOAuth2Provider.GOOGLE.getBuilder("google").clientId("a").clientSecret("b").build()));
 
     @Test
-    @DisplayName("支援 github 與使用者資訊端點在 api.github.com 的 registration；不支援 Google 與不存在的 registration")
+    @DisplayName("支援 github、使用者資訊端點在 api.github.com 或 GitHub Enterprise Server（/api/v3/user）的 "
+            + "registration；不支援 Google、不存在的 registration，以及沒有 repository 時的任何 registration")
     void supports() {
         assertThat(mapper.supports("github")).isTrue();
         assertThat(mapper.supports("github-work")).isTrue();
+        assertThat(mapper.supports("ghes")).isTrue();
         assertThat(mapper.supports("google")).isFalse();
         assertThat(mapper.supports("unknown")).isFalse();
         assertThat(new GitHubFederatedUserInfoMapper(null).supports("github")).isFalse();

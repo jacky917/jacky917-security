@@ -104,7 +104,7 @@ public class LoginCompletion {
         restore(normalizer.normalize(userId, original), request, response);
         request.getSession().setAttribute(AuthSessionService.SESSION_ATTRIBUTE, session.sessionId());
         events.publishEvent(LoginAuditEvent.builder(LoginAuditEventType.LOGIN, session.createdAt(), true)
-                .userId(userId).login(method.name(), idp).sessionId(session.sessionId()).request(request).build());
+                .userId(userId).login(method, idp).sessionId(session.sessionId()).request(request).build());
         return session;
     }
 

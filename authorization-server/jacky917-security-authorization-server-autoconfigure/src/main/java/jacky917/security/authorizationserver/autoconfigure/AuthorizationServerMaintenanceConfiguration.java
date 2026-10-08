@@ -2,13 +2,12 @@ package jacky917.security.authorizationserver.autoconfigure;
 
 import jacky917.security.authorizationserver.keys.SigningKeyService;
 import jacky917.security.authorizationserver.keys.SigningKeyStore;
+import jacky917.security.authorizationserver.maintenance.CleanupTarget;
 import jacky917.security.authorizationserver.maintenance.DataCleanup;
-import jacky917.security.authorizationserver.maintenance.DataCleanupEvent;
 import jacky917.security.authorizationserver.maintenance.MaintenanceScheduler;
 import jacky917.security.authorizationserver.maintenance.ScheduledJobLock;
 import jacky917.security.authorizationserver.maintenance.SigningKeyRotation;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
@@ -22,7 +21,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * Scheduled jobs of the authorization server: signing key rotation and
@@ -41,7 +39,6 @@ import java.util.function.Supplier;
  * @author Jacky
  * @since 2.1.0
  */
-@Slf4j
 @Configuration(proxyBeanMethods = false)
 class AuthorizationServerMaintenanceConfiguration {
 
@@ -67,10 +64,10 @@ class AuthorizationServerMaintenanceConfiguration {
     @ConditionalOnMissingBean
     @DependsOnDatabaseInitialization
     DataCleanup dataCleanup(JdbcClient jdbcClient, SigningKeyStore keys, AuthorizationServerProperties properties,
-                            Clock clock) {
+                            ApplicationEventPublisher events, Clock clock) {
         AuthorizationServerProperties.Cleanup cleanup = properties.getCleanup();
         return new DataCleanup(jdbcClient, keys, cleanup.getBatchSize(), cleanup.getLoginAuditRetention(),
-                cleanup.getAdminAuditRetention(), clock);
+                cleanup.getAdminAuditRetention(), events, clock);
     }
 
     /**
@@ -86,10 +83,9 @@ class AuthorizationServerMaintenanceConfiguration {
      *                    <br>清理
      * @param properties  the authorization server properties
      *                    <br>Authorization Server 設定屬性
-     * @param events      publishes a {@link DataCleanupEvent} per cleanup
-     *                    that changed rows
-     *                    <br>每一項有變更資料的清理發布一個
-     *                    {@code DataCleanupEvent}
+     * @param events      publishes a {@code MaintenanceFailedEvent} when a
+     *                    job fails
+     *                    <br>工作失敗時發布 {@code MaintenanceFailedEvent}
      * @param clock       the clock
      *                    <br>時鐘
      * @return the scheduler
@@ -105,27 +101,16 @@ class AuthorizationServerMaintenanceConfiguration {
             jobs.add(new MaintenanceScheduler.Job("signing-key-rotation", Duration.ofHours(1), rotation::rotate));
         }
         if (properties.getCleanup().isEnabled()) {
+            // 每一步各自執行：一步失敗不會跳過同一個工作的其他步驟
             jobs.add(new MaintenanceScheduler.Job("cleanup-authorizations", Duration.ofMinutes(15),
-                    () -> report(events, "authorizations", cleanup::deleteExpiredAuthorizations)));
-            jobs.add(new MaintenanceScheduler.Job("cleanup-sessions", Duration.ofHours(1), () -> {
-                report(events, "refresh_token_history", cleanup::deleteExpiredRefreshTokenHistory);
-                report(events, "expired_sessions", cleanup::expireSessions);
-                report(events, "auth_session", cleanup::deleteOldSessions);
-            }));
-            jobs.add(new MaintenanceScheduler.Job("cleanup-daily", Duration.ofDays(1), () -> {
-                report(events, "user_action_token", cleanup::deleteOldActionTokens);
-                report(events, "audit", cleanup::deleteOldAudits);
-                report(events, "signing_key", cleanup::deleteOldSigningKeys);
-            }));
+                    () -> cleanup.runEach(List.of(CleanupTarget.AUTHORIZATIONS))));
+            jobs.add(new MaintenanceScheduler.Job("cleanup-sessions", Duration.ofHours(1),
+                    () -> cleanup.runEach(List.of(CleanupTarget.REFRESH_TOKEN_HISTORY, CleanupTarget.EXPIRED_SESSIONS,
+                            CleanupTarget.SESSIONS))));
+            jobs.add(new MaintenanceScheduler.Job("cleanup-daily", Duration.ofDays(1),
+                    () -> cleanup.runEach(List.of(CleanupTarget.ACTION_TOKENS, CleanupTarget.AUDITS,
+                            CleanupTarget.SIGNING_KEYS))));
         }
-        return new MaintenanceScheduler(MaintenanceScheduler.newTaskScheduler(), lock, jobs, clock);
-    }
-
-    private static void report(ApplicationEventPublisher events, String target, Supplier<Integer> cleanup) {
-        int count = cleanup.get();
-        if (count > 0) {
-            log.info("Cleanup: {} {} rows", target, count);
-            events.publishEvent(new DataCleanupEvent(target, count));
-        }
+        return new MaintenanceScheduler(MaintenanceScheduler.newTaskScheduler(), lock, jobs, events, clock);
     }
 }

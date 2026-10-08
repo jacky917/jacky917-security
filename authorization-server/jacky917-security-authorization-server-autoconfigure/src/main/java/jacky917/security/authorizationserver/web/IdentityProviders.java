@@ -21,11 +21,16 @@ import java.util.Optional;
  * With {@code login.providers} set, those registrations are listed in that
  * order. Otherwise every registration is listed by name, if the repository
  * can list them (Spring Boot's default can); a repository that cannot is
- * logged once and lists nothing.
+ * logged once and lists nothing. External logins still work then, but the
+ * pages show no provider buttons and account linking is unavailable,
+ * because {@link #find} only knows the listed providers; set
+ * {@code login.providers} for such a repository.
  * <p>
  * 設定 {@code login.providers} 時，依該順序列出這些 registration。未設定時，
  * 若 repository 可以列出所有 registration（Spring Boot 的預設實作可以），依
  * 名稱排序列出全部；無法列出的 repository 只記錄一次警告，不列出任何提供者。
+ * 此時第三方登入仍可使用，但頁面上沒有提供者按鈕，帳號連結也無法使用（因為
+ * {@code find} 只認得列出的提供者）；這種 repository 請設定 {@code login.providers}。
  *
  * @author Jacky
  * @since 2.1.0
@@ -102,9 +107,10 @@ public class IdentityProviders {
             // Spring Boot 預設的 repository 以雜湊表保存，列出的順序不固定：依顯示名稱排序
             found.sort(Comparator.comparing(Provider::name, String.CASE_INSENSITIVE_ORDER));
         } else {
-            // 無法列出的 repository（例如存放在資料庫中）：第三方登入仍可使用，但頁面上沒有按鈕
-            log.warn("The ClientRegistrationRepository cannot list its registrations, so the login page shows no "
-                    + "identity provider buttons; set " + AuthorizationServerProperties.PREFIX + ".login.providers");
+            // 無法列出的 repository（例如存放在資料庫中）：第三方登入仍可使用，但頁面上沒有按鈕、也無法連結帳號
+            log.warn("The ClientRegistrationRepository cannot list its registrations, so the pages show no identity "
+                    + "provider buttons and accounts cannot be linked; set " + AuthorizationServerProperties.PREFIX
+                    + ".login.providers");
         }
         return List.copyOf(found);
     }

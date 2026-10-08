@@ -1,12 +1,15 @@
 package jacky917.security.authorizationserver.maintenance;
 
 import jacky917.security.authorizationserver.keys.SigningKeyStore;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.LinkedHashMap;
+import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.IntSupplier;
 
@@ -15,16 +18,29 @@ import java.util.function.IntSupplier;
  * <p>
  * 刪除過期的資料（資料模型 §14.1、詳細設計 §5.8）。
  * <p>
- * Rows are deleted at most {@code batchSize} at a time, each batch in its
- * own statement, so no lock is held for long. Every method returns the
- * number of rows it deleted or changed.
+ * Tables that can grow without bound are deleted at most {@code batchSize}
+ * rows at a time, each batch in its own statement, so no lock is held for
+ * long. {@link #expireSessions} and {@link #deleteOldSigningKeys} touch few
+ * rows and run as single statements. Every method returns the number of
+ * rows it deleted or changed.
  * <p>
- * 每次最多刪除 {@code batchSize} 筆，每批是獨立的陳述式，不會長時間持有鎖。
- * 每個方法回傳刪除或變更的筆數。
+ * 可能無限成長的表每次最多刪除 {@code batchSize} 筆，每批是獨立的陳述式，
+ * 不會長時間持有鎖。{@code expireSessions} 與 {@code deleteOldSigningKeys}
+ * 影響的筆數很少，以單一陳述式執行。每個方法回傳刪除或變更的筆數。
+ * <p>
+ * {@link #run} and {@link #runEach} publish a {@link DataCleanupEvent} for
+ * each target that changed rows; {@code runEach} runs every target even when
+ * an earlier one fails, and publishes a {@link MaintenanceFailedEvent} for
+ * each failure.
+ * <p>
+ * {@code run} 與 {@code runEach} 為每個有變更資料的對象發布
+ * {@code DataCleanupEvent}；{@code runEach} 即使前面的對象失敗也會執行每一個
+ * 對象，並為每一個失敗發布 {@code MaintenanceFailedEvent}。
  *
  * @author Jacky
  * @since 2.1.0
  */
+@Slf4j
 public class DataCleanup {
 
     /**
@@ -35,9 +51,10 @@ public class DataCleanup {
     public static final Duration SESSION_RETENTION = Duration.ofDays(30);
 
     /**
-     * How long used or expired action tokens are kept after they expire.
+     * How long an action token is kept after it expires, whether it was
+     * used or not.
      * <p>
-     * 已使用或已過期之操作 token 在到期後的保留期間。
+     * 操作 token 到期後的保留期間，不論是否已使用。
      */
     public static final Duration ACTION_TOKEN_RETENTION = Duration.ofDays(7);
 
@@ -61,6 +78,7 @@ public class DataCleanup {
     private final int batchSize;
     private final Duration loginAuditRetention;
     private final Duration adminAuditRetention;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     /**
@@ -79,17 +97,75 @@ public class DataCleanup {
      *                             <br>{@code login_audit} 的保留期間
      * @param adminAuditRetention  how long {@code admin_audit_log} is kept
      *                             <br>{@code admin_audit_log} 的保留期間
+     * @param events               publishes the cleanup and failure events
+     *                             <br>發布清理與失敗事件
      * @param clock                the clock
      *                             <br>時鐘
      */
     public DataCleanup(JdbcClient jdbc, SigningKeyStore keys, int batchSize, Duration loginAuditRetention,
-                       Duration adminAuditRetention, Clock clock) {
+                       Duration adminAuditRetention, ApplicationEventPublisher events, Clock clock) {
         this.jdbc = jdbc;
         this.keys = keys;
         this.batchSize = batchSize;
         this.loginAuditRetention = loginAuditRetention;
         this.adminAuditRetention = adminAuditRetention;
+        this.events = events;
         this.clock = clock;
+    }
+
+    /**
+     * Runs the cleanup of one target and publishes a
+     * {@link DataCleanupEvent} if it changed rows.
+     * <p>
+     * 執行一個對象的清理；有變更資料時發布 {@code DataCleanupEvent}。
+     *
+     * @param target  what to clean
+     *                <br>要清理的對象
+     * @return the number of deleted or changed rows
+     *         <br>刪除或變更的筆數
+     */
+    public int run(CleanupTarget target) {
+        int count = switch (target) {
+            case AUTHORIZATIONS -> deleteExpiredAuthorizations();
+            case REFRESH_TOKEN_HISTORY -> deleteExpiredRefreshTokenHistory();
+            case EXPIRED_SESSIONS -> expireSessions();
+            case SESSIONS -> deleteOldSessions();
+            case ACTION_TOKENS -> deleteOldActionTokens();
+            case AUDITS -> deleteOldAudits();
+            case SIGNING_KEYS -> deleteOldSigningKeys();
+        };
+        if (count > 0) {
+            log.info("Cleanup: {} {} rows", target.tag(), count);
+            events.publishEvent(new DataCleanupEvent(target, count));
+        }
+        return count;
+    }
+
+    /**
+     * Runs the cleanup of each target in order. A failing target is logged,
+     * reported with a {@link MaintenanceFailedEvent} and skipped; the others
+     * still run.
+     * <p>
+     * 依序執行每個對象的清理。失敗的對象會記錄日誌、以
+     * {@code MaintenanceFailedEvent} 回報並略過；其他對象照常執行。
+     *
+     * @param targets  what to clean
+     *                 <br>要清理的對象
+     * @return the number of deleted or changed rows of each target that
+     *         succeeded
+     *         <br>每個成功之對象刪除或變更的筆數
+     */
+    public Map<CleanupTarget, Integer> runEach(List<CleanupTarget> targets) {
+        Map<CleanupTarget, Integer> result = new EnumMap<>(CleanupTarget.class);
+        for (CleanupTarget target : targets) {
+            try {
+                result.put(target, run(target));
+            } catch (RuntimeException ex) {
+                log.error("Cleanup of {} failed; the other cleanups still run", target.tag(), ex);
+                events.publishEvent(new MaintenanceFailedEvent("cleanup." + target.tag()));
+            }
+        }
+        return result;
     }
 
     /**
@@ -237,23 +313,17 @@ public class DataCleanup {
     }
 
     /**
-     * Runs every cleanup once, for example from an administration task.
+     * Runs every cleanup once, for example from an administration task,
+     * with the same events as the scheduled cleanup.
      * <p>
-     * 執行每一項清理一次，例如供管理工作使用。
+     * 執行每一項清理一次，例如供管理工作使用；發布的事件與排程清理相同。
      *
-     * @return the number of deleted or changed rows per cleanup
-     *         <br>每一項清理刪除或變更的筆數
+     * @return the number of deleted or changed rows of each target that
+     *         succeeded
+     *         <br>每個成功之對象刪除或變更的筆數
      */
-    public Map<String, Integer> runAll() {
-        Map<String, Integer> result = new LinkedHashMap<>();
-        result.put("authorizations", deleteExpiredAuthorizations());
-        result.put("refresh_token_history", deleteExpiredRefreshTokenHistory());
-        result.put("expired_sessions", expireSessions());
-        result.put("sessions", deleteOldSessions());
-        result.put("action_tokens", deleteOldActionTokens());
-        result.put("audits", deleteOldAudits());
-        result.put("signing_keys", deleteOldSigningKeys());
-        return result;
+    public Map<CleanupTarget, Integer> runAll() {
+        return runEach(List.of(CleanupTarget.values()));
     }
 
     private int inBatches(IntSupplier batch) {

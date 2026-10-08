@@ -28,7 +28,7 @@ class SigningKeyHealthIndicatorTest {
 
     private final SigningKeyStore keys = mock(SigningKeyStore.class);
     private final SigningKeyHealthIndicator indicator =
-            new SigningKeyHealthIndicator(keys, Duration.ofDays(90), Clock.fixed(NOW, ZoneOffset.UTC));
+            new SigningKeyHealthIndicator(keys, Duration.ofDays(90), true, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
     @DisplayName("沒有 ACTIVE 金鑰：DOWN")
@@ -47,6 +47,17 @@ class SigningKeyHealthIndicatorTest {
                 .containsEntry("kid", "kid-1");
         when(keys.findActive()).thenReturn(Optional.of(key(Duration.ofDays(93))));
         assertThat(indicator.health(true).getDetails()).containsEntry("rotationOverdue", true);
+    }
+
+    @Test
+    @DisplayName("停用輪換：使用再久也不標示逾期")
+    void rotationDisabled() {
+        SigningKeyHealthIndicator withoutRotation =
+                new SigningKeyHealthIndicator(keys, Duration.ofDays(90), false, Clock.fixed(NOW, ZoneOffset.UTC));
+        when(keys.findActive()).thenReturn(Optional.of(key(Duration.ofDays(400))));
+        Health health = withoutRotation.health(true);
+        assertThat(health.getStatus()).isEqualTo(Status.UP);
+        assertThat(health.getDetails()).doesNotContainKey("rotationOverdue").containsEntry("rotationEnabled", false);
     }
 
     private static SigningKey key(Duration age) {

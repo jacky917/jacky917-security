@@ -17,14 +17,17 @@ import java.time.Instant;
  * （資料模型 §8.4）。
  * <p>
  * The first instance to call {@link #tryLock} holds the lock for the given
- * time and runs the job; the others skip it. The lock is never released
- * early, so the job runs at most once per hold time even when the instances'
- * schedules are not aligned. A crashed instance loses the lock when the hold
+ * time and runs the job; the others skip it. A successful job never
+ * releases the lock early, so it runs at most once per hold time even when
+ * the instances' schedules are not aligned. A failed job releases it with
+ * {@link #release}, so any instance can retry at its next run instead of
+ * waiting for the hold time. A crashed instance loses the lock when the hold
  * time ends.
  * <p>
  * 第一個呼叫 {@code tryLock} 的實例在指定時間內持有鎖並執行工作，其他實例略過。
- * 鎖不會提早釋放，因此即使各實例的排程時間不一致，每段持有時間內最多只執行一次。
- * 實例當機時，鎖在持有時間結束後自動失效。
+ * 成功的工作不會提早釋放鎖，因此即使各實例的排程時間不一致，每段持有時間內最多
+ * 只執行一次。失敗的工作以 {@code release} 釋放鎖，任何實例都能在下一次排程時
+ * 重試，而不必等到持有時間結束。實例當機時，鎖在持有時間結束後自動失效。
  *
  * @author Jacky
  * @since 2.1.0
@@ -82,5 +85,20 @@ public class ScheduledJobLock {
             // 另一個實例持有鎖（或同時取得了它）
             return false;
         }
+    }
+
+    /**
+     * Releases a lock this instance holds, for example after the job
+     * failed. A lock held by another instance is left alone.
+     * <p>
+     * 釋放本實例持有的鎖，例如在工作失敗之後。其他實例持有的鎖不受影響。
+     *
+     * @param name  the job name
+     *              <br>工作名稱
+     */
+    public void release(String name) {
+        Timestamp now = Timestamp.from(clock.instant());
+        jdbc.sql("UPDATE shedlock SET lock_until = :now WHERE name = :name AND locked_by = :owner AND lock_until > :now")
+                .param("now", now).param("name", name).param("owner", owner).update();
     }
 }

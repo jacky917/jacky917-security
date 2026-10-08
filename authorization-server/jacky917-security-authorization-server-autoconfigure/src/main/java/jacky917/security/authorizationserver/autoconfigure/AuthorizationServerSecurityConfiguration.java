@@ -4,11 +4,13 @@ import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import jacky917.security.authorizationserver.audit.JdbcLoginAuditListener;
 import jacky917.security.authorizationserver.audit.LoginAuditRepository;
+import jacky917.security.authorizationserver.authentication.AccountLockout;
 import jacky917.security.authorizationserver.authentication.LoginAttemptGuard;
 import jacky917.security.authorizationserver.authentication.LoginFailureHandler;
 import jacky917.security.authorizationserver.authentication.LoginSuccessHandler;
 import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
 import jacky917.security.authorizationserver.federation.FederatedIdentityService;
+import jacky917.security.authorizationserver.federation.FederatedLoginFailureHandler;
 import jacky917.security.authorizationserver.federation.FederatedLoginSuccessHandler;
 import jacky917.security.authorizationserver.federation.FederatedUserInfoMapper;
 import jacky917.security.authorizationserver.federation.GitHubFederatedUserInfoMapper;
@@ -148,6 +150,7 @@ class AuthorizationServerSecurityConfiguration {
     SecurityFilterChain loginSecurityFilterChain(HttpSecurity http, LoginSuccessHandler loginSuccessHandler,
                                                  ObjectProvider<ClientRegistrationRepository> clientRegistrations,
                                                  ObjectProvider<FederatedLoginSuccessHandler> federatedLoginSuccessHandler,
+                                                 ObjectProvider<FederatedLoginFailureHandler> federatedLoginFailureHandler,
                                                  LoginFailureHandler loginFailureHandler,
                                                  LoginAuditRepository loginAudits, ApplicationEventPublisher events,
                                                  AuthorizationServerProperties properties,
@@ -159,7 +162,8 @@ class AuthorizationServerSecurityConfiguration {
             http.oauth2Login(oauth2 -> oauth2
                     .loginPage("/login")
                     .successHandler(federatedLoginSuccessHandler.getObject())
-                    .failureUrl("/login?error=federation"));
+                    // 記錄 OAuth 2.0 錯誤代碼並稽核；從帳號頁發起連結時回到帳號頁
+                    .failureHandler(federatedLoginFailureHandler.getObject()));
         }
         http.authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(LoginController.SIGNED_IN_PATH, AccountController.ACCOUNT_PATH,
@@ -169,7 +173,7 @@ class AuthorizationServerSecurityConfiguration {
                 .formLogin(form -> form
                         .loginPage("/login")
                         .successHandler(loginSuccessHandler)
-                        // 失敗計數、鎖定與稽核；所有失敗原因導向同一個網址，頁面顯示相同的訊息（詳細設計 §7.2）
+                        // 失敗計數、鎖定與稽核；所有密碼登入失敗導向同一個網址，頁面顯示相同的訊息（詳細設計 §7.2）
                         .failureHandler(loginFailureHandler))
                 // 同一個 IP 最近一分鐘失敗過多時，在檢查密碼之前就拒絕。不是 Bean：Spring Boot 會把 Filter Bean
                 // 註冊到所有請求
@@ -288,14 +292,16 @@ class AuthorizationServerSecurityConfiguration {
      *
      * @param jdbcClient  the JDBC client of the authorization server database
      *                    <br>Authorization Server 資料庫的 JDBC client
+     * @param events      publishes the write failures
+     *                    <br>發布寫入失敗
      * @return the listener
      *         <br>listener
      */
     @Bean
     @ConditionalOnMissingBean
     @DependsOnDatabaseInitialization
-    JdbcLoginAuditListener jdbcLoginAuditListener(JdbcClient jdbcClient) {
-        return new JdbcLoginAuditListener(jdbcClient);
+    JdbcLoginAuditListener jdbcLoginAuditListener(JdbcClient jdbcClient, ApplicationEventPublisher events) {
+        return new JdbcLoginAuditListener(jdbcClient, events);
     }
 
     @Bean
@@ -339,10 +345,16 @@ class AuthorizationServerSecurityConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    LoginFailureHandler loginFailureHandler(UserAccountService users, ApplicationEventPublisher events,
-                                            AuthorizationServerProperties properties, Clock clock) {
-        AuthorizationServerProperties.LoginProtection protection = properties.getLoginProtection();
-        return new LoginFailureHandler(users, events, protection.getMaxFailures(), protection.getLockDuration(), clock);
+    AccountLockout accountLockout(UserAccountService users, ApplicationEventPublisher events,
+                                  AuthorizationServerProperties properties) {
+        return new AccountLockout(users, events, properties.getLoginProtection().toLockoutPolicy());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    LoginFailureHandler loginFailureHandler(UserAccountService users, AccountLockout lockout,
+                                            ApplicationEventPublisher events, Clock clock) {
+        return new LoginFailureHandler(users, lockout, events, clock);
     }
 
     @Bean
@@ -429,9 +441,9 @@ class AuthorizationServerSecurityConfiguration {
     AccountLinkController jacky917AccountLinkController(
             AuthorizationServerProperties properties, PendingLinkService pendingLinks, UserAccountService users,
             FederatedIdentityService identities, PasswordEncoder passwordEncoder, LoginCompletion completion,
-            IdentityProviders providers, ApplicationEventPublisher events, Clock clock) {
+            IdentityProviders providers, ApplicationEventPublisher events, AccountLockout lockout, Clock clock) {
         return new AccountLinkController(properties, pendingLinks, users, identities, passwordEncoder, completion,
-                providers, events, clock);
+                providers, events, lockout, clock);
     }
 
     @Bean
@@ -446,10 +458,8 @@ class AuthorizationServerSecurityConfiguration {
     FederatedIdentityService federatedIdentityService(JdbcClient jdbcClient, UserAccountService users,
                                                       PlatformTransactionManager transactionManager,
                                                       AuthorizationServerProperties properties, Clock clock) {
-        boolean confirmLinks = properties.getAccountLinking().getMode()
-                == AuthorizationServerProperties.AccountLinkingMode.CONFIRM_WITH_EXISTING_LOGIN;
-        return new FederatedIdentityService(jdbcClient, users, new TransactionTemplate(transactionManager), confirmLinks,
-                clock);
+        return new FederatedIdentityService(jdbcClient, users, new TransactionTemplate(transactionManager),
+                properties.getAccountLinking().getMode(), clock);
     }
 
     /**
@@ -510,5 +520,11 @@ class AuthorizationServerSecurityConfiguration {
             Clock clock) {
         return new FederatedLoginSuccessHandler(mappers.orderedStream().toList(), identities, pendingLinks, completion,
                 authorizedClients.getIfAvailable(), events, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    FederatedLoginFailureHandler federatedLoginFailureHandler(ApplicationEventPublisher events, Clock clock) {
+        return new FederatedLoginFailureHandler(events, clock);
     }
 }

@@ -1,12 +1,15 @@
 package jacky917.security.authorizationserver.federation;
 
+import jacky917.security.authorizationserver.properties.AuthorizationServerProperties.AccountLinkingMode;
 import jacky917.security.authorizationserver.support.Columns;
 import jacky917.security.authorizationserver.support.UuidV7;
 import jacky917.security.authorizationserver.user.UserAccount;
 import jacky917.security.authorizationserver.user.UserAccountService;
 import jacky917.security.authorizationserver.user.UserStatus;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -49,6 +52,7 @@ import java.util.Optional;
  * @author Jacky
  * @since 2.1.0
  */
+@Slf4j
 public class FederatedIdentityService {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -56,7 +60,8 @@ public class FederatedIdentityService {
     private final JdbcClient jdbc;
     private final UserAccountService users;
     private final TransactionTemplate transactions;
-    private final boolean confirmLinks;
+    private final TransactionTemplate nestedTransactions;
+    private final AccountLinkingMode linkingMode;
     private final Clock clock;
 
     /**
@@ -70,20 +75,21 @@ public class FederatedIdentityService {
      *                      <br>使用者帳號服務
      * @param transactions  runs each login in one transaction
      *                      <br>每次登入在同一個交易中處理
-     * @param confirmLinks  {@code true} to let users confirm a link by
-     *                      logging in to the existing account, {@code false}
-     *                      to allow links only from the account page
-     *                      <br>{@code true} 表示讓使用者登入既有帳號確認連結，
-     *                      {@code false} 表示只能從帳號頁連結
+     * @param linkingMode   how a new external login whose verified email
+     *                      belongs to an existing account is linked
+     *                      <br>已驗證 Email 屬於既有帳號的新第三方登入如何連結
      * @param clock         the clock for timestamps
      *                      <br>用於時間戳記的時鐘
      */
     public FederatedIdentityService(JdbcClient jdbc, UserAccountService users, TransactionTemplate transactions,
-                                    boolean confirmLinks, Clock clock) {
+                                    AccountLinkingMode linkingMode, Clock clock) {
         this.jdbc = jdbc;
         this.users = users;
         this.transactions = transactions;
-        this.confirmLinks = confirmLinks;
+        // 在呼叫端的交易中以 savepoint 執行：唯一鍵衝突只回滾連結本身，呼叫端的交易仍可繼續使用
+        this.nestedTransactions = new TransactionTemplate(transactions.getTransactionManager(), transactions);
+        this.nestedTransactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
+        this.linkingMode = linkingMode;
         this.clock = clock;
     }
 
@@ -110,8 +116,10 @@ public class FederatedIdentityService {
             if (linked.isPresent()) {
                 return transactions.execute(status -> loginInTransaction(info));
             }
-            throw new FederatedLoginRejectedException(FederatedLoginRejectedException.Reason.ACCOUNT_EXISTS,
-                    "The email of " + info.provider() + " account " + info.subject() + " is already used");
+            log.info("Creating the user of {} account {} hit a unique constraint; treating the email as taken",
+                    info.provider(), info.subject(), ex);
+            throw FederatedLoginRejectedException.accountExists(null,
+                    "The email of " + info.provider() + " account " + info.subject() + " is already used", ex);
         }
     }
 
@@ -119,10 +127,9 @@ public class FederatedIdentityService {
         Instant now = clock.instant();
         Optional<String> linked = findLinkedUserId(info);
         if (linked.isPresent()) {
-            // 暫時鎖定只阻擋密碼登入（DEC-092）
+            // 暫時鎖定只阻擋密碼登入（DEC-092，詳細設計 §13.2「刷新時的暫時鎖定」）
             UserAccount user = users.findById(linked.get()).filter(account -> account.status() == UserStatus.ACTIVE)
-                    .orElseThrow(() -> new FederatedLoginRejectedException(
-                            FederatedLoginRejectedException.Reason.USER_CANNOT_LOG_IN,
+                    .orElseThrow(() -> FederatedLoginRejectedException.userCannotLogIn(
                             "User " + linked.get() + " linked to " + info.provider() + " cannot log in"));
             updateLink(info, now);
             return user;
@@ -130,10 +137,12 @@ public class FederatedIdentityService {
         Optional<UserAccount> owner = info.emailVerified() && info.email() != null
                 ? users.findByVerifiedEmail(info.email()) : Optional.empty();
         if (owner.isPresent()) {
-            throw new FederatedLoginRejectedException(confirmLinks
-                    ? FederatedLoginRejectedException.Reason.LINK_REQUIRED
-                    : FederatedLoginRejectedException.Reason.ACCOUNT_EXISTS, owner.get().id(),
-                    "A user with the verified email of " + info.provider() + " account " + info.subject() + " exists");
+            String message = "A user with the verified email of " + info.provider() + " account " + info.subject()
+                    + " exists";
+            throw switch (linkingMode) {
+                case CONFIRM_WITH_EXISTING_LOGIN -> FederatedLoginRejectedException.linkRequired(owner.get().id(), message);
+                case MANUAL_ONLY -> FederatedLoginRejectedException.accountExists(owner.get().id(), message, null);
+            };
         }
         UserAccount user = users.createFederatedUser(info);
         insertLink(user.id(), info, now);
@@ -145,6 +154,14 @@ public class FederatedIdentityService {
      * proved that they own the user account.
      * <p>
      * 在使用者證明擁有既有帳號之後，把提供者帳號連結到該使用者。
+     * <p>
+     * It joins the caller's transaction through a savepoint, so a link
+     * created at the same time by another request is reported as a
+     * rejection instead of breaking the caller's transaction. Linking an
+     * account that is already linked to the same user only updates it.
+     * <p>
+     * 若呼叫端已有交易，以 savepoint 加入；另一個請求同時建立的連結會以拒絕回報，
+     * 而不會破壞呼叫端的交易。連結已連結到同一位使用者的帳號時只會更新它。
      *
      * @param userId  the existing user
      *                <br>既有使用者
@@ -158,26 +175,32 @@ public class FederatedIdentityService {
      *         連結此提供者的另一個帳號時為 {@code PROVIDER_ALREADY_LINKED}
      */
     public void link(String userId, FederatedUserInfo info) {
-        transactions.executeWithoutResult(status -> {
-            Instant now = clock.instant();
-            Optional<String> linked = findLinkedUserId(info);
-            if (linked.isPresent()) {
-                if (!linked.get().equals(userId)) {
-                    throw new FederatedLoginRejectedException(FederatedLoginRejectedException.Reason.LINKED_TO_ANOTHER_USER,
-                            info.provider() + " account " + info.subject() + " is linked to another user");
-                }
-                updateLink(info, now);
-                return;
+        try {
+            nestedTransactions.executeWithoutResult(status -> linkInTransaction(userId, info));
+        } catch (DuplicateKeyException ex) {
+            // 另一個請求同時建立了連結：savepoint 已回滾，重新檢查一次以回報正確的原因
+            log.info("Linking {} account {} to user {} raced with another request", info.provider(), info.subject(),
+                    userId, ex);
+            nestedTransactions.executeWithoutResult(status -> linkInTransaction(userId, info));
+        }
+    }
+
+    private void linkInTransaction(String userId, FederatedUserInfo info) {
+        Instant now = clock.instant();
+        Optional<String> linked = findLinkedUserId(info);
+        if (linked.isPresent()) {
+            if (!linked.get().equals(userId)) {
+                throw FederatedLoginRejectedException.linkedToAnotherUser(
+                        info.provider() + " account " + info.subject() + " is linked to another user");
             }
-            boolean hasProvider = jdbc.sql("SELECT COUNT(*) FROM user_federated_identity WHERE user_id = :user "
-                            + "AND provider = :provider")
-                    .param("user", userId).param("provider", info.provider()).query(Integer.class).single() > 0;
-            if (hasProvider) {
-                throw new FederatedLoginRejectedException(FederatedLoginRejectedException.Reason.PROVIDER_ALREADY_LINKED,
-                        "User " + userId + " already has another " + info.provider() + " account linked");
-            }
-            insertLink(userId, info, now);
-        });
+            updateLink(info, now);
+            return;
+        }
+        if (hasLink(userId, info.provider())) {
+            throw FederatedLoginRejectedException.providerAlreadyLinked(
+                    "User " + userId + " already has another " + info.provider() + " account linked");
+        }
+        insertLink(userId, info, now);
     }
 
     /**
@@ -210,23 +233,30 @@ public class FederatedIdentityService {
      *                  <br>使用者 ID
      * @param provider  the registration id of the provider
      *                  <br>提供者的 registration id
-     * @return {@code true} if the link was removed; {@code false} if it did
-     *         not exist or is the only way to log in
-     *         <br>已移除時為 {@code true}；連結不存在或是唯一的登入方式時為
-     *         {@code false}
+     * @return whether the link was removed, did not exist, or was kept as
+     *         the only way to log in
+     *         <br>連結已移除、原本不存在，或因是唯一的登入方式而保留
      */
-    public boolean unlink(String userId, String provider) {
-        Boolean removed = transactions.execute(status -> {
+    public UnlinkResult unlink(String userId, String provider) {
+        return transactions.execute(status -> {
+            if (!hasLink(userId, provider)) {
+                return UnlinkResult.NOT_LINKED;
+            }
             boolean hasPassword = users.findById(userId).map(user -> user.passwordHash() != null).orElse(false);
             int links = jdbc.sql("SELECT COUNT(*) FROM user_federated_identity WHERE user_id = :user")
                     .param("user", userId).query(Integer.class).single();
             if (!hasPassword && links <= 1) {
-                return false;
+                return UnlinkResult.LAST_LOGIN_METHOD;
             }
             return jdbc.sql("DELETE FROM user_federated_identity WHERE user_id = :user AND provider = :provider")
-                    .param("user", userId).param("provider", provider).update() > 0;
+                    .param("user", userId).param("provider", provider).update() > 0
+                    ? UnlinkResult.UNLINKED : UnlinkResult.NOT_LINKED;
         });
-        return Boolean.TRUE.equals(removed);
+    }
+
+    private boolean hasLink(String userId, String provider) {
+        return jdbc.sql("SELECT COUNT(*) FROM user_federated_identity WHERE user_id = :user AND provider = :provider")
+                .param("user", userId).param("provider", provider).query(Integer.class).single() > 0;
     }
 
     private void insertLink(String userId, FederatedUserInfo info, Instant now) {

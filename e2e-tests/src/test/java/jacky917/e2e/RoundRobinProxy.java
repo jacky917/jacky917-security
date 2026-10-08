@@ -20,7 +20,8 @@ import java.util.concurrent.atomic.AtomicIntegerArray;
 
 /**
  * 模擬負載平衡器：依序把每個請求轉給下一個後端（輪流），並加上 {@code X-Forwarded-*} 標頭。
- * 不保留黏性：同一個瀏覽器的連續請求一定落在不同的實例上。
+ * 不保留黏性：所有經過代理的請求（瀏覽器、BFF、Resource Server）共用一個計數器輪流分配，
+ * 同一個瀏覽器的請求因此會分散到不同的實例上。
  */
 final class RoundRobinProxy implements AutoCloseable {
 

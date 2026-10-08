@@ -6,10 +6,10 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
 /**
- * Hashes for one-time secrets stored in the database, so only the browser or
- * the client ever holds the secret itself.
+ * Hashes of secrets that are looked up in the database, so the table that
+ * finds them stores the hash instead of the secret.
  * <p>
- * 存入資料庫之一次性秘密值的雜湊，讓秘密值本身只存在於瀏覽器或 client 手中。
+ * 在資料庫中查詢之秘密值的雜湊，讓用於查詢的表只存雜湊而不存秘密值本身。
  *
  * @author Jacky
  * @since 2.1.0

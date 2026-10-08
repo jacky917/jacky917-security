@@ -33,7 +33,7 @@ import org.springframework.session.security.SpringSessionBackedSessionRegistry;
  * @author Jacky
  * @since 2.1.0
  */
-// 類別名稱已對照 Spring Boot 4.1.1 的 jar 確認（這些模組不在本模組的 classpath 上，無法以測試檢查）
+// 類別名稱已對照 Spring Boot 4.1.1 的 jar 確認；升級 Spring Boot 時須重新確認（這些模組不在本模組的 classpath 上，無法以測試檢查）
 @AutoConfiguration(afterName = {
         "org.springframework.boot.session.jdbc.autoconfigure.JdbcSessionAutoConfiguration",
         "org.springframework.boot.session.data.redis.autoconfigure.SessionDataRedisAutoConfiguration",

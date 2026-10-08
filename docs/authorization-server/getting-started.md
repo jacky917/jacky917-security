@@ -222,16 +222,18 @@ Starter 以**自己的 Flyway 與歷史表**（`jacky917_as_schema_history`）�
 
 ### 4.4 排程工作（金鑰輪換、清理）
 
-Starter 以自己的執行緒執行下列工作（不會啟用應用程式的 `@Scheduled`）。每個工作在啟動後經過一個週期才第一次執行；多個實例時，以 `shedlock` 表確保每個週期只有一個實例執行。
+Starter 以自己的執行緒執行下列工作（不會啟用應用程式的 `@Scheduled`）。每個工作在啟動後經過一個週期才第一次執行；多個實例時，以 `shedlock` 表確保每個週期只有一個實例執行。工作失敗時記錄 `ERROR` 日誌、計入 `jacky917.as.maintenance.failures`，並釋放鎖，任何實例的下一次排程都會重試；同一個工作的各個清理步驟各自執行，一步失敗不會跳過其他步驟。
+
+重新部署的頻率高於工作週期時（例如每天部署），每日清理永遠等不到第一次執行；這種情況請由管理工作呼叫 `DataCleanup#runAll()`。
 
 | 工作 | 週期 | 內容 |
 |---|---|---|
-| 金鑰輪換 | 每小時檢查 | 目前的金鑰使用滿 `rotation-period − announce-period` 時建立 `NEXT` 金鑰並公開；公開滿 `announce-period` 後開始簽章，舊金鑰改為 `RETIRING`（仍公開，已簽發的 token 仍可驗證）；所有舊 token 到期並經過 Resource Server 的 JWKS 快取時間（5 分鐘）後改為 `RETIRED`，不再公開。使用者不需要重新登入 |
+| 金鑰輪換 | 每小時檢查 | 目前的金鑰使用滿 `rotation-period − announce-period` 時建立 `NEXT` 金鑰並公開；公開滿 `announce-period` 後開始簽章，舊金鑰改為 `RETIRING`（仍公開，已簽發的 token 仍可驗證）；它可能簽發的 token 全部到期、再加上 5 分鐘緩衝（涵蓋其他實例最多 1 分鐘的金鑰快取）後改為 `RETIRED`，不再公開。使用者不需要重新登入 |
 | 清理授權 | 15 分鐘 | 所有 token 皆已過期的授權；沒有任何 token、超過 1 小時的授權（使用者在同意畫面離開） |
 | 清理 Session | 每小時 | 已輪換的 Refresh Token 紀錄；超過絕對有效期的登入 Session 改為 `EXPIRED`；撤銷或過期超過 30 天的登入 Session |
 | 每日清理 | 每天 | 到期超過 7 天的操作 token、超過保留期的稽核紀錄、退役超過一年的金鑰 |
 
-每次刪除最多 `cleanup.batch-size` 筆，不會長時間鎖住資料表。
+可能大量累積的資料表每次最多刪除 `cleanup.batch-size` 筆，不會長時間鎖住資料表；登入 Session 改為 `EXPIRED` 與刪除退役金鑰影響的筆數很少，以單一陳述式執行。
 
 ### 4.5 監控（metrics、健康檢查、事件）
 
@@ -240,17 +242,19 @@ Starter 以自己的執行緒執行下列工作（不會啟用應用程式的 `@
 | 名稱 | 類型 | 標籤 | 用途 |
 |---|---|---|---|
 | `jacky917.as.login` | counter | `idp`、`result`（`success` 或失敗原因） | 登入成功率、暴力破解偵測 |
-| `jacky917.as.token.issued` | counter | `grant_type`、`client_id` | 簽發量 |
+| `jacky917.as.token.issued` | counter | `grant_type`、`client_id` | 簽發量（計的是簽發嘗試：之後儲存失敗的也會計入） |
 | `jacky917.as.refresh.reuse_detected` | counter | `client_id` | **告警**：大於 0 代表 Refresh Token 可能外洩 |
 | `jacky917.as.refresh.grace_rejected` | counter | `client_id` | 併發刷新；持續增加代表 client 沒有讓同一個使用者的刷新依序執行 |
-| `jacky917.as.refresh.rejected` | counter | `reason` | 所有被拒絕的刷新 |
+| `jacky917.as.refresh.rejected` | counter | `reason` | 重用偵測拒絕的刷新（Spring 本身的拒絕，例如 Refresh Token 已過期，不計入）；登出後再出現的 Refresh Token 計為 `unknown_token` |
 | `jacky917.as.session.active` | gauge | — | 有效的登入 Session 數 |
-| `jacky917.as.signing_key.age` | gauge（天） | — | 目前金鑰的使用天數；**超過 `keys.rotation-period` + 2 天時告警**（輪換排程沒有執行） |
-| `jacky917.as.cleanup.deleted` | counter | `table` | 清理是否正常 |
+| `jacky917.as.signing_key.age` | gauge（天） | — | 目前金鑰的使用天數；**超過 `keys.rotation-period` + 2 天時告警**（輪換排程沒有執行）。沒有 `ACTIVE` 金鑰時為無限大，同一條告警也會觸發 |
+| `jacky917.as.cleanup.deleted` | counter | `target`（`authorizations`、`refresh_token_history`、`expired_sessions`、`sessions`、`action_tokens`、`audits`、`signing_keys`） | 清理是否正常；`expired_sessions` 是改為 `EXPIRED` 的筆數 |
+| `jacky917.as.audit.write_failures` | counter | `type` | **告警**：大於 0 代表稽核紀錄不完整，IP 限流也看不到這些登入失敗 |
+| `jacky917.as.maintenance.failures` | counter | `task`（工作名稱或 `cleanup.<target>`） | **告警**：排程工作或清理步驟失敗 |
 
-有 Spring Boot 的健康檢查時，`/actuator/health` 另外包含 `signingKey`：沒有 `ACTIVE` 簽章金鑰時為 `DOWN`；詳細資料有金鑰 ID、演算法、使用天數與 `rotationOverdue`（不含任何金鑰內容）。資料庫連線由 Spring Boot 本身的檢查回報。可以 `management.health.signingkey.enabled=false` 關閉。
+有 Spring Boot 的健康檢查時，`/actuator/health` 另外包含 `signingKey`：沒有 `ACTIVE` 簽章金鑰時為 `DOWN`；詳細資料有金鑰 ID、演算法、使用天數，以及啟用輪換時的 `rotationOverdue`（輪換逾期時狀態仍為 `UP`，請以 `signing_key.age` 告警；不含任何金鑰內容）。資料庫連線由 Spring Boot 本身的檢查回報。可以 `management.health.signingkey.enabled=false` 關閉。
 
-應用程式也可以直接監聽 starter 發布的事件（例如轉送到 SIEM）：`LoginAuditEvent`（所有登入、登出、連結與重用的稽核）、`AccessTokenIssuedEvent`、`RefreshTokenRejectedEvent`、`DataCleanupEvent`。
+應用程式也可以直接監聽 starter 發布的事件（例如轉送到 SIEM）：`LoginAuditEvent`（所有登入、登出、連結與重用的稽核）、`AccessTokenIssuedEvent`、`RefreshTokenRejectedEvent`、`DataCleanupEvent`、`LoginAuditWriteFailedEvent`、`MaintenanceFailedEvent`。Metrics 的 listener 失敗只記錄日誌，不會影響登入或 token 請求。
 
 ## 5. Client（BFF、批次程式、App）
 
@@ -330,7 +334,7 @@ spring:
 | 提供者 | 說明 |
 |---|---|
 | Google 與其他 OpenID Connect 提供者 | 以 ID Token 的 `sub` 識別；`email_verified` 為 true 的 Email 才視為已驗證 |
-| GitHub | 以數字 `id` 識別（登入名稱可能變更）；Email 取自 `/user/emails` 中**主要且已驗證**的地址，需要 `user:email` scope，沒有時使用者沒有 Email（仍可登入）。公開個人資料中的 Email 一律不採信。GitHub Enterprise Server 也適用（使用者資訊端點加上 `/emails`） |
+| GitHub | 以數字 `id` 識別（登入名稱可能變更）；Email 取自 `/user/emails` 中**主要且已驗證**的地址，需要 `user:email` scope，沒有時使用者沒有 Email（仍可登入）。GitHub 故障（逾時、5xx、速率限制）時登入失敗，請使用者重試，避免已有帳號的使用者得到重複的帳號。公開個人資料中的 Email 一律不採信。GitHub Enterprise Server 也適用：registration id 為 `github`，或使用者資訊端點以 `/api/v3/user` 結尾 |
 | LINE | 網頁登入的 ID Token 以 channel secret 簽 HS256，starter 會自動改用 HS256 驗證（registration id 為 `line` 或 issuer 為 `https://access.line.me`）。LINE 不提供 `email_verified`，因此 LINE 的 Email 不會用於比對既有帳號 |
 | 其他非 OIDC 的提供者 | 提供 `FederatedUserInfoMapper` Bean |
 
@@ -420,17 +424,20 @@ spring:
 ### 登入保護與稽核紀錄
 
 - 連續密碼錯誤 `login-protection.max-failures` 次（預設 5）後，帳號鎖定 `login-protection.lock-duration`（預設 15 分鐘）。鎖定期間正確的密碼也無法登入，也不會延長鎖定；登入成功時失敗次數歸零。
-- 同一個 IP 最近一分鐘失敗 `login-protection.max-failures-per-ip-per-minute` 次（預設 20）後，該 IP 的登入在檢查密碼之前就被拒絕。
-- 登入頁對所有失敗顯示相同的訊息（不透露帳號是否存在或被鎖定），真正的原因寫入 `login_audit`：
+- 只有密碼錯誤才計入鎖定。非預期的錯誤（例如資料庫無法使用）記錄為 `ERROR` 並稽核為 `ERROR`，不計入，因此不會鎖住輸入正確密碼的使用者。
+- 同一個 IP 最近一分鐘失敗 `login-protection.max-failures-per-ip-per-minute` 次（預設 20）後，該 IP 的登入在檢查密碼之前就被拒絕。登入頁與帳號連結確認頁都受保護，路徑以解碼後的值比對（`/%6Cogin` 這類編碼無法略過）。
+- 登入頁對所有密碼登入失敗顯示相同的訊息（不透露帳號是否存在或被鎖定），只有限流與第三方登入有各自的訊息；真正的原因寫入 `login_audit`：
 
 | `event_type` | 何時 | `failure_reason` |
 |---|---|---|
-| `LOGIN` | 每次登入（密碼或第三方），成功或失敗 | `BAD_CREDENTIALS`、`UNKNOWN_USER`、`LOCKED`、`DISABLED`、`RATE_LIMITED`、`FEDERATION`、`USER_CANNOT_LOG_IN`、`ACCOUNT_EXISTS` |
+| `LOGIN` | 每次登入（密碼或第三方），成功或失敗 | `BAD_CREDENTIALS`、`UNKNOWN_USER`、`LOCKED`、`DISABLED`、`NO_PASSWORD`、`RATE_LIMITED`、`ERROR`、`FEDERATION`、`USER_CANNOT_LOG_IN`、`ACCOUNT_EXISTS`、`LINK_REQUIRED` |
 | `ACCOUNT_LOCKED` | 連續失敗造成鎖定 | — |
+| `ACCOUNT_LINKED` | 連結第三方帳號，成功或失敗 | `LINK_EXPIRED`、`LINKED_TO_ANOTHER_USER`、`PROVIDER_ALREADY_LINKED`、`FEDERATION` |
+| `ACCOUNT_UNLINKED` | 解除連結 | — |
 | `LOGOUT` | 登出（見下一節） | — |
-| `TOKEN_REFRESH_REUSE` | 偵測到 Refresh Token 重用 | `REUSE_DETECTED` |
+| `TOKEN_REFRESH_REUSE` | 偵測到 Refresh Token 重用（每次都寫入，即使 Session 已撤銷） | `REUSE_DETECTED` |
 
-稽核事件同時以 Spring 的 `ApplicationEvent`（`LoginAuditEvent`）發布，應用程式可以另外監聽並轉送到 SIEM。寫入失敗只記錄錯誤日誌，不影響登入。
+稽核事件同時以 Spring 的 `ApplicationEvent`（`LoginAuditEvent`）發布，應用程式可以另外監聽並轉送到 SIEM。寫入失敗不影響登入：整個事件（不含輸入的帳號）記錄在 `ERROR` 日誌中以便補回，並計入 `jacky917.as.audit.write_failures`。IP 限流計算的是寫入 `login_audit` 的失敗，寫入失敗期間看不到這些嘗試。
 
 ### 登出與帳號頁
 

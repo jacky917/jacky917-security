@@ -75,8 +75,7 @@ class FederatedLoginSuccessHandlerTest {
     @Test
     @DisplayName("Email 屬於既有帳號：/login?error=account_exists")
     void accountExists() throws Exception {
-        when(identities.login(any())).thenThrow(new FederatedLoginRejectedException(
-                FederatedLoginRejectedException.Reason.ACCOUNT_EXISTS, "exists"));
+        when(identities.login(any())).thenThrow(FederatedLoginRejectedException.accountExists("user-1", "exists", null));
         assertThat(handle(List.of(new AcceptingMapper())).getRedirectedUrl()).isEqualTo("/login?error=account_exists");
         assertLoggedOutWithoutSession();
         assertAudited(LoginFailureReason.ACCOUNT_EXISTS);
@@ -85,8 +84,7 @@ class FederatedLoginSuccessHandlerTest {
     @Test
     @DisplayName("使用者無法登入：/login?error=federation")
     void userCannotLogIn() throws Exception {
-        when(identities.login(any())).thenThrow(new FederatedLoginRejectedException(
-                FederatedLoginRejectedException.Reason.USER_CANNOT_LOG_IN, "disabled"));
+        when(identities.login(any())).thenThrow(FederatedLoginRejectedException.userCannotLogIn("disabled"));
         assertThat(handle(List.of(new AcceptingMapper())).getRedirectedUrl()).isEqualTo("/login?error=federation");
         assertLoggedOutWithoutSession();
         assertAudited(LoginFailureReason.USER_CANNOT_LOG_IN);
@@ -95,11 +93,10 @@ class FederatedLoginSuccessHandlerTest {
     @Test
     @DisplayName("已驗證的 Email 屬於既有帳號（確認模式）：保存待確認的連結，導向 /jacky917/link-account")
     void linkRequired() throws Exception {
-        when(identities.login(any())).thenThrow(new FederatedLoginRejectedException(
-                FederatedLoginRejectedException.Reason.LINK_REQUIRED, "user-1", "link"));
+        when(identities.login(any())).thenThrow(FederatedLoginRejectedException.linkRequired("user-1", "link"));
         when(pendingLinks.create(eq("user-1"), any())).thenReturn("pending-token");
         assertThat(handle(List.of(new AcceptingMapper())).getRedirectedUrl()).isEqualTo("/jacky917/link-account");
-        assertThat(request.getSession().getAttribute(LinkIntent.PENDING_LINK_ATTRIBUTE)).isEqualTo("pending-token");
+        assertThat(request.getSession().getAttribute(PendingLinkService.SESSION_ATTRIBUTE)).isEqualTo("pending-token");
         assertLoggedOutWithoutSession();
         assertAudited(LoginFailureReason.LINK_REQUIRED);
     }
@@ -110,7 +107,7 @@ class FederatedLoginSuccessHandlerTest {
         assertThat(event.getValue().type()).isEqualTo(LoginAuditEventType.LOGIN);
         assertThat(event.getValue().success()).isFalse();
         assertThat(event.getValue().idp()).isEqualTo("github");
-        assertThat(event.getValue().failureReason()).isEqualTo(reason.name());
+        assertThat(event.getValue().failureReason()).isEqualTo(reason);
     }
 
     private MockHttpServletResponse handle(List<FederatedUserInfoMapper> mappers) throws Exception {

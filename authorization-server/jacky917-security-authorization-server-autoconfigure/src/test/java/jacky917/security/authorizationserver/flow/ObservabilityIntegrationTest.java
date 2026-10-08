@@ -2,7 +2,11 @@ package jacky917.security.authorizationserver.flow;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import jacky917.security.authorizationserver.audit.LoginAuditEventType;
+import jacky917.security.authorizationserver.audit.LoginAuditWriteFailedEvent;
+import jacky917.security.authorizationserver.maintenance.CleanupTarget;
 import jacky917.security.authorizationserver.maintenance.DataCleanupEvent;
+import jacky917.security.authorizationserver.maintenance.MaintenanceFailedEvent;
 import jacky917.security.authorizationserver.observability.SigningKeyHealthIndicator;
 import jacky917.security.authorizationserver.support.TestDatabases;
 import org.junit.jupiter.api.DisplayName;
@@ -67,8 +71,12 @@ class ObservabilityIntegrationTest extends AbstractFlowIntegrationTest {
         assertThat(count("jacky917.as.refresh.rejected", "reason", "concurrent")).isEqualTo(1);
         assertThat(refreshed.has("access_token")).isTrue();
 
-        events.publishEvent(new DataCleanupEvent("authorizations", 3));
-        assertThat(count("jacky917.as.cleanup.deleted", "table", "authorizations")).isEqualTo(3);
+        events.publishEvent(new DataCleanupEvent(CleanupTarget.AUTHORIZATIONS, 3));
+        assertThat(count("jacky917.as.cleanup.deleted", "target", "authorizations")).isEqualTo(3);
+        events.publishEvent(new LoginAuditWriteFailedEvent(LoginAuditEventType.LOGIN));
+        assertThat(count("jacky917.as.audit.write_failures", "type", "login")).isEqualTo(1);
+        events.publishEvent(new MaintenanceFailedEvent("cleanup.audits"));
+        assertThat(count("jacky917.as.maintenance.failures", "task", "cleanup.audits")).isEqualTo(1);
     }
 
     @Test

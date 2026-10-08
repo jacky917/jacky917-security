@@ -11,9 +11,7 @@ import org.springframework.util.StringUtils;
 
 import java.sql.Timestamp;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Optional;
@@ -31,6 +29,8 @@ import java.util.TreeSet;
  * @since 2.1.0
  */
 public class JdbcUserAccountService implements UserAccountService {
+
+    private static final int MAX_FAILURE_ATTEMPTS = 10;
 
     private static final String COLUMNS = "id, username, email, email_verified, password_hash, display_name, "
             + "avatar_url, locale, status, locked_until, password_changed_at, last_login_at, created_at";
@@ -174,20 +174,32 @@ public class JdbcUserAccountService implements UserAccountService {
     }
 
     @Override
-    public boolean recordLoginFailure(String userId, Instant at, int maxFailures, Duration lockDuration) {
-        // SQLite 只保存到毫秒：先截斷，讀回後才能與寫入的值比較
-        Timestamp until = Timestamp.from(at.plus(lockDuration).truncatedTo(ChronoUnit.MILLIS));
-        // 單一 UPDATE 完成計數與鎖定，併發的失敗不會互相覆蓋；鎖定時計數歸零，解鎖後重新給予相同的次數
-        jdbc.sql("""
-                        UPDATE app_user SET
-                            locked_until = CASE WHEN failed_login_count + 1 >= :max THEN :until ELSE locked_until END,
-                            failed_login_count = CASE WHEN failed_login_count + 1 >= :max THEN 0 ELSE failed_login_count + 1 END,
-                            updated_at = :at, row_version = row_version + 1
-                        WHERE id = :id""")
-                .param("max", maxFailures).param("until", until).param("at", Timestamp.from(at)).param("id", userId)
-                .update();
-        return findById(userId).map(user -> user.lockedUntil() != null && !user.lockedUntil().isBefore(until.toInstant()))
-                .orElse(false);
+    public boolean recordLoginFailure(String userId, Instant at, LockoutPolicy policy) {
+        Timestamp now = Timestamp.from(at);
+        Timestamp until = Timestamp.from(at.plus(policy.lockDuration()));
+        // 兩個條件互斥的 UPDATE：未達上限時計數加一；達到上限時鎖定並歸零（解鎖後重新給予相同的次數）。
+        // 每個陳述式以當下的值判斷，併發的失敗不會互相覆蓋，且只有實際鎖定的那一次回傳 true。
+        // 兩者都沒有命中，表示計數在兩個陳述式之間被其他請求改變：重試
+        for (int attempt = 0; attempt < MAX_FAILURE_ATTEMPTS; attempt++) {
+            int counted = jdbc.sql("UPDATE app_user SET failed_login_count = failed_login_count + 1, updated_at = :at, "
+                            + "row_version = row_version + 1 WHERE id = :id AND failed_login_count + 1 < :max")
+                    .param("at", now).param("id", userId).param("max", policy.maxFailures()).update();
+            if (counted > 0) {
+                return false;
+            }
+            int locked = jdbc.sql("UPDATE app_user SET locked_until = :until, failed_login_count = 0, updated_at = :at, "
+                            + "row_version = row_version + 1 WHERE id = :id AND failed_login_count + 1 >= :max")
+                    .param("until", until).param("at", now).param("id", userId).param("max", policy.maxFailures())
+                    .update();
+            if (locked > 0) {
+                return true;
+            }
+            if (findById(userId).isEmpty()) {
+                return false;
+            }
+        }
+        throw new IllegalStateException("The failed login count of user " + userId + " kept changing; gave up after "
+                + MAX_FAILURE_ATTEMPTS + " attempts");
     }
 
     @Override

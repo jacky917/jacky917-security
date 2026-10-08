@@ -1,12 +1,17 @@
 package jacky917.security.authorizationserver.audit;
 
 /**
- * Why a login failed, as written to {@code login_audit.failure_reason}.
- * The login page shows the same message for all of them (detailed design
- * §7.2).
+ * Why a login or a related action failed, as written to
+ * {@code login_audit.failure_reason}.
  * <p>
- * 登入失敗的原因，寫入 {@code login_audit.failure_reason}。登入頁對所有原因
- * 顯示相同的訊息（詳細設計 §7.2）。
+ * 登入或相關動作失敗的原因，寫入 {@code login_audit.failure_reason}。
+ * <p>
+ * The login page shows one message for all password failures, so it never
+ * reveals whether the account exists or is locked (detailed design §7.2);
+ * only rate limiting and external logins have their own messages.
+ * <p>
+ * 登入頁對所有密碼登入失敗顯示同一個訊息，不會透露帳號是否存在或被鎖定（詳細
+ * 設計 §7.2）；只有限流與第三方登入有各自的訊息。
  *
  * @author Jacky
  * @since 2.1.0
@@ -35,11 +40,18 @@ public enum LoginFailureReason {
     LOCKED,
 
     /**
-     * The account is disabled.
+     * The account is disabled, expired or deleted.
      * <p>
-     * 帳號已停用。
+     * 帳號已停用、已過期或已刪除。
      */
     DISABLED,
+
+    /**
+     * The account has no password, so it cannot confirm with one.
+     * <p>
+     * 帳號沒有密碼，因此無法以密碼確認。
+     */
+    NO_PASSWORD,
 
     /**
      * Too many failed logins from the same IP address.
@@ -47,6 +59,14 @@ public enum LoginFailureReason {
      * 同一個 IP 的登入失敗次數過多。
      */
     RATE_LIMITED,
+
+    /**
+     * The login could not be checked because of an unexpected error, for
+     * example the database being unavailable.
+     * <p>
+     * 因非預期的錯誤（例如資料庫無法使用）而無法檢查登入。
+     */
+    ERROR,
 
     /**
      * An external login could not be processed.
@@ -76,5 +96,53 @@ public enum LoginFailureReason {
      * <p>
      * 第三方登入的已驗證 Email 屬於既有帳號；已要求使用者確認連結。
      */
-    LINK_REQUIRED
+    LINK_REQUIRED,
+
+    /**
+     * A link was not confirmed in time, or was confirmed by another user.
+     * <p>
+     * 連結未在期限內確認，或由其他使用者確認。
+     */
+    LINK_EXPIRED,
+
+    /**
+     * The external account to link is already linked to another user.
+     * <p>
+     * 要連結的外部帳號已連結到其他使用者。
+     */
+    LINKED_TO_ANOTHER_USER,
+
+    /**
+     * The user already has another account of the same provider linked.
+     * <p>
+     * 使用者已連結同一個提供者的另一個帳號。
+     */
+    PROVIDER_ALREADY_LINKED,
+
+    /**
+     * A rotated refresh token was used again after the grace period.
+     * <p>
+     * 已輪換的 Refresh Token 在寬限期之後再次被使用。
+     */
+    REUSE_DETECTED;
+
+    /**
+     * Returns whether a failure for this reason counts towards locking the
+     * account.
+     * <p>
+     * 回傳此原因的失敗是否計入帳號鎖定。
+     * <p>
+     * Only a wrong password does: an attempt on a locked or disabled account
+     * must not extend the lock, and an unexpected error must not lock out a
+     * user who typed the right password.
+     * <p>
+     * 只有密碼錯誤會計入：對已鎖定或已停用帳號的嘗試不應延長鎖定，非預期的錯誤
+     * 也不應鎖住輸入正確密碼的使用者。
+     *
+     * @return {@code true} only for {@link #BAD_CREDENTIALS}
+     *         <br>只有 {@code BAD_CREDENTIALS} 為 {@code true}
+     */
+    public boolean countsTowardsLock() {
+        return this == BAD_CREDENTIALS;
+    }
 }
