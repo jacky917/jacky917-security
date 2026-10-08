@@ -905,3 +905,18 @@
   - **DEC-104**: 排程鎖自行實作（使用既有的 `shedlock` 表），持有到週期的 9 成、不提早釋放。
   - **DEC-105**: 排程使用 starter 自己的執行緒，不使用 `@EnableScheduling`、不註冊 `TaskScheduler` Bean。
 
+---
+## Step 40: Authorization Server 第 2 階段——工作 16（多實例：Spring Session JDBC）
+- **Status**: 🟢 Completed
+- **變更**:
+  - 多實例的瀏覽器 Session：應用程式加入 `spring-boot-starter-session-jdbc` 即由 Spring Boot 啟用（`SPRING_SESSION` 表已在 V1 migration 中）。Starter 對 `spring-session-core` 為選用依賴。
+  - `AuthorizationServerSessionRegistryAutoConfiguration`：有 Spring Session 時，OIDC 的 Session registry 改為 `SpringSessionBackedSessionRegistry`。
+  - E2E：`MultiInstanceEndToEndTest`（兩個登入服務 + embedded PostgreSQL + Spring Session JDBC，前面是輪流轉送的 `RoundRobinProxy`）；原本的 E2E 也改以 Spring Session JDBC 執行（SQLite）；啟動工具抽出為 `E2eApplications`。
+- **查證**：Spring Authorization Server 7.1.1 預設的 Session registry 在記憶體中，token 端點以它產生 ID Token 的 `sid`；Spring Session 的 `SpringSessionBackedSessionRegistry` 的 `registerNewSession` 為空操作。Spring Boot 4.1.1 的 Session 自動配置類別名稱已對照 jar 確認（Redis 為 `SessionDataRedisAutoConfiguration`，原本猜錯，已修正）。
+- **Commands Run & Results**:
+  - 多實例 E2E 2 個測試通過；破壞實驗：登入服務改用記憶體 Session → 2 個測試都失敗（登入頁的 CSRF 在另一個實例無效）；還原後通過。
+  - 新增 `SessionRegistryAutoConfigurationTest`（2 個）。
+  - `mvn -B -o clean verify`：**SUCCESS**，371 個測試（Resource Server 47、Authorization Server 297、範例 14、E2E 6）。
+- **Decision Log**:
+  - **DEC-106**: Spring Session JDBC 為選用：多實例時由應用程式加入依賴。
+

@@ -302,7 +302,7 @@ jacky917.security.authorizationserver
 | `JWKSource<SecurityContext>` | `RotatingJwkSource` | 從 `signing_key` 讀取 `NEXT`、`ACTIVE`、`RETIRING` |
 | `AuthenticationProvider`（token 端點） | `ReuseDetectingRefreshTokenProvider` 包裝 `OAuth2RefreshTokenAuthenticationProvider` | 透過 `tokenEndpoint(...).authenticationProviders(...)` 替換 |
 | `AuthorizationServerSettings` | 由 `issuer` 等屬性建立 | 端點路徑使用預設值 |
-| `SessionRegistry` | `SessionRegistryImpl`（第 2 階段改用 Spring Session 的實作） | OIDC 登出驗證需要 |
+| `SessionRegistry` | 有 Spring Session 時為 `SpringSessionBackedSessionRegistry`，否則 Spring 預設的 `SessionRegistryImpl` | OIDC 登出驗證與 ID Token 的 `sid` 需要 |
 | OIDC 登出回應（`logoutResponseHandler`） | 官方 `OidcLogoutAuthenticationSuccessHandler`，以 `setLogoutHandler` 加入 `Jacky917LogoutHandler`（已查證此方法存在） | 不改變 Spring 的登出回應，只在登出時撤銷 `auth_session` |
 | `UserDetailsService` | `Jacky917UserDetailsService` | 帳號密碼登入；`username` 可為帳號或已驗證的 Email |
 | `OAuth2UserService`、`OidcUserService` | 官方預設 | 第三方使用者資訊由 `FederatedUserInfoMapper` 轉換 |
@@ -997,7 +997,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 13 | 登入保護：`LoginFailureHandler`（失敗計數、鎖定）、`LoginAttemptGuard`（IP 限流）、登入成功與失敗的稽核（密碼與第三方） | ✅ |
 | 14 | 帳號連結：確認頁 `/jacky917/link-account`（原帳號密碼或已連結的提供者）、`account-linking.mode`、帳號頁的連結與解除連結；GitHub（`GitHubFederatedUserInfoMapper`）、LINE（HS256 ID Token） | ✅ |
 | 15 | 排程：`SigningKeyRotation`、`DataCleanup`、`ScheduledJobLock`（`shedlock` 表）、`MaintenanceScheduler` | ✅ |
-| 16～17 | 第 2 階段其餘工作 | ⏳ |
+| 16 | 多實例：Spring Session JDBC（應用程式加入依賴即啟用）、`SpringSessionBackedSessionRegistry`、多實例 E2E 測試 | ✅ |
+| 17 | Metrics、健康檢查 | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1083,4 +1084,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 退役時間（工作 15） | `max-token-lifetime + jwks-cache-ttl` | `max(Access Token 有效期, 30 分鐘) + 5 分鐘`，不提供設定 | 已查證：Spring Authorization Server 的 `JwtGenerator` 以固定 30 分鐘簽發 ID Token；5 分鐘為 Resource Server（Spring Security）的 JWKS 快取預設值 |
 | 清理頻率（工作 15） | 管理稽核、退役金鑰每月 | 與每日清理一起執行 | 刪除條件以時間判斷，頻率較高只是每次刪得少 |
 | 過期 Session（工作 15） | 改為 `EXPIRED` | 同時刪除其授權 | Refresh Token 已無法使用（Session 過期即拒絕刷新），提早釋放空間 |
+| Spring Session JDBC（工作 16，D10） | Starter 一律使用 | **選用**：應用程式加入 `spring-boot-starter-session-jdbc` 時由 Spring Boot 啟用；`SPRING_SESSION` 表由 starter 的 migration 建立 | 單一實例（預設 SQLite）不需要，記憶體中的 Session 較快；Spring Boot 的自動配置在依賴存在時就會啟用，不必另外設定 |
+| OIDC 的 Session registry（工作 16） | 第 2 階段改用 Spring Session 的實作 | 有 `FindByIndexNameSessionRepository` 時註冊 `SpringSessionBackedSessionRegistry` | 已查證：Spring Authorization Server 7.1.1 預設的 registry 在記憶體中，token 端點以它產生 ID Token 的 `sid`；token 請求落在另一個實例時會找不到 Session |
+| 多實例測試（工作 16） | Testcontainers 啟動多個實例 | E2E 模組在同一個 JVM 啟動兩個登入服務（embedded PostgreSQL），前面放一個輪流轉送、沒有黏性的代理（`X-Forwarded-*`） | 連續請求一定落在不同實例，比隨機分配更嚴格；以記憶體 Session 執行時兩個測試都失敗（已實測） |
 

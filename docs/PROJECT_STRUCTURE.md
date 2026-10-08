@@ -42,6 +42,7 @@
 |   |       |   |               |   |-- AuthorizationServerKeysConfiguration.java
 |   |       |   |               |   |-- AuthorizationServerMaintenanceConfiguration.java
 |   |       |   |               |   |-- AuthorizationServerSecurityConfiguration.java
+|   |       |   |               |   |-- AuthorizationServerSessionRegistryAutoConfiguration.java
 |   |       |   |               |   `-- AuthorizationServerUsersConfiguration.java
 |   |       |   |               |-- client
 |   |       |   |               |   |-- ActiveClientRegisteredClientRepository.java
@@ -175,7 +176,8 @@
 |   |           |               |   |-- LoginFailureHandlerTest.java
 |   |           |               |   `-- PrincipalNormalizerTest.java
 |   |           |               |-- autoconfigure
-|   |           |               |   `-- AutoConfigurationOrderingTest.java
+|   |           |               |   |-- AutoConfigurationOrderingTest.java
+|   |           |               |   `-- SessionRegistryAutoConfigurationTest.java
 |   |           |               |-- client
 |   |           |               |   `-- ClientRegistrationIntegrationTest.java
 |   |           |               |-- database
@@ -480,6 +482,7 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/ActiveKeyJwtEncoder.java` | `as-autoconfigure` | Token 簽章 | 一律以目前金鑰與其演算法簽章（RS256／ES256）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../support/Columns.java` | `as-autoconfigure` | 欄位長度 | 外部來源值的欄位長度上限與截斷（不切斷 emoji）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/RotatingJwkSource.java` | `as-autoconfigure` | JWKS | 公開 `NEXT`、`ACTIVE`、`RETIRING` 的公鑰。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerSessionRegistryAutoConfiguration.java` | `as-autoconfigure` | 多實例（D10） | 應用程式使用 Spring Session 時，OIDC 的 Session registry 改讀共用的 Session 儲存（跨實例時 ID Token 才有 `sid`）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerMaintenanceConfiguration.java` | `as-autoconfigure` | 排程配置 | 金鑰輪換（每小時）、清理（15 分鐘、每小時、每天）；`keys.rotation-enabled`、`cleanup.enabled`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../maintenance/SigningKeyRotation.java` | `as-autoconfigure` | 金鑰輪換（§5.7） | `NEXT` 預告 → 啟用（舊金鑰 `RETIRING`）→ 退役；每一步先檢查狀態。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../maintenance/DataCleanup.java` | `as-autoconfigure` | 清理（§5.8、資料模型 §14.1） | 授權、Refresh Token 歷史、登入 Session、操作 token、稽核、退役金鑰；分批刪除。 |
@@ -546,6 +549,7 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/ExternalProvidersIntegrationTest.java`、`support/FakeGitHub.java` | `as-test` | 整合測試 | 假的 GitHub（OAuth 2.0）與 LINE（HS256）：主要且已驗證的 Email、沒有 `user:email`、Email 屬於既有帳號、LINE 的 HS256 與未驗證的 Email、登入頁按鈕。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*MaintenanceIntegrationTest.java` | `as-test` | 整合測試 | T-KEY-02（預告、啟用、退役與舊 token 的驗證）、T-CLEAN-01、Session 的過期與刪除、其他資料的清理與小批次、排程鎖；SQLite 與 PostgreSQL。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../maintenance/MaintenanceSchedulerTest.java` | `as-test` | 單元測試 | 第一次執行時間、取得鎖才執行、失敗不拋出。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../autoconfigure/SessionRegistryAutoConfigurationTest.java` | `as-test` | 單元測試 | 有 Spring Session 時註冊共用的 registry；沒有或停用時不註冊。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../federation/GitHubFederatedUserInfoMapperTest.java` | `as-test` | 單元測試 | 支援的 registration、缺少 id、沒有 access token。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/FakeOidcProvider.java` | `as-test` | 測試用 OIDC 提供者 | JDK `HttpServer`：token、JWKS、userinfo；每個測試類別各自啟動與關閉，每次登入以授權碼區分。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/MutableClock.java` | `as-test` | 可推移的時鐘 | 測試到期行為（Session 90 天、登入 Session 過期）。 |
@@ -600,7 +604,9 @@
 | `.../SerializedAuthorizedClientManager.java` | `example-bff` | 刷新依序執行 | 同一位使用者同時只有一個請求刷新 Token（D19 的 BFF 端）；固定 64 個鎖，記憶體不隨使用者增加。 |
 | `.../src/test/.../BffControllerProxyTest.java` | `example-bff` | 代理測試 | 路徑與 query 原樣轉送、拒絕 `//` 開頭的路徑、狀態碼轉回（以本機的假 API 伺服器驗證）。 |
 | `.../src/main/resources/static/` | `example-bff` | 示範頁面 | 登入、呼叫 API、登出（CSRF token 以標頭送出）。 |
-| `e2e-tests/` | `e2e-tests` | 端對端測試 | 同一個 JVM 啟動登入服務、兩個 Resource Server、BFF；模擬瀏覽器走完登入、呼叫 API、audience 檢查、登出。 |
+| `e2e-tests/` | `e2e-tests` | 端對端測試 | 同一個 JVM 啟動登入服務（SQLite + Spring Session JDBC）、兩個 Resource Server、BFF；模擬瀏覽器走完登入、呼叫 API、audience 檢查、登出。 |
+| `e2e-tests/.../MultiInstanceEndToEndTest.java`、`RoundRobinProxy.java` | `e2e-tests` | 多實例測試 | 兩個登入服務共用 PostgreSQL（embedded），前面是輪流轉送、沒有黏性的代理；登入、授權碼、換 Token、帳號頁、登出都跨實例。 |
+| `e2e-tests/.../E2eApplications.java` | `e2e-tests` | 測試工具 | 啟動範例應用程式（關閉其他範例的自動配置，不載入 application.yml）。 |
 
 ### 文件
 

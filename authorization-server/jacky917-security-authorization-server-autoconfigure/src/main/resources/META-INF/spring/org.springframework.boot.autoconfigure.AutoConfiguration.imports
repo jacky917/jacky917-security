@@ -1,1 +1,2 @@
 jacky917.security.authorizationserver.autoconfigure.AuthorizationServerAutoConfiguration
+jacky917.security.authorizationserver.autoconfigure.AuthorizationServerSessionRegistryAutoConfiguration

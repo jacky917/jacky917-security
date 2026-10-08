@@ -196,6 +196,22 @@ spring:
 
 Starter 會自動選擇 PostgreSQL 版的 migration。建議使用 Authorization Server 專屬的資料庫（表名固定為 Spring Security 的官方名稱，例如 `oauth2_authorization`）。
 
+#### 多個實例
+
+授權、登入 Session、金鑰都存在資料庫中；多個實例另外需要共用**瀏覽器 Session**（登入頁的 CSRF、被中斷的授權請求）。加入 Spring Session JDBC 即可，資料表已由 starter 的 migration 建立：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-session-jdbc</artifactId>
+</dependency>
+```
+
+- 有 Spring Session 時，starter 會以它追蹤 OpenID Connect 的 Session，ID Token 的 `sid` 與登出檢查在不同實例間也正確。
+- 負載平衡器不需要黏性 Session。在反向代理之後請設定 `server.forward-headers-strategy`，讓登入服務以對外的網址產生重導。
+- 排程工作（[§4.4](#44-排程工作金鑰輪換清理)）以資料庫鎖確保每個週期只在一個實例執行。
+- SQLite 只能單一實例；單一實例不需要 Spring Session（瀏覽器 Session 存在記憶體中較快）。
+
 ### 4.3 自己的資料表
 
 Starter 以**自己的 Flyway 與歷史表**（`jacky917_as_schema_history`）執行它的 migration，不使用、也不改變應用程式的 Flyway 設定。登入服務若有自己的表，照常放在 `src/main/resources/db/migration`，由 Spring Boot 的 Flyway 執行（歷史表 `flyway_schema_history`），兩邊的版本號互不影響。
@@ -417,7 +433,6 @@ spring:
 
 | 項目 | 現況 | 預計 |
 |---|---|---|
-| 多實例 | 登入頁的 Session 存在記憶體中，多實例需要黏性 Session；SQLite 只能單一實例 | 第 2 階段：PostgreSQL 搭配 Spring Session JDBC |
 | 第三方 client、同意畫面、Admin API | 不支援（設定第三方 client 會啟動失敗） | 第 3 階段 |
 | 註冊、忘記密碼 | 不支援 | 依需求 |
 | MySQL | 不支援 | 第 5 階段 |
