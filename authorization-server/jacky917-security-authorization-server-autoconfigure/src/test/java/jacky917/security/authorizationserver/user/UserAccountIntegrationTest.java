@@ -164,7 +164,7 @@ class UserAccountIntegrationTest {
     }
 
     @Test
-    @DisplayName("第一位管理員只建立一次；重新啟動不會重複建立")
+    @DisplayName("第一位管理員只建立一次；重新啟動不會重複建立；預設必須在第一次登入時變更密碼（D29）")
     void bootstrapAdminIsCreatedOnce() {
         String url = TestDatabases.newDatabaseUrl(TestDatabases.SQLITE);
         String[] properties = {"jacky917.security.authorization-server.bootstrap-admin.username=admin",
@@ -173,12 +173,24 @@ class UserAccountIntegrationTest {
         TestDatabases.runner(TestDatabases.SQLITE, url).withPropertyValues(properties).run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(authorities(authenticate(context, "admin@example.com", PASSWORD))).contains("ROLE_AS_ADMIN");
+            assertThat(users(context).findByLogin("admin").orElseThrow().passwordChangeRequired()).isTrue();
         });
         TestDatabases.runner(TestDatabases.SQLITE, url).withPropertyValues(properties).run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context.getBean(JdbcClient.class).sql("SELECT COUNT(*) FROM app_user").query(Integer.class)
                     .single()).isEqualTo(1);
         });
+    }
+
+    @Test
+    @DisplayName("bootstrap-admin.password-change-required=false：不要求變更密碼")
+    void bootstrapAdminWithoutForcedChange() {
+        TestDatabases.runner(TestDatabases.SQLITE).withPropertyValues(
+                "jacky917.security.authorization-server.bootstrap-admin.username=admin",
+                "jacky917.security.authorization-server.bootstrap-admin.password=" + PASSWORD,
+                "jacky917.security.authorization-server.bootstrap-admin.password-change-required=false")
+                .run(context -> assertThat(users(context).findByLogin("admin").orElseThrow().passwordChangeRequired())
+                        .isFalse());
     }
 
     private static UserAccountService users(ApplicationContext context) {

@@ -83,7 +83,7 @@ public class AccountController {
     private static final String[] PAGE_KEYS = {"account.title", "account.devices", "account.current",
             "account.signed-in-at", "account.last-active", "account.logout", "account.logout-all",
             "account.logout-all.hint", "account.ip", "account.identities", "account.link", "account.unlink",
-            "account.linked-at"};
+            "account.linked-at", "account.password"};
 
     private final AuthSessionService sessions;
     private final UserAccountService users;
@@ -154,7 +154,12 @@ public class AccountController {
         Locale locale = RequestContextUtils.getLocale(request);
         page.populate(model, locale, PAGE_KEYS);
         String userId = authentication.getName();
-        model.addAttribute("userName", users.findById(userId).map(AccountController::displayName).orElse(userId));
+        UserAccount user = users.findById(userId).orElse(null);
+        model.addAttribute("userName", user == null ? userId : displayName(user));
+        model.addAttribute("hasPassword", user != null && user.passwordHash() != null);
+        if ("password_changed".equals(request.getParameter("notice"))) {
+            model.addAttribute("notice", page.message("account.notice.password_changed", null, locale));
+        }
         DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z", locale).withZone(zone);
         String current = currentSessionId(request);
         List<Map<String, Object>> devices = new ArrayList<>();

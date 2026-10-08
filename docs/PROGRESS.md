@@ -1021,3 +1021,16 @@
 - **Commands Run & Results**:
   - 新增 `AccountMailTest`（5 個）、`AccountConfigurationIntegrationTest`（5 個，token 的部分在 SQLite 與 PostgreSQL 各執行一次）。
 
+---
+## Step 48: Authorization Server——工作 22（變更密碼、強制變更密碼）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `PasswordChangeService`：檢查目前的密碼（錯誤時計入帳號鎖定並稽核）、密碼政策、不可與目前相同；設定後清除強制變更與暫時鎖定、撤銷其他登入 Session（保留進行變更的那一個）、稽核 `PASSWORD_CHANGED`、寄出通知信（可寄信且 Email 已驗證時）。另提供重設密碼用的 `reset`（撤銷全部，稽核 `PASSWORD_RESET`）。
+  - `/jacky917/account/password`（`AccountPasswordController`、`account-password.html`，繁中與英文）；帳號頁有密碼的使用者顯示「變更密碼」。
+  - 強制變更（D29）：以密碼登入且 `password_change_required` 時在瀏覽器 Session 加上標記並導向變更頁；`PasswordChangeRequiredFilter` 加在兩條 filter chain，授權端點與其他頁面都導向變更頁；變更後繼續原本的授權請求。第一位管理員預設必須變更（`bootstrap-admin.password-change-required`）。
+  - 刷新時不再以 `password_changed_at` 判斷（見設計 §12.2）。
+- **Commands Run & Results**:
+  - 新增 `AccountSelfServiceIntegrationTest`（兩種資料庫各 3 個，T-ACCT-01、T-ACCT-02、T-REFRESH-05）；`UserAccountIntegrationTest` 加上第一位管理員的強制變更；`RefreshTokenReuseDetectorTest` 改為不在刷新時判斷密碼變更。
+- **Decision Log**:
+  - **DEC-114**: 密碼變更一律以明確撤銷登入 Session 處理，刷新時不再比對 `password_changed_at`，讓使用者自行變更時可以保留目前的裝置。
+

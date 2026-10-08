@@ -53,6 +53,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "jacky917.security.authorization-server.keys.encryption-key=" + TestDatabases.TEST_ENCRYPTION_KEY,
         "jacky917.security.authorization-server.bootstrap-admin.username=admin",
         "jacky917.security.authorization-server.bootstrap-admin.password=" + AbstractFlowIntegrationTest.PASSWORD,
+        // 測試直接以第一位管理員登入；強制變更密碼另有測試
+        "jacky917.security.authorization-server.bootstrap-admin.password-change-required=false",
         "jacky917.security.authorization-server.clients.web-bff.secret=bff-secret",
         "jacky917.security.authorization-server.clients.web-bff.redirect-uris=" + AbstractFlowIntegrationTest.REDIRECT_URI,
         "jacky917.security.authorization-server.clients.web-bff.scopes=openid,profile",

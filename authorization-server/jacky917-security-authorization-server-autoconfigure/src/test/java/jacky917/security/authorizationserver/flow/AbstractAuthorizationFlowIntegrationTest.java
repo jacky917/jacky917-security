@@ -165,22 +165,6 @@ abstract class AbstractAuthorizationFlowIntegrationTest extends AbstractFlowInte
     }
 
     @Test
-    @DisplayName("變更密碼後，之前登入的 Session 刷新：invalid_grant，並撤銷（T-REFRESH-05）")
-    void refreshIsRefusedAfterPasswordChange() throws Exception {
-        String userId = createUser("password-user", null);
-        LoggedIn before = logInAndExchangeCode("password-user");
-        clock.advance(Duration.ofMinutes(1));
-        jdbc.sql("UPDATE app_user SET password_changed_at = :at WHERE id = :id")
-                .param("at", java.sql.Timestamp.from(clock.instant())).param("id", userId).update();
-        assertRefreshRefused(before);
-        assertSession(before.asid(), "REVOKED", "PASSWORD_CHANGED");
-
-        clock.advance(Duration.ofMinutes(1));
-        LoggedIn after = logInAndExchangeCode("password-user");
-        assertThat(refresh(after).has("access_token")).as("變更密碼之後的登入可以刷新").isTrue();
-    }
-
-    @Test
     @DisplayName("暫時鎖定（連續登入失敗）只阻擋密碼登入，已登入的 Session 仍可刷新")
     void temporaryLockDoesNotBlockRefresh() throws Exception {
         String lockedId = createUser("locked-user", null);

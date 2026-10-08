@@ -2,6 +2,10 @@ package jacky917.security.authorizationserver.autoconfigure;
 
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import jacky917.security.authorizationserver.account.AccountLinks;
+import jacky917.security.authorizationserver.account.AccountMailer;
+import jacky917.security.authorizationserver.account.PasswordChangeRequiredFilter;
+import jacky917.security.authorizationserver.account.PasswordChangeService;
 import jacky917.security.authorizationserver.audit.JdbcLoginAuditListener;
 import jacky917.security.authorizationserver.audit.LoginAuditRepository;
 import jacky917.security.authorizationserver.authentication.AccountLockout;
@@ -35,7 +39,9 @@ import jacky917.security.authorizationserver.session.SessionLinkingAuthorization
 import jacky917.security.authorizationserver.user.UserAccountService;
 import jacky917.security.authorizationserver.authentication.LoginCompletion;
 import jacky917.security.authorizationserver.federation.PendingLinkService;
+import jacky917.security.authorizationserver.user.PasswordPolicy;
 import jacky917.security.authorizationserver.web.AccountController;
+import jacky917.security.authorizationserver.web.AccountPasswordController;
 import jacky917.security.authorizationserver.web.AccountLinkController;
 import jacky917.security.authorizationserver.web.IdentityProviders;
 import jacky917.security.authorizationserver.web.LoginController;
@@ -140,7 +146,9 @@ class AuthorizationServerSecurityConfiguration {
                 .exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(
                         new LoginUrlAuthenticationEntryPoint("/login"), new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
                 // 登入 Session 已失效時結束瀏覽器登入，授權請求因此回到登入頁，而不是錯誤頁
-                .addFilterBefore(new LoginSessionValidationFilter(sessions, clock), AuthorizationFilter.class);
+                .addFilterBefore(new LoginSessionValidationFilter(sessions, clock), AuthorizationFilter.class)
+                // 必須變更密碼的登入不能繼續授權請求（D29）
+                .addFilterBefore(new PasswordChangeRequiredFilter(), AuthorizationFilter.class);
         return http.build();
     }
 
@@ -185,6 +193,7 @@ class AuthorizationServerSecurityConfiguration {
                 .sessionManagement(session -> session.sessionFixation(fixation -> fixation.changeSessionId()))
                 // 在其他裝置被登出（例如「登出所有裝置」）的瀏覽器回到登入頁
                 .addFilterBefore(new LoginSessionValidationFilter(sessions, clock), AuthorizationFilter.class)
+                .addFilterBefore(new PasswordChangeRequiredFilter(), AuthorizationFilter.class)
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
                         .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY)));
@@ -406,6 +415,27 @@ class AuthorizationServerSecurityConfiguration {
                                                 ApplicationEventPublisher events, Clock clock) {
         return new AccountController(properties, sessions, users, logoutHandler, identities, providers, events, clock,
                 ZoneId.systemDefault());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    PasswordChangeService passwordChangeService(UserAccountService users, JdbcClient jdbcClient,
+                                                PasswordEncoder passwordEncoder, PasswordPolicy passwordPolicy,
+                                                AccountLockout lockout, AuthSessionService sessions,
+                                                AccountMailer mailer, AccountLinks links,
+                                                ApplicationEventPublisher events,
+                                                PlatformTransactionManager transactionManager, Clock clock) {
+        return new PasswordChangeService(users, jdbcClient, passwordEncoder, passwordPolicy, lockout, sessions, mailer,
+                links, events, new TransactionTemplate(transactionManager), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    AccountPasswordController jacky917AccountPasswordController(AuthorizationServerProperties properties,
+                                                                PasswordChangeService passwords,
+                                                                PasswordPolicy passwordPolicy) {
+        return new AccountPasswordController(properties, passwords, passwordPolicy);
     }
 
     @Bean

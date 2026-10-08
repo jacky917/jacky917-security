@@ -35,6 +35,18 @@ public class PasswordPolicy {
     }
 
     /**
+     * Returns the minimum number of characters.
+     * <p>
+     * 回傳最少字元數。
+     *
+     * @return the minimum length
+     *         <br>最少字元數
+     */
+    public int minLength() {
+        return minLength;
+    }
+
+    /**
      * Checks a new password.
      * <p>
      * 檢查新密碼。

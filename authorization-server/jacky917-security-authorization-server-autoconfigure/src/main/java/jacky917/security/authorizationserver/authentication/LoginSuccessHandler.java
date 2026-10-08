@@ -1,10 +1,12 @@
 package jacky917.security.authorizationserver.authentication;
 
+import jacky917.security.authorizationserver.account.AccountPaths;
 import jacky917.security.authorizationserver.audit.LoginAuditEvent;
 import jacky917.security.authorizationserver.audit.LoginAuditEventType;
 import jacky917.security.authorizationserver.session.AuthSession;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.session.LoginMethod;
+import jacky917.security.authorizationserver.user.UserAccount;
 import jacky917.security.authorizationserver.user.UserAccountService;
 import jacky917.security.authorizationserver.web.LoginController;
 import jakarta.servlet.ServletException;
@@ -29,9 +31,12 @@ import java.time.Clock;
  * {@code LOGIN} 稽核事件，再回到授權請求。
  * <p>
  * The authorization code flow links every authorization issued afterwards
- * to that {@code asid}.
+ * to that {@code asid}. A user whose password must be changed goes to the
+ * change page first, and continues to the authorization request after
+ * changing it.
  * <p>
- * 之後簽發的每一個授權都會透過這個 {@code asid} 連結到此登入 Session。
+ * 之後簽發的每一個授權都會透過這個 {@code asid} 連結到此登入 Session。必須變更
+ * 密碼的使用者先前往變更頁，變更後再繼續授權請求。
  *
  * @author Jacky
  * @since 2.1.0
@@ -79,6 +84,12 @@ public class LoginSuccessHandler extends SavedRequestAwareAuthenticationSuccessH
         events.publishEvent(LoginAuditEvent.builder(LoginAuditEventType.LOGIN, session.createdAt(), true)
                 .userId(userId).login(LoginMethod.PASSWORD, LoginMethod.LOCAL_IDP).sessionId(session.sessionId())
                 .request(request).build());
+        if (users.findById(userId).map(UserAccount::passwordChangeRequired).orElse(false)) {
+            // D29：先變更密碼；被中斷的授權請求留在 RequestCache 中，變更後繼續
+            request.getSession().setAttribute(AccountPaths.PASSWORD_CHANGE_REQUIRED_ATTRIBUTE, Boolean.TRUE);
+            getRedirectStrategy().sendRedirect(request, response, AccountPaths.CHANGE_PASSWORD);
+            return;
+        }
         super.onAuthenticationSuccess(request, response, authentication);
     }
 }

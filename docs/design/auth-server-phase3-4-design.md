@@ -377,7 +377,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 19 | 使用者管理：`UserAdminService`、`UserAdminController`（搜尋、建立、更新、刪除、解鎖、設定密碼、角色指派、登入 Session） | ✅ |
 | 20 | 角色、權限：`RoleAdminService`、`RoleAdminController`；使用指南 §9 管理 API | ✅ |
 | 21 | 寄信 SPI：`AccountMailer`（`SpringAccountMailer`、`LoggingAccountMailer`、`UnavailableAccountMailer`）、`AccountMailContent`、`ActionTokenService`、`AccountLinks`、`account.*` 屬性 | ✅ |
-| 22 | 變更密碼、強制變更 | |
+| 22 | 變更密碼、強制變更：`PasswordChangeService`、`AccountPasswordController`、`PasswordChangeRequiredFilter`（兩條 filter chain）、`bootstrap-admin.password-change-required` | ✅ |
 | 23 | 忘記密碼 | |
 | 24 | 註冊與 Email 驗證 | |
 | 25 | 第三方 client、scope、API resource 管理 | |
@@ -391,4 +391,5 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 項目 | 設計 | 實作 | 理由 |
 |---|---|---|---|
 | 稽核查詢的位置（工作 18） | 工作 20 | 與 Admin API 基礎一起於工作 18 實作 | 需要一個唯讀端點驗證 filter chain 與權限 |
+| 刷新時的「密碼在登入後變更」檢查（工作 22） | 詳細設計 §5.4：`password_changed_at > session.created_at` 時拒絕並撤銷 | 移除此檢查；每一種變更密碼的方式（管理員設定、重設連結、使用者自行變更）都明確撤銷登入 Session（`PASSWORD_CHANGED`） | 使用者自行變更時必須保留進行變更的那一個 Session；原本的檢查會在下一次刷新時把它撤銷 |
 | `admin_audit_log` 的對象種類（工作 18） | 資料模型 §8.3 的 7 種 | V1_1_0 加入 `API_RESOURCE` | API resource 的管理也要稽核；SQLite 無法修改約束，與 `login_audit` 一起重建 |

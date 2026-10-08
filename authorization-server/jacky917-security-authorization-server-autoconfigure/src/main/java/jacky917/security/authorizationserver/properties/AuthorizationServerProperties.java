@@ -867,6 +867,14 @@ public class AuthorizationServerProperties implements Validator {
          */
         private String email;
 
+        /**
+         * Whether the administrator must change the initial password at the
+         * first login.
+         * <p>
+         * 管理員是否必須在第一次登入時變更初始密碼。
+         */
+        private boolean passwordChangeRequired = true;
+
         void validate(Errors errors) {
             if (username != null && !username.isBlank() && (password == null || password.isBlank())) {
                 errors.rejectValue("bootstrapAdmin.password", "required",
