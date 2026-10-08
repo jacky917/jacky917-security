@@ -127,6 +127,7 @@ public class AuthServerApplication {
 | `token.authorization-code-ttl` | `1m` | 30 秒～5 分鐘 |
 | `token.session-max-age` | `90d` | 登入 Session 的絕對上限；不得短於 Refresh Token |
 | `token.audience` | `jacky917-api` | Access Token 的 `aud` |
+| `token.audience-strategy` | `shared` | `shared`：所有 Access Token 的 `aud` 都是 `token.audience`；`per-scope`：見 [§7](#7-token-內容) |
 | `refresh.reuse-grace-period` | `30s` | 0～2 分鐘。已輪換的 Refresh Token 在此期間內再次出現時視為併發刷新：拒絕，但不撤銷登入 Session |
 | `refresh.history-retention` | `24h` | 1 小時～`token.refresh-token-ttl`。已輪換的 Refresh Token 保留多久以偵測重用；超過後再次出現仍會被拒絕，只是不撤銷 Session |
 | `keys.algorithm` | `RS256` | 新金鑰的演算法：`RS256`、`ES256`。Token 一律以**目前金鑰**的演算法簽章，修改此設定只影響之後產生的金鑰 |
@@ -397,6 +398,7 @@ spring:
 | `idp` | `local`（帳號密碼）或提供者名稱（`google`） |
 | `roles`、`permissions` | 不含前綴；Resource Server starter 會轉成 `ROLE_*`、`PERM_*`。**每次簽發與刷新時都從資料庫重新讀取**，權限變更在下一次刷新（最多 10 分鐘）生效 |
 
+- `aud`：預設為 `token.audience`。`token.audience-strategy: per-scope` 時改為授予的 scope 所屬的 API resource（`/admin/api/scopes` 的 `apiResource`，去除重複），只有在沒有任何 scope 屬於 API resource 時（例如只有 `openid profile`）才使用 `token.audience`；每個業務 API 把 `audiences` 設為自己的 API resource 代碼，就只接受要求了自己 scope 的 token。管理 API 檢查 `admin-api.audience`：呼叫管理 API 的 token 不要同時要求屬於其他 API resource 的 scope。
 - `client_credentials` 的 Token 只有 `aud`、`client_id`、`scope`，`sub` 為 client id。
 - ID Token 有 `name`、`picture`、`locale`（`profile` scope）、`email`（`email` scope 且已驗證）、`amr`（`pwd` 或 `fed`），**不含**角色與權限。
 - 使用者被停用或被管理員鎖定、在其他地方變更了密碼、或登入 Session 已失效時，刷新會得到 `invalid_grant`（前兩種情況會同時撤銷該登入 Session）。連續登入失敗造成的暫時鎖定只阻擋密碼登入，不影響已登入的裝置。

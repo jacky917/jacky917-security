@@ -1087,3 +1087,10 @@
 - **Commands Run & Results**:
   - 新增 `ConsentIntegrationTest`（兩種資料庫各 3 個）：只同意勾選的 scope、之後不再詢問、新增 scope 只詢問新的（T-CONSENT-01）；拒絕；帳號頁撤回後 Refresh Token 失效並再次詢問（T-CONSENT-02）。
 
+## Step 54: Authorization Server——工作 27（`aud` 依 scope 決定），群組 C 完成
+- **Status**: 🟢 Completed
+- **變更**:
+  - `token.audience-strategy`：`shared`（預設，現行行為）或 `per-scope`。`ScopeAudienceResolver` 以授予的 scope 的 `app_scope.api_resource_code`（去除重複、排序）作為 `aud`；沒有任何 scope 屬於 API resource 時使用 `token.audience`。應用程式自己的 `AudienceResolver` Bean 仍然優先。
+  - 使用指南 §3（設定）、§7（`aud` 的決定方式與管理 API 的注意事項）。
+- **Commands Run & Results**:
+  - 新增 `ScopeAudienceResolverIntegrationTest`（兩種資料庫）：多個 API resource 去除重複並排序、只有一個、沒有任何 scope 屬於 API resource、`app_scope` 中沒有的 scope、沒有 scope。

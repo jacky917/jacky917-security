@@ -1063,6 +1063,26 @@ public class AuthorizationServerProperties implements Validator {
     }
 
     /**
+     * How the audience of access tokens is chosen (D07).
+     * <p>
+     * Access Token 的 audience 如何決定（D07）。
+     */
+    public enum AudienceStrategy {
+        /**
+         * Every token gets {@code token.audience}.
+         * <p>
+         * 所有 token 使用 {@code token.audience}。
+         */
+        SHARED,
+        /**
+         * The API resources of the granted scopes.
+         * <p>
+         * 授予的 scope 所屬的 API resource。
+         */
+        PER_SCOPE
+    }
+
+    /**
      * Client authentication methods at the token endpoint.
      * <p>
      * Token 端點的 client 驗證方式。
@@ -1209,6 +1229,18 @@ public class AuthorizationServerProperties implements Validator {
          * Access Token 的 audience（{@code aud}）。
          */
         private List<String> audience = new ArrayList<>(List.of("jacky917-api"));
+
+        /**
+         * How the audience of an access token is chosen: {@code shared}
+         * gives every token {@code audience}; {@code per-scope} gives the API
+         * resources of the granted scopes, and {@code audience} only when no
+         * scope belongs to one.
+         * <p>
+         * Access Token 的 audience 如何決定：{@code shared} 一律使用
+         * {@code audience}；{@code per-scope} 使用授予的 scope 所屬的 API
+         * resource，沒有任何 scope 屬於 API resource 時才使用 {@code audience}。
+         */
+        private AudienceStrategy audienceStrategy = AudienceStrategy.SHARED;
 
         void validate(Errors errors) {
             rejectOutOfRange(errors, "token.accessTokenTtl", accessTokenTtl, Duration.ofMinutes(1), Duration.ofHours(1));

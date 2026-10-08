@@ -382,7 +382,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 24 | 註冊與 Email 驗證：`RegistrationService`、`RegistrationController`（`/jacky917/register`、`/jacky917/verify-email`、`/jacky917/verify-email/resend`）、登入頁的連結；使用指南「帳號自助功能」 | ✅ |
 | 25 | 第三方 client、scope、API resource 管理：設定檔 `trust-level: third-party`（`ClientUris`、`ClientDetails`）、`ClientAdminService`／`ClientAdminController`、`ScopeAdminService`／`ScopeAdminController`；使用指南 §5、§9 | ✅ |
 | 26 | 同意畫面、撤回授權：`ConsentController`（`/oauth2/consent`）、`AuditingAuthorizationConsentService`、`ScopeDescriptions`、`AuthorizedApplicationService`、帳號頁「已授權的應用程式」 | ✅ |
-| 27 | `aud` 依 scope 決定 | |
+| 27 | `aud` 依 scope 決定：`token.audience-strategy`（`shared`／`per-scope`）、`ScopeAudienceResolver`；使用指南 §3、§7 | ✅ |
 | 28 | 兩步驟驗證 | |
 | 29 | 發佈準備 | |
 

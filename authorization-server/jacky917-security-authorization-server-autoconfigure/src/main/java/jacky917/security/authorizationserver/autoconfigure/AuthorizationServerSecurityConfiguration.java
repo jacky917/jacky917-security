@@ -42,6 +42,7 @@ import jacky917.security.authorizationserver.token.AuthorityResolver;
 import jacky917.security.authorizationserver.token.ConfiguredAudienceResolver;
 import jacky917.security.authorizationserver.token.DefaultAuthorityResolver;
 import jacky917.security.authorizationserver.token.Jacky917TokenCustomizer;
+import jacky917.security.authorizationserver.token.ScopeAudienceResolver;
 import jacky917.security.authorizationserver.token.TokenClaimsContributor;
 import jacky917.security.authorizationserver.user.PasswordPolicy;
 import jacky917.security.authorizationserver.user.UserAccountService;
@@ -352,8 +353,11 @@ class AuthorizationServerSecurityConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    AudienceResolver audienceResolver(AuthorizationServerProperties properties) {
-        return new ConfiguredAudienceResolver(properties.getToken().getAudience());
+    AudienceResolver audienceResolver(AuthorizationServerProperties properties, JdbcClient jdbcClient) {
+        AuthorizationServerProperties.Token token = properties.getToken();
+        return token.getAudienceStrategy() == AuthorizationServerProperties.AudienceStrategy.PER_SCOPE
+                ? new ScopeAudienceResolver(jdbcClient, token.getAudience())
+                : new ConfiguredAudienceResolver(token.getAudience());
     }
 
     @Bean
