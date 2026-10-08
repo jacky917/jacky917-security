@@ -966,7 +966,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | # | 問題 | 影響 | 目前假設 |
 |---|---|---|---|
 | ~~1~~ | ~~網頁前端是否採用 BFF？~~ ✅ **已決定**：採用 BFF（D03） | — | — |
-| 2 | 第一版第三方登入提供者？（D05） | 工作 9、14 | 第 1 階段 Google；第 2 階段 GitHub、LINE |
+| ~~2~~ | ~~第一版第三方登入提供者？（D05）~~ ✅ 第 1 階段 Google；第 2 階段 GitHub、LINE（工作 14 已實作） | — | — |
 | ~~3~~ | ~~資料庫？~~ ✅ **已決定**：預設 SQLite，可在 YAML 切換為 PostgreSQL（D22） | — | — |
 | ~~4~~ | ~~是否需要 `client_credentials`？~~ ✅ **已決定**：第 1 階段即包含（D15） | — | — |
 | ~~5~~ | ~~是否允許以 Email 作為登入帳號？~~ ✅ **已決定**：允許（只限已驗證的 Email） | — | — |
@@ -995,7 +995,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 11 | 重用偵測：`RefreshTokenReuseDetector`（包裝 Spring 的刷新 provider）、`refresh_token_history`、`AuthSessionService#revoke`、稽核事件與 `login_audit` | ✅ |
 | 12 | 登出：`Jacky917LogoutHandler`（RP-Initiated Logout 與 `POST /logout`）、帳號頁 `/jacky917/account`（裝置清單、登出單一或所有裝置） | ✅ |
 | 13 | 登入保護：`LoginFailureHandler`（失敗計數、鎖定）、`LoginAttemptGuard`（IP 限流）、登入成功與失敗的稽核（密碼與第三方） | ✅ |
-| 14 | 帳號連結：確認頁 `/jacky917/link-account`（原帳號密碼或已連結的提供者）、`account-linking.mode`、帳號頁的連結與解除連結（GitHub、LINE 進行中） | 🟡 |
+| 14 | 帳號連結：確認頁 `/jacky917/link-account`（原帳號密碼或已連結的提供者）、`account-linking.mode`、帳號頁的連結與解除連結；GitHub（`GitHubFederatedUserInfoMapper`）、LINE（HS256 ID Token） | ✅ |
 | 15～17 | 第 2 階段其餘工作 | ⏳ |
 
 ### 13.2 與設計不同的地方
@@ -1074,4 +1074,6 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 解除連結（工作 14） | — | 只有在使用者仍有密碼或其他已連結的提供者時才允許 | 避免使用者把自己鎖在帳號外 |
 | 第三方登入與暫時鎖定（工作 14） | `canLogIn` | 已連結帳號的第三方登入只要求 `status = ACTIVE` | 與 DEC-092 一致：暫時鎖定只阻擋密碼登入 |
 | 頁面共用元件（工作 14） | — | `IdentityProviders`（登入頁與帳號頁共用的提供者清單）、`LoginCompletion`（第三方登入與連結確認共用的「完成登入」：建立登入 Session、標準 principal、`LOGIN` 稽核） | 避免兩處各自實作 |
+| GitHub 的 Email（工作 14） | `/user/emails` 的 `primary && verified` | 同設計；Email 端點由 registration 的使用者資訊端點加上 `/emails` 推得；呼叫失敗（通常是沒有 `user:email` scope）時沒有 Email，仍可登入；公開個人資料的 `email` 不採信 | 支援 GitHub Enterprise Server；公開 Email 未必經過驗證 |
+| LINE（工作 14） | 通用 OIDC mapper | 通用 mapper 即可，但另外提供 `JwtDecoderFactory<ClientRegistration>`：LINE 的 ID Token 以 channel secret 驗證 HS256 | 已查證（LINE Developers 文件）：網頁登入的 ID Token 為 HS256、以 channel secret 簽署；Spring 預設以 RS256 驗證，LINE 登入會一律失敗。LINE 沒有 `email_verified`，Email 一律視為未驗證 |
 

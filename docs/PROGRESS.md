@@ -871,3 +871,19 @@
   - **DEC-100**: 帳號頁發起的連結完成後還原原本的登入，不建立新的登入 Session。
   - **DEC-101**: 不能解除唯一的登入方式。
 
+---
+## Step 38: Authorization Server 第 2 階段——工作 14 之二（GitHub、LINE）
+- **Status**: 🟢 Completed（工作 14 完成）
+- **變更**:
+  - `GitHubFederatedUserInfoMapper`：數字 `id` 為 subject；Email 取自 `/user/emails` 中主要且已驗證的地址（需要 `user:email`），失敗時沒有 Email 但仍可登入；公開 Email 不採信。
+  - `LineIdTokens`：`JwtDecoderFactory<ClientRegistration>` Bean，LINE 的 ID Token 以 channel secret 驗證 HS256，其他提供者維持 RS256。
+  - 使用指南：Google、GitHub、LINE 的設定範例與差異。
+- **查證**：LINE Developers 文件——網頁登入的 ID Token 以 HS256、channel secret 簽署；沒有 `email_verified` claim。
+- **Commands Run & Results**:
+  - 新增 `ExternalProvidersIntegrationTest`（假的 GitHub 與 LINE，5 個）與 `GitHubFederatedUserInfoMapperTest`（3 個）。
+  - 破壞實驗：LINE 改回 RS256 → LINE 登入失敗（`Signed JWT rejected`）；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，346 個測試（Resource Server 47、Authorization Server 281、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-102**: LINE 的 Email 一律視為未驗證，不用於比對既有帳號。
+  - **DEC-103**: GitHub 的 Email 端點由使用者資訊端點推得，以支援 GitHub Enterprise Server。
+

@@ -11,6 +11,8 @@ import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
 import jacky917.security.authorizationserver.federation.FederatedIdentityService;
 import jacky917.security.authorizationserver.federation.FederatedLoginSuccessHandler;
 import jacky917.security.authorizationserver.federation.FederatedUserInfoMapper;
+import jacky917.security.authorizationserver.federation.GitHubFederatedUserInfoMapper;
+import jacky917.security.authorizationserver.federation.LineIdTokens;
 import jacky917.security.authorizationserver.federation.OidcFederatedUserInfoMapper;
 import jacky917.security.authorizationserver.client.ClientProfileRepository;
 import jacky917.security.authorizationserver.database.AuthorizationServerDialect;
@@ -52,9 +54,11 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoderFactory;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
@@ -460,6 +464,40 @@ class AuthorizationServerSecurityConfiguration {
     @Order(Ordered.LOWEST_PRECEDENCE)
     OidcFederatedUserInfoMapper oidcFederatedUserInfoMapper() {
         return new OidcFederatedUserInfoMapper();
+    }
+
+    /**
+     * The mapper for GitHub, which is not an OpenID Connect provider. It
+     * comes before the OpenID Connect fallback.
+     * <p>
+     * GitHub 的 mapper（GitHub 不是 OpenID Connect 提供者），排在 OpenID Connect
+     * 預設 mapper 之前。
+     *
+     * @param clientRegistrations  the client registrations
+     *                             <br>client registration
+     * @return the mapper
+     *         <br>mapper
+     */
+    @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE - 10)
+    GitHubFederatedUserInfoMapper gitHubFederatedUserInfoMapper(
+            ObjectProvider<ClientRegistrationRepository> clientRegistrations) {
+        return new GitHubFederatedUserInfoMapper(clientRegistrations.getIfAvailable());
+    }
+
+    /**
+     * Verifies the ID tokens of external logins: HS256 with the channel
+     * secret for LINE, RS256 for the others.
+     * <p>
+     * 驗證第三方登入的 ID Token：LINE 以 channel secret 驗證 HS256，其餘為 RS256。
+     *
+     * @return the decoder factory
+     *         <br>decoder factory
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    JwtDecoderFactory<ClientRegistration> jacky917IdTokenDecoderFactory() {
+        return LineIdTokens.decoderFactory();
     }
 
     @Bean

@@ -12,7 +12,7 @@
 3. [設定參考](#3-設定參考)
 4. [資料庫](#4-資料庫)
 5. [Client（BFF、批次程式、App）](#5-clientbff批次程式app)
-6. [第三方登入（Google）](#6-第三方登入google)
+6. [第三方登入（Google、GitHub、LINE）](#6-第三方登入googlegithubline)
 7. [Token 內容](#7-token-內容)
 8. [業務 API 與 BFF 的設定](#8-業務-api-與-bff-的設定)
 9. [目前的限制（第 1 階段）](#9-目前的限制第-1-階段)
@@ -239,9 +239,9 @@ jacky917:
 
 ---
 
-## 6. 第三方登入（Google）
+## 6. 第三方登入（Google、GitHub、LINE）
 
-使用 Spring Boot 標準的 OAuth2 Client 設定，有設定時登入頁會出現「使用 Google 登入」：
+使用 Spring Boot 標準的 OAuth2 Client 設定，有設定的提供者會出現在登入頁（「使用 Google 登入」等）：
 
 ```yaml
 spring:
@@ -253,21 +253,43 @@ spring:
             client-id: ${GOOGLE_CLIENT_ID}
             client-secret: ${GOOGLE_CLIENT_SECRET}
             scope: openid,profile,email
+          github:
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+            scope: read:user,user:email        # user:email 才能取得已驗證的 Email
+          line:
+            client-name: LINE
+            client-id: ${LINE_CHANNEL_ID}
+            client-secret: ${LINE_CHANNEL_SECRET}
+            scope: openid,profile,email
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          line:
+            issuer-uri: https://access.line.me
+            user-name-attribute: sub
 ```
 
-在 Google Cloud Console 的 OAuth 用戶端設定 redirect URI：`https://auth.example.com/login/oauth2/code/google`。其他 OpenID Connect 提供者（Microsoft、LINE 等）的設定方式相同；非 OIDC 的提供者需要提供 `FederatedUserInfoMapper` Bean。
+各提供者後台設定的 redirect URI 為 `https://auth.example.com/login/oauth2/code/<registration id>`（例如 `.../code/google`）。
+
+| 提供者 | 說明 |
+|---|---|
+| Google 與其他 OpenID Connect 提供者 | 以 ID Token 的 `sub` 識別；`email_verified` 為 true 的 Email 才視為已驗證 |
+| GitHub | 以數字 `id` 識別（登入名稱可能變更）；Email 取自 `/user/emails` 中**主要且已驗證**的地址，需要 `user:email` scope，沒有時使用者沒有 Email（仍可登入）。公開個人資料中的 Email 一律不採信。GitHub Enterprise Server 也適用（使用者資訊端點加上 `/emails`） |
+| LINE | 網頁登入的 ID Token 以 channel secret 簽 HS256，starter 會自動改用 HS256 驗證（registration id 為 `line` 或 issuer 為 `https://access.line.me`）。LINE 不提供 `email_verified`，因此 LINE 的 Email 不會用於比對既有帳號 |
+| 其他非 OIDC 的提供者 | 提供 `FederatedUserInfoMapper` Bean |
 
 | 情況 | 結果 |
 |---|---|
-| 第一次以這個 Google 帳號登入 | 建立新使用者（角色 `USER`）；只有 Google 已驗證的 Email 才會儲存 |
-| 已連結的 Google 帳號 | 登入同一位使用者；停用或被管理員鎖定的使用者會被拒絕 |
-| Google 已驗證的 Email 屬於既有帳號 | **不會自動連結**（D06）。導向 `/jacky917/link-account`：使用者輸入原帳號的密碼，或以原帳號已連結的其他提供者登入，確認後才連結並登入；取消或 10 分鐘內未確認則什麼都不建立。設定 `account-linking.mode: manual-only` 時改為直接拒絕（「此 Email 已有帳號」），只能從帳號頁連結 |
+| 第一次以這個外部帳號登入 | 建立新使用者（角色 `USER`）；只有已驗證的 Email 才會儲存 |
+| 已連結的外部帳號 | 登入同一位使用者；停用或被管理員鎖定的使用者會被拒絕 |
+| 外部帳號已驗證的 Email 屬於既有帳號 | **不會自動連結**（D06）。導向 `/jacky917/link-account`：使用者輸入原帳號的密碼，或以原帳號已連結的其他提供者登入，確認後才連結並登入；取消或 10 分鐘內未確認則什麼都不建立。設定 `account-linking.mode: manual-only` 時改為直接拒絕（「此 Email 已有帳號」），只能從帳號頁連結 |
 | 已登入的使用者在帳號頁按「連結」 | 以該提供者登入後連結到目前的使用者；已屬於其他使用者的外部帳號會被拒絕 |
 | 帳號頁「解除連結」 | 移除連結；若它是唯一的登入方式（沒有密碼、也沒有其他連結）則拒絕 |
 
 連結確認頁輸入的密碼與登入頁相同：錯誤會計入帳號鎖定與 IP 限流。連結與解除連結都寫入稽核紀錄（`ACCOUNT_LINKED`、`ACCOUNT_UNLINKED`）。
 
-Google 的 token 只用於取得使用者資料，用完立即丟棄，不會儲存。
+提供者的 token 只用於取得使用者資料，用完立即丟棄，不會儲存。
 
 ---
 
@@ -361,7 +383,7 @@ spring:
 |---|---|
 | BFF 導向 `/connect/logout?id_token_hint=…&post_logout_redirect_uri=…`（RP-Initiated Logout） | 撤銷該次登入的登入 Session（刪除其授權，Refresh Token 立即失效），結束登入服務的瀏覽器登入，導回 `post_logout_redirect_uri`（必須是 client 設定的 `post-logout-redirect-uris` 之一） |
 | 登入服務的瀏覽器 Session 已過期 | 仍以 `id_token_hint` 找到並撤銷登入 Session；ID Token 本身過期也可以 |
-| 帳號頁 `/jacky917/account` | 列出登入中的裝置（登入方式、時間、IP、瀏覽器），可以登出單一裝置或「登出所有裝置」；也可以連結或解除連結第三方帳號（見 [§6](#6-第三方登入google)） |
+| 帳號頁 `/jacky917/account` | 列出登入中的裝置（登入方式、時間、IP、瀏覽器），可以登出單一裝置或「登出所有裝置」；也可以連結或解除連結第三方帳號（見 [§6](#6-第三方登入googlegithubline)） |
 | 登入服務的 `POST /logout` | 撤銷目前的登入 Session，回到 `/login?logout` |
 
 每次登出都寫入稽核紀錄（`login_audit` 的 `LOGOUT`）。已簽發的 Access Token 仍有效至到期（最長 `token.access-token-ttl`），見 [限制 §6](../resource-server/limitations.md#6-token-無法撤銷)。帳號頁的時間以伺服器的預設時區顯示。

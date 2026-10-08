@@ -162,14 +162,22 @@ abstract class AbstractGoogleIntegrationTest {
      */
     String providerCallback(MockHttpSession session, String registrationId, String subject, String email,
                             boolean verified, String name) throws Exception {
+        return providerCallback(GOOGLE, session, registrationId, subject, email, verified, name);
+    }
+
+    /**
+     * 以指定的假 OIDC 提供者完成一次登入。
+     */
+    String providerCallback(FakeOidcProvider provider, MockHttpSession session, String registrationId, String subject,
+                            String email, boolean verified, String name) throws Exception {
         // 前往提供者：Spring 產生 state 與 nonce
         String toGoogle = mockMvc.perform(get("/oauth2/authorization/" + registrationId).session(session))
                 .andExpect(status().is3xxRedirection()).andReturn().getResponse().getRedirectedUrl();
-        assertThat(toGoogle).startsWith(GOOGLE.baseUrl() + "/authorize");
+        assertThat(toGoogle).startsWith(provider.baseUrl() + "/authorize");
         // 網址中的參數是編碼過的（state 可能含 "="），必須先解碼
         Map<String, String> request = UriComponentsBuilder.fromUriString(toGoogle).build().getQueryParams().toSingleValueMap();
         String state = URLDecoder.decode(request.get("state"), StandardCharsets.UTF_8);
-        String providerCode = GOOGLE.prepare(subject, email, verified, name,
+        String providerCode = provider.prepare(subject, email, verified, name,
                 URLDecoder.decode(request.get("nonce"), StandardCharsets.UTF_8));
 
         // Google 導回：Spring 以 code 換 token、驗證 ID Token，接著由本專案處理登入

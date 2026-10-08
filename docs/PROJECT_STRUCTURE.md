@@ -64,6 +64,8 @@
 |   |       |   |               |   |-- FederatedLoginSuccessHandler.java
 |   |       |   |               |   |-- FederatedUserInfo.java
 |   |       |   |               |   |-- FederatedUserInfoMapper.java
+|   |       |   |               |   |-- GitHubFederatedUserInfoMapper.java
+|   |       |   |               |   |-- LineIdTokens.java
 |   |       |   |               |   |-- LinkIntent.java
 |   |       |   |               |   |-- LinkedIdentity.java
 |   |       |   |               |   |-- OidcFederatedUserInfoMapper.java
@@ -180,6 +182,7 @@
 |   |           |               |   `-- SqliteValidationIntegrationTest.java
 |   |           |               |-- federation
 |   |           |               |   |-- FederatedLoginSuccessHandlerTest.java
+|   |           |               |   |-- GitHubFederatedUserInfoMapperTest.java
 |   |           |               |   `-- OidcFederatedUserInfoMapperTest.java
 |   |           |               |-- flow
 |   |           |               |   |-- AbstractAccountLinkingIntegrationTest.java
@@ -189,6 +192,7 @@
 |   |           |               |   |-- AbstractGoogleLoginIntegrationTest.java
 |   |           |               |   |-- AbstractLoginProtectionIntegrationTest.java
 |   |           |               |   |-- AbstractLogoutIntegrationTest.java
+|   |           |               |   |-- ExternalProvidersIntegrationTest.java
 |   |           |               |   |-- ManualOnlyAccountLinkingIntegrationTest.java
 |   |           |               |   |-- PostgresqlAccountLinkingIntegrationTest.java
 |   |           |               |   |-- PostgresqlAuthorizationFlowIntegrationTest.java
@@ -215,6 +219,7 @@
 |   |           |               |   `-- SessionLinkingAuthorizationServiceTest.java
 |   |           |               |-- support
 |   |           |               |   |-- ColumnsTest.java
+|   |           |               |   |-- FakeGitHub.java
 |   |           |               |   |-- FakeOidcProvider.java
 |   |           |               |   |-- MutableClock.java
 |   |           |               |   |-- TestDatabases.java
@@ -487,7 +492,9 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/IdentityProviders.java` | `as-autoconfigure` | 提供者清單 | 登入頁與帳號頁共用；`login.providers` 或依名稱排序。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginCompletion.java` | `as-autoconfigure` | 完成登入 | 建立登入 Session、以標準 principal 登入瀏覽器、發布 `LOGIN`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../support/Hashes.java` | `as-autoconfigure` | 雜湊 | 一次性秘密值的 SHA-256（Refresh Token 歷史、連結 token）。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/FederatedUserInfoMapper.java`、`OidcFederatedUserInfoMapper.java`、`FederatedUserInfo.java` | `as-autoconfigure` | 提供者資料轉換 SPI | 通用 OIDC（Google 等）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/FederatedUserInfoMapper.java`、`OidcFederatedUserInfoMapper.java`、`FederatedUserInfo.java` | `as-autoconfigure` | 提供者資料轉換 SPI | 通用 OIDC（Google、LINE 等）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/GitHubFederatedUserInfoMapper.java` | `as-autoconfigure` | GitHub | 數字 `id` 為 subject；`/user/emails` 中主要且已驗證的 Email。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/LineIdTokens.java` | `as-autoconfigure` | LINE | ID Token 以 channel secret 驗證 HS256（`JwtDecoderFactory` Bean）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/PrincipalNormalizer.java` | `as-autoconfigure` | D16 | 轉為 `UsernamePasswordAuthenticationToken` + `User(使用者 ID)`；補上 factor authority。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginSuccessHandler.java` | `as-autoconfigure` | 登入成功 | 記錄登入、建立 `auth_session`、發布 `LOGIN`、回到授權請求。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginFailureHandler.java` | `as-autoconfigure` | 登入失敗（§5.1） | 密碼錯誤時計數，達上限鎖定並發布 `ACCOUNT_LOCKED`；稽核失敗原因；一律導向 `/login?error`。 |
@@ -521,6 +528,8 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*GoogleLoginIntegrationTest.java` | `as-test` | 整合測試 | T-FED-01／02／04／06、Email 屬於既有帳號時拒絕、登入頁按鈕；SQLite 與 PostgreSQL 各一次。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/AbstractGoogleIntegrationTest.java` | `as-test` | 測試共用 | 假的 Google（另有 `google-work` registration）與第三方登入流程的工具、可推移的時鐘。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*AccountLinkingIntegrationTest.java` | `as-test` | 整合測試 | 以密碼確認（錯誤計數）、取消與到期、以已連結的提供者確認、帳號頁連結與解除連結、連結他人帳號被拒、不能解除唯一的登入方式、`manual-only`；SQLite 與 PostgreSQL。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/ExternalProvidersIntegrationTest.java`、`support/FakeGitHub.java` | `as-test` | 整合測試 | 假的 GitHub（OAuth 2.0）與 LINE（HS256）：主要且已驗證的 Email、沒有 `user:email`、Email 屬於既有帳號、LINE 的 HS256 與未驗證的 Email、登入頁按鈕。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../federation/GitHubFederatedUserInfoMapperTest.java` | `as-test` | 單元測試 | 支援的 registration、缺少 id、沒有 access token。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/FakeOidcProvider.java` | `as-test` | 測試用 OIDC 提供者 | JDK `HttpServer`：token、JWKS、userinfo；每個測試類別各自啟動與關閉，每次登入以授權碼區分。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/MutableClock.java` | `as-test` | 可推移的時鐘 | 測試到期行為（Session 90 天、登入 Session 過期）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../{token,session,federation,authentication,database,support}/*Test.java` | `as-test` | 單元測試 | `Jacky917TokenCustomizer`、`SessionLinkingAuthorizationService`、`LoginSessionValidationFilter`、`PrincipalNormalizer`、`OidcFederatedUserInfoMapper`、`FederatedLoginSuccessHandler`、`SqliteExceptionTranslator`、`DefaultSqliteEnvironmentPostProcessor`、`UuidV7`：Mockito、固定時鐘、每個分支一個案例。 |
