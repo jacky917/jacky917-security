@@ -131,6 +131,13 @@ public class AuthServerApplication {
 | `keys.algorithm` | `RS256` | 新金鑰的演算法：`RS256`、`ES256`。Token 一律以**目前金鑰**的演算法簽章，修改此設定只影響之後產生的金鑰 |
 | `keys.encryption-key` | **必填** | Base64 的 32 bytes；**不可寫在設定檔中** |
 | `keys.encryption-key-id` | `v1` | 主金鑰的識別碼，更換主金鑰時一併修改 |
+| `keys.rotation-enabled` | `true` | 是否自動輪換簽章金鑰（見 [§4.4](#44-排程工作金鑰輪換清理)） |
+| `keys.rotation-period` | `90d` | 一把金鑰簽章多久後被取代，至少 7 天 |
+| `keys.announce-period` | `1d` | 新公鑰在開始簽章前先公開的時間，至少 5 分鐘且短於輪換週期 |
+| `cleanup.enabled` | `true` | 是否定期刪除過期的資料 |
+| `cleanup.batch-size` | `1000` | 每個刪除陳述式的筆數，10～10000 |
+| `cleanup.login-audit-retention` | `180d` | `login_audit` 的保留期間 |
+| `cleanup.admin-audit-retention` | `730d` | `admin_audit_log` 的保留期間 |
 | `password.min-length` | `12` | 8～64 |
 | `account-linking.mode` | `confirm-with-existing-login` | 第三方登入的已驗證 Email 屬於既有帳號時：`confirm-with-existing-login`（登入原帳號確認後連結）或 `manual-only`（拒絕，只能從帳號頁連結） |
 | `login-protection.max-failures` | `5` | 1～20。連續密碼錯誤達此次數時鎖定帳號（只阻擋密碼登入，已登入的裝置不受影響） |
@@ -196,6 +203,19 @@ Starter 以**自己的 Flyway 與歷史表**（`jacky917_as_schema_history`）�
 兩者共用同一個資料庫，因此 Starter 把 `spring.flyway.baseline-on-migrate` 與 `spring.flyway.baseline-version` 預設為 `true` 與 `0`：應用程式的 Flyway 看到 Starter 的表時以版本 0 建立 baseline，`V1` 起的 migration 仍會全部執行。應用程式自行設定這兩個屬性時以應用程式的設定為準。
 
 ---
+
+### 4.4 排程工作（金鑰輪換、清理）
+
+Starter 以自己的執行緒執行下列工作（不會啟用應用程式的 `@Scheduled`）。每個工作在啟動後經過一個週期才第一次執行；多個實例時，以 `shedlock` 表確保每個週期只有一個實例執行。
+
+| 工作 | 週期 | 內容 |
+|---|---|---|
+| 金鑰輪換 | 每小時檢查 | 目前的金鑰使用滿 `rotation-period − announce-period` 時建立 `NEXT` 金鑰並公開；公開滿 `announce-period` 後開始簽章，舊金鑰改為 `RETIRING`（仍公開，已簽發的 token 仍可驗證）；所有舊 token 到期並經過 Resource Server 的 JWKS 快取時間（5 分鐘）後改為 `RETIRED`，不再公開。使用者不需要重新登入 |
+| 清理授權 | 15 分鐘 | 所有 token 皆已過期的授權；沒有任何 token、超過 1 小時的授權（使用者在同意畫面離開） |
+| 清理 Session | 每小時 | 已輪換的 Refresh Token 紀錄；超過絕對有效期的登入 Session 改為 `EXPIRED`；撤銷或過期超過 30 天的登入 Session |
+| 每日清理 | 每天 | 到期超過 7 天的操作 token、超過保留期的稽核紀錄、退役超過一年的金鑰 |
+
+每次刪除最多 `cleanup.batch-size` 筆，不會長時間鎖住資料表。
 
 ## 5. Client（BFF、批次程式、App）
 
@@ -397,7 +417,6 @@ spring:
 
 | 項目 | 現況 | 預計 |
 |---|---|---|
-| 金鑰輪換、資料清理 | 沒有排程；過期的授權不會自動刪除 | 第 2 階段 |
 | 多實例 | 登入頁的 Session 存在記憶體中，多實例需要黏性 Session；SQLite 只能單一實例 | 第 2 階段：PostgreSQL 搭配 Spring Session JDBC |
 | 第三方 client、同意畫面、Admin API | 不支援（設定第三方 client 會啟動失敗） | 第 3 階段 |
 | 註冊、忘記密碼 | 不支援 | 依需求 |

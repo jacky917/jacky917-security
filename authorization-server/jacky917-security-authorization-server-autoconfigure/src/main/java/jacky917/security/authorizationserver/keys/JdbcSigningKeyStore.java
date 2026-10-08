@@ -64,6 +64,18 @@ public class JdbcSigningKeyStore implements SigningKeyStore {
     }
 
     @Override
+    public List<SigningKey> findByStatus(SigningKeyStatus status) {
+        return jdbc.sql("SELECT " + COLUMNS + " FROM signing_key WHERE status = :status ORDER BY created_at")
+                .param("status", status.name()).query(ROW_MAPPER).list();
+    }
+
+    @Override
+    public int deleteRetiredBefore(Instant before) {
+        return jdbc.sql("DELETE FROM signing_key WHERE status = 'RETIRED' AND retired_at < :before")
+                .param("before", Timestamp.from(before)).update();
+    }
+
+    @Override
     public void save(SigningKey key) {
         jdbc.sql("INSERT INTO signing_key (" + COLUMNS + ") VALUES (:kid, :algorithm, :keySize, :publicKey, "
                         + ":privateKey, :encryptionKeyId, :status, :createdAt, :activatedAt, :retiringAt, :retiredAt)")

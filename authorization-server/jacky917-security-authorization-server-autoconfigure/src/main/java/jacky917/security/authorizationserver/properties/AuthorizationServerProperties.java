@@ -149,6 +149,13 @@ public class AuthorizationServerProperties implements Validator {
      */
     private AccountLinking accountLinking = new AccountLinking();
 
+    /**
+     * Deleting expired data.
+     * <p>
+     * 刪除過期的資料。
+     */
+    private Cleanup cleanup = new Cleanup();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -166,6 +173,7 @@ public class AuthorizationServerProperties implements Validator {
         properties.getKeys().validate(errors);
         properties.getPassword().validate(errors);
         properties.getLoginProtection().validate(errors);
+        properties.getCleanup().validate(errors);
         properties.getBootstrapAdmin().validate(errors);
         properties.getBranding().validate(errors);
         properties.getClients().forEach((clientId, client) -> client.validate(clientId, errors));
@@ -333,6 +341,31 @@ public class AuthorizationServerProperties implements Validator {
         private String encryptionKeyId = "v1";
 
         /**
+         * Whether the signing key is rotated automatically.
+         * <p>
+         * 是否自動輪換簽章金鑰。
+         */
+        private boolean rotationEnabled = true;
+
+        /**
+         * How long a key signs tokens before it is replaced; at least 7
+         * days.
+         * <p>
+         * 一把金鑰簽章多久後被取代，至少 7 天。
+         */
+        private Duration rotationPeriod = Duration.ofDays(90);
+
+        /**
+         * How long a new public key is published before it starts signing,
+         * so resource servers already know it; at least 5 minutes and
+         * shorter than the rotation period.
+         * <p>
+         * 新公鑰在開始簽章前先公開的時間，讓 Resource Server 事先取得；至少 5
+         * 分鐘，且短於輪換週期。
+         */
+        private Duration announcePeriod = Duration.ofDays(1);
+
+        /**
          * Returns the decoded master key.
          * <p>
          * 回傳解碼後的主金鑰。
@@ -361,6 +394,14 @@ public class AuthorizationServerProperties implements Validator {
             }
             if (encryptionKeyId == null || encryptionKeyId.isBlank()) {
                 errors.rejectValue("keys.encryptionKeyId", "required", "keys.encryption-key-id must not be blank");
+            }
+            if (rotationPeriod == null || rotationPeriod.compareTo(Duration.ofDays(7)) < 0) {
+                errors.rejectValue("keys.rotationPeriod", "range", "keys.rotation-period must be at least 7 days");
+            }
+            if (announcePeriod == null || announcePeriod.compareTo(Duration.ofMinutes(5)) < 0
+                    || (rotationPeriod != null && announcePeriod.compareTo(rotationPeriod) >= 0)) {
+                errors.rejectValue("keys.announcePeriod", "range",
+                        "keys.announce-period must be at least 5 minutes and shorter than keys.rotation-period");
             }
         }
     }
@@ -470,6 +511,58 @@ public class AuthorizationServerProperties implements Validator {
             if (maxFailuresPerIpPerMinute < 1 || maxFailuresPerIpPerMinute > 10000) {
                 errors.rejectValue("loginProtection.maxFailuresPerIpPerMinute", "range",
                         "login-protection.max-failures-per-ip-per-minute must be between 1 and 10000");
+            }
+        }
+    }
+
+    /**
+     * Deleting expired data, bound from {@code .cleanup.*} (data model
+     * §14.1).
+     * <p>
+     * 刪除過期的資料，綁定自 {@code .cleanup.*}（資料模型 §14.1）。
+     */
+    @Getter
+    @Setter
+    public static class Cleanup {
+
+        /**
+         * Whether expired data is deleted on a schedule.
+         * <p>
+         * 是否定期刪除過期的資料。
+         */
+        private boolean enabled = true;
+
+        /**
+         * Rows deleted per statement, between 10 and 10000, so no
+         * transaction stays open long.
+         * <p>
+         * 每個陳述式刪除的筆數，10～10000，避免長時間的交易。
+         */
+        private int batchSize = 1000;
+
+        /**
+         * How long {@code login_audit} rows are kept; at least 1 day.
+         * <p>
+         * {@code login_audit} 的保留期間，至少 1 天。
+         */
+        private Duration loginAuditRetention = Duration.ofDays(180);
+
+        /**
+         * How long {@code admin_audit_log} rows are kept; at least 1 day.
+         * <p>
+         * {@code admin_audit_log} 的保留期間，至少 1 天。
+         */
+        private Duration adminAuditRetention = Duration.ofDays(730);
+
+        void validate(Errors errors) {
+            if (batchSize < 10 || batchSize > 10000) {
+                errors.rejectValue("cleanup.batchSize", "range", "cleanup.batch-size must be between 10 and 10000");
+            }
+            for (String field : new String[]{"loginAuditRetention", "adminAuditRetention"}) {
+                Duration value = "loginAuditRetention".equals(field) ? loginAuditRetention : adminAuditRetention;
+                if (value == null || value.compareTo(Duration.ofDays(1)) < 0) {
+                    errors.rejectValue("cleanup." + field, "range", "cleanup." + field + " must be at least 1 day");
+                }
             }
         }
     }

@@ -35,6 +35,11 @@ class AuthorizationServerPropertiesTest {
         assertThat(properties.getLoginProtection().getMaxFailures()).isEqualTo(5);
         assertThat(properties.getLoginProtection().getLockDuration()).isEqualTo(Duration.ofMinutes(15));
         assertThat(properties.getLoginProtection().getMaxFailuresPerIpPerMinute()).isEqualTo(20);
+        assertThat(properties.getKeys().getRotationPeriod()).isEqualTo(Duration.ofDays(90));
+        assertThat(properties.getKeys().getAnnouncePeriod()).isEqualTo(Duration.ofDays(1));
+        assertThat(properties.getCleanup().isEnabled()).isTrue();
+        assertThat(properties.getCleanup().getBatchSize()).isEqualTo(1000);
+        assertThat(properties.getCleanup().getLoginAuditRetention()).isEqualTo(Duration.ofDays(180));
     }
 
     @Test
@@ -94,6 +99,18 @@ class AuthorizationServerPropertiesTest {
         properties.getLoginProtection().setMaxFailuresPerIpPerMinute(0);
         assertThat(validate(properties).getFieldErrors()).extracting(error -> error.getField()).containsExactlyInAnyOrder(
                 "loginProtection.maxFailures", "loginProtection.lockDuration", "loginProtection.maxFailuresPerIpPerMinute");
+    }
+
+    @Test
+    @DisplayName("金鑰輪換：週期至少 7 天、公開期間至少 5 分鐘且短於週期；清理：批次 10～10000、保留期至少 1 天")
+    void rotationAndCleanupRanges() {
+        AuthorizationServerProperties properties = withIssuer("https://auth.example.com");
+        properties.getKeys().setRotationPeriod(Duration.ofDays(6));
+        properties.getKeys().setAnnouncePeriod(Duration.ofDays(6));
+        properties.getCleanup().setBatchSize(5);
+        properties.getCleanup().setLoginAuditRetention(Duration.ofHours(1));
+        assertThat(validate(properties).getFieldErrors()).extracting(error -> error.getField()).containsExactlyInAnyOrder(
+                "keys.rotationPeriod", "keys.announcePeriod", "cleanup.batchSize", "cleanup.loginAuditRetention");
     }
 
     @Test

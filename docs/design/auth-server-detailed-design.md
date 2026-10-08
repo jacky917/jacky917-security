@@ -996,7 +996,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 12 | 登出：`Jacky917LogoutHandler`（RP-Initiated Logout 與 `POST /logout`）、帳號頁 `/jacky917/account`（裝置清單、登出單一或所有裝置） | ✅ |
 | 13 | 登入保護：`LoginFailureHandler`（失敗計數、鎖定）、`LoginAttemptGuard`（IP 限流）、登入成功與失敗的稽核（密碼與第三方） | ✅ |
 | 14 | 帳號連結：確認頁 `/jacky917/link-account`（原帳號密碼或已連結的提供者）、`account-linking.mode`、帳號頁的連結與解除連結；GitHub（`GitHubFederatedUserInfoMapper`）、LINE（HS256 ID Token） | ✅ |
-| 15～17 | 第 2 階段其餘工作 | ⏳ |
+| 15 | 排程：`SigningKeyRotation`、`DataCleanup`、`ScheduledJobLock`（`shedlock` 表）、`MaintenanceScheduler` | ✅ |
+| 16～17 | 第 2 階段其餘工作 | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1076,4 +1077,10 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 頁面共用元件（工作 14） | — | `IdentityProviders`（登入頁與帳號頁共用的提供者清單）、`LoginCompletion`（第三方登入與連結確認共用的「完成登入」：建立登入 Session、標準 principal、`LOGIN` 稽核） | 避免兩處各自實作 |
 | GitHub 的 Email（工作 14） | `/user/emails` 的 `primary && verified` | 同設計；Email 端點由 registration 的使用者資訊端點加上 `/emails` 推得；呼叫失敗（通常是沒有 `user:email` scope）時沒有 Email，仍可登入；公開個人資料的 `email` 不採信 | 支援 GitHub Enterprise Server；公開 Email 未必經過驗證 |
 | LINE（工作 14） | 通用 OIDC mapper | 通用 mapper 即可，但另外提供 `JwtDecoderFactory<ClientRegistration>`：LINE 的 ID Token 以 channel secret 驗證 HS256 | 已查證（LINE Developers 文件）：網頁登入的 ID Token 為 HS256、以 channel secret 簽署；Spring 預設以 RS256 驗證，LINE 登入會一律失敗。LINE 沒有 `email_verified`，Email 一律視為未驗證 |
+| 排程鎖（工作 15） | ShedLock 函式庫 | 自行實作 `ScheduledJobLock`，使用 V1 已建立的 `shedlock` 表（相同欄位）；取得後持有到週期的 9 成，不提早釋放 | 約 40 行即可，不必為所有使用者引入額外依賴；ShedLock 的 JDBC provider 未正式支援 SQLite。不提早釋放：各實例的排程時間不一致時，每個週期仍只執行一次 |
+| 排程的執行方式（工作 15） | `@Scheduled` | `MaintenanceScheduler`（`SmartLifecycle`）以自己的單一 daemon 執行緒排程；不是 `TaskScheduler` Bean | `@EnableScheduling` 會啟用應用程式所有的 `@Scheduled`；`TaskScheduler` Bean 會讓 Spring Boot 的預設 scheduler 讓位 |
+| 輪換頻率（工作 15） | 每天一次 | 每小時檢查；每一步都先檢查狀態，重複執行不會多做事 | 公開期間可以設定為數分鐘；每天檢查會讓實際時間最多晚一天 |
+| 退役時間（工作 15） | `max-token-lifetime + jwks-cache-ttl` | `max(Access Token 有效期, 30 分鐘) + 5 分鐘`，不提供設定 | 已查證：Spring Authorization Server 的 `JwtGenerator` 以固定 30 分鐘簽發 ID Token；5 分鐘為 Resource Server（Spring Security）的 JWKS 快取預設值 |
+| 清理頻率（工作 15） | 管理稽核、退役金鑰每月 | 與每日清理一起執行 | 刪除條件以時間判斷，頻率較高只是每次刪得少 |
+| 過期 Session（工作 15） | 改為 `EXPIRED` | 同時刪除其授權 | Refresh Token 已無法使用（Session 過期即拒絕刷新），提早釋放空間 |
 

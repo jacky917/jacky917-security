@@ -70,4 +70,28 @@ public interface SigningKeyStore {
      *         實例先變更時為 {@code false}
      */
     boolean transition(String kid, SigningKeyStatus from, SigningKeyStatus to, Instant at);
+
+    /**
+     * Returns the keys in a status, oldest first.
+     * <p>
+     * 回傳某個狀態的金鑰，最早建立的在前。
+     *
+     * @param status  the status
+     *                <br>狀態
+     * @return the keys; empty if there is none
+     *         <br>金鑰；沒有時為空
+     */
+    List<SigningKey> findByStatus(SigningKeyStatus status);
+
+    /**
+     * Deletes the keys retired before a given time.
+     * <p>
+     * 刪除在指定時間之前已退役的金鑰。
+     *
+     * @param before  the cutoff
+     *                <br>截止時間
+     * @return the number of deleted keys
+     *         <br>刪除的金鑰數
+     */
+    int deleteRetiredBefore(Instant before);
 }

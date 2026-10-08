@@ -40,6 +40,7 @@
 |   |       |   |               |   |-- AuthorizationServerClientsConfiguration.java
 |   |       |   |               |   |-- AuthorizationServerDatabaseConfiguration.java
 |   |       |   |               |   |-- AuthorizationServerKeysConfiguration.java
+|   |       |   |               |   |-- AuthorizationServerMaintenanceConfiguration.java
 |   |       |   |               |   |-- AuthorizationServerSecurityConfiguration.java
 |   |       |   |               |   `-- AuthorizationServerUsersConfiguration.java
 |   |       |   |               |-- client
@@ -79,6 +80,11 @@
 |   |       |   |               |   |-- SigningKeyService.java
 |   |       |   |               |   |-- SigningKeyStatus.java
 |   |       |   |               |   `-- SigningKeyStore.java
+|   |       |   |               |-- maintenance
+|   |       |   |               |   |-- DataCleanup.java
+|   |       |   |               |   |-- MaintenanceScheduler.java
+|   |       |   |               |   |-- ScheduledJobLock.java
+|   |       |   |               |   `-- SigningKeyRotation.java
 |   |       |   |               |-- properties
 |   |       |   |               |   `-- AuthorizationServerProperties.java
 |   |       |   |               |-- refresh
@@ -192,6 +198,7 @@
 |   |           |               |   |-- AbstractGoogleLoginIntegrationTest.java
 |   |           |               |   |-- AbstractLoginProtectionIntegrationTest.java
 |   |           |               |   |-- AbstractLogoutIntegrationTest.java
+|   |           |               |   |-- AbstractMaintenanceIntegrationTest.java
 |   |           |               |   |-- ExternalProvidersIntegrationTest.java
 |   |           |               |   |-- ManualOnlyAccountLinkingIntegrationTest.java
 |   |           |               |   |-- PostgresqlAccountLinkingIntegrationTest.java
@@ -199,16 +206,20 @@
 |   |           |               |   |-- PostgresqlGoogleLoginIntegrationTest.java
 |   |           |               |   |-- PostgresqlLoginProtectionIntegrationTest.java
 |   |           |               |   |-- PostgresqlLogoutIntegrationTest.java
+|   |           |               |   |-- PostgresqlMaintenanceIntegrationTest.java
 |   |           |               |   |-- SqliteAccountLinkingIntegrationTest.java
 |   |           |               |   |-- SqliteAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- SqliteEs256AuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- SqliteGoogleLoginIntegrationTest.java
 |   |           |               |   |-- SqliteLoginProtectionIntegrationTest.java
-|   |           |               |   `-- SqliteLogoutIntegrationTest.java
+|   |           |               |   |-- SqliteLogoutIntegrationTest.java
+|   |           |               |   `-- SqliteMaintenanceIntegrationTest.java
 |   |           |               |-- keys
 |   |           |               |   |-- ActiveKeyJwtEncoderTest.java
 |   |           |               |   |-- KeyEncryptorTest.java
 |   |           |               |   `-- SigningKeyIntegrationTest.java
+|   |           |               |-- maintenance
+|   |           |               |   `-- MaintenanceSchedulerTest.java
 |   |           |               |-- properties
 |   |           |               |   `-- AuthorizationServerPropertiesTest.java
 |   |           |               |-- refresh
@@ -469,6 +480,10 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/ActiveKeyJwtEncoder.java` | `as-autoconfigure` | Token 簽章 | 一律以目前金鑰與其演算法簽章（RS256／ES256）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../support/Columns.java` | `as-autoconfigure` | 欄位長度 | 外部來源值的欄位長度上限與截斷（不切斷 emoji）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/RotatingJwkSource.java` | `as-autoconfigure` | JWKS | 公開 `NEXT`、`ACTIVE`、`RETIRING` 的公鑰。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerMaintenanceConfiguration.java` | `as-autoconfigure` | 排程配置 | 金鑰輪換（每小時）、清理（15 分鐘、每小時、每天）；`keys.rotation-enabled`、`cleanup.enabled`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../maintenance/SigningKeyRotation.java` | `as-autoconfigure` | 金鑰輪換（§5.7） | `NEXT` 預告 → 啟用（舊金鑰 `RETIRING`）→ 退役；每一步先檢查狀態。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../maintenance/DataCleanup.java` | `as-autoconfigure` | 清理（§5.8、資料模型 §14.1） | 授權、Refresh Token 歷史、登入 Session、操作 token、稽核、退役金鑰；分批刪除。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../maintenance/ScheduledJobLock.java`、`MaintenanceScheduler.java` | `as-autoconfigure` | 排程 | `shedlock` 表的鎖（每個週期一個實例）；自己的執行緒，不啟用 `@Scheduled`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerClientsConfiguration.java` | `as-autoconfigure` | Client 配置 | `PasswordEncoder`（`{bcrypt}`）、`RegisteredClientRepository`、啟動時同步設定中的 client。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../client/ClientRegistrationSynchronizer.java` | `as-autoconfigure` | Client 同步 | 依 `clients.*` 建立或更新 client；強制 PKCE、輪換 Refresh Token；secret 以 BCrypt 雜湊。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../client/ActiveClientRegisteredClientRepository.java` | `as-autoconfigure` | 停權過濾 | `client_profile` 不是 `ACTIVE` 的 client 對 Spring Security 而言不存在。 |
@@ -529,6 +544,8 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/AbstractGoogleIntegrationTest.java` | `as-test` | 測試共用 | 假的 Google（另有 `google-work` registration）與第三方登入流程的工具、可推移的時鐘。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*AccountLinkingIntegrationTest.java` | `as-test` | 整合測試 | 以密碼確認（錯誤計數）、取消與到期、以已連結的提供者確認、帳號頁連結與解除連結、連結他人帳號被拒、不能解除唯一的登入方式、`manual-only`；SQLite 與 PostgreSQL。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/ExternalProvidersIntegrationTest.java`、`support/FakeGitHub.java` | `as-test` | 整合測試 | 假的 GitHub（OAuth 2.0）與 LINE（HS256）：主要且已驗證的 Email、沒有 `user:email`、Email 屬於既有帳號、LINE 的 HS256 與未驗證的 Email、登入頁按鈕。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*MaintenanceIntegrationTest.java` | `as-test` | 整合測試 | T-KEY-02（預告、啟用、退役與舊 token 的驗證）、T-CLEAN-01、Session 的過期與刪除、其他資料的清理與小批次、排程鎖；SQLite 與 PostgreSQL。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../maintenance/MaintenanceSchedulerTest.java` | `as-test` | 單元測試 | 第一次執行時間、取得鎖才執行、失敗不拋出。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../federation/GitHubFederatedUserInfoMapperTest.java` | `as-test` | 單元測試 | 支援的 registration、缺少 id、沒有 access token。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/FakeOidcProvider.java` | `as-test` | 測試用 OIDC 提供者 | JDK `HttpServer`：token、JWKS、userinfo；每個測試類別各自啟動與關閉，每次登入以授權碼區分。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/MutableClock.java` | `as-test` | 可推移的時鐘 | 測試到期行為（Session 90 天、登入 Session 過期）。 |

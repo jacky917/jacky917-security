@@ -887,3 +887,21 @@
   - **DEC-102**: LINE 的 Email 一律視為未驗證，不用於比對既有帳號。
   - **DEC-103**: GitHub 的 Email 端點由使用者資訊端點推得，以支援 GitHub Enterprise Server。
 
+---
+## Step 39: Authorization Server 第 2 階段——工作 15（排程：金鑰輪換、清理）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `SigningKeyRotation`：使用滿 `rotation-period − announce-period`（89 天）時建立並公開 `NEXT`；公開滿 `announce-period`（1 天）後啟用，舊金鑰改為 `RETIRING`；`max(Access Token, 30 分鐘) + 5 分鐘` 後退役。
+  - `DataCleanup`：資料模型 §14.1 的清理規則，分批刪除（`cleanup.batch-size`）；過期的登入 Session 改為 `EXPIRED` 並刪除其授權。
+  - `ScheduledJobLock`：以 `shedlock` 表讓每個週期只有一個實例執行（不引入 ShedLock）。
+  - `MaintenanceScheduler`：自己的執行緒排程，不啟用應用程式的 `@Scheduled`；啟動後經過一個週期才第一次執行。
+  - 新設定：`keys.rotation-enabled`、`keys.rotation-period`、`keys.announce-period`、`cleanup.*`；`SigningKeyStore` 新增 `findByStatus`、`deleteRetiredBefore`。
+- **查證**：Spring Authorization Server 7.1.1 的 `JwtGenerator` 以固定 30 分鐘簽發 ID Token。
+- **Commands Run & Results**:
+  - 新增 `*MaintenanceIntegrationTest`（SQLite、PostgreSQL 各 5 個）、`MaintenanceSchedulerTest`（3 個）。
+  - 破壞實驗：清理授權時拿掉「至少有一個 token」的條件 → 等待同意中的授權被刪除，測試失敗；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，360 個測試（Resource Server 47、Authorization Server 295、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-104**: 排程鎖自行實作（使用既有的 `shedlock` 表），持有到週期的 9 成、不提早釋放。
+  - **DEC-105**: 排程使用 starter 自己的執行緒，不使用 `@EnableScheduling`、不註冊 `TaskScheduler` Bean。
+
