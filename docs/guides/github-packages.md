@@ -10,7 +10,7 @@
 |---|---|---|
 | `groupId` | `io.github.jacky917` | `com.github.jacky917` |
 | Starter | `jacky917-security-resource-server-starter` | `jacky917-security-starter` |
-| 版本 | 開發中 `2.0.0-SNAPSHOT`（尚未發佈） | 已發佈 `1.0.0` |
+| 版本 | `2.0.0` | `1.0.0`（`1.1.0` 準備中） |
 
 2.x 發佈的模組：`jacky917-security-core`、`jacky917-security-annotations`、`jacky917-security-resource-server-autoconfigure`、`jacky917-security-resource-server-starter`、`jacky917-security-bom`，以及只在 2.0.x 發佈的舊座標 relocation `com.github.jacky917:jacky917-security-starter`。
 

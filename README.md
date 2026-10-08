@@ -66,7 +66,7 @@ class OrderController {
 | Starter 版本 | Spring Boot | 狀態 |
 |---|---|---|
 | `1.x`（`1.x` 分支） | 3.5.x | 只提供安全修補；Spring Boot 3.5 的開源支援已於 2026-06-30 結束 |
-| `2.x`（`main`） | 4.1.x | 開發中，尚未發佈正式版 |
+| `2.x`（`main`） | 4.1.x | 最新版 `2.0.0`；Authorization Server 預覽版於 2.1.0 起發佈 |
 
 ---
 
@@ -122,9 +122,8 @@ GitHub Packages **即使是公開套件也需要認證**。在 `~/.m2/settings.x
 
 ### 2. 引入依賴
 
-> [!IMPORTANT]
-> **2.x（Spring Boot 4.1）尚未發佈。** GitHub Packages 上目前只有 `1.0.0`（Spring Boot 3.5），使用方式見 [`1.x` 分支](https://github.com/jacky917/jacky917-security/tree/1.x)。
-> 要先試用 2.x，請 clone 本 repo 後執行 `mvn -DskipTests install`，即可在本機使用 `2.0.0-SNAPSHOT`。
+> [!NOTE]
+> 2.x 需要 **Spring Boot 4.1**。仍使用 Spring Boot 3.5 的專案請使用 `1.x`（`com.github.jacky917:jacky917-security-starter`），見 [`1.x` 分支](https://github.com/jacky917/jacky917-security/tree/1.x)；從 1.x 升級見 [升級到 2.0](docs/guides/upgrade-to-2.0.md)。
 
 ```xml
 <dependencyManagement>
@@ -132,7 +131,7 @@ GitHub Packages **即使是公開套件也需要認證**。在 `~/.m2/settings.x
         <dependency>
             <groupId>io.github.jacky917</groupId>
             <artifactId>jacky917-security-bom</artifactId>
-            <version>2.0.0-SNAPSHOT</version>   <!-- 尚未發佈，需先在本機 mvn install；見上方說明 -->
+            <version>2.0.0</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>

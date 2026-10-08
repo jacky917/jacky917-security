@@ -27,9 +27,8 @@
 
 前置設定（GitHub Packages 認證、repository）見 [README — 快速開始](../../README.md#快速開始業務專案)。
 
-> [!IMPORTANT]
-> **2.x（Spring Boot 4.1）尚未發佈。** GitHub Packages 上目前只有 `1.0.0`（Spring Boot 3.5），使用方式見 [`1.x` 分支](https://github.com/jacky917/jacky917-security/tree/1.x)。
-> 要先試用 2.x，請 clone 本 repo 後執行 `mvn -DskipTests install`，即可在本機使用 `2.0.0-SNAPSHOT`。
+> [!NOTE]
+> 2.x 需要 **Spring Boot 4.1**。仍使用 Spring Boot 3.5 的專案請使用 `1.x`（`com.github.jacky917:jacky917-security-starter`），見 [`1.x` 分支](https://github.com/jacky917/jacky917-security/tree/1.x)；從 1.x 升級見 [升級到 2.0](../guides/upgrade-to-2.0.md)。
 
 建議以 BOM 管理版本：
 
@@ -39,7 +38,7 @@
         <dependency>
             <groupId>io.github.jacky917</groupId>
             <artifactId>jacky917-security-bom</artifactId>
-            <version>2.0.0-SNAPSHOT</version>   <!-- 尚未發佈，需先在本機 mvn install；見上方說明 -->
+            <version>2.0.0</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
