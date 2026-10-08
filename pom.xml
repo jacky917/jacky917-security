@@ -27,9 +27,15 @@
 
     <!--
       覆寫自 spring-boot-starter-parent 繼承的 Spring 專案資訊。
-      TODO: 尚未決定授權條款。在本檔宣告 licenses 元素之前，發佈的 POM 會帶有繼承來的 Apache License 2.0，
-            正式發佈 2.0.0 前必須決定（新增 LICENSE 檔並宣告 licenses 元素；publish.yml 在兩者齊備前會拒絕發佈）。
+      授權條款必須在本檔宣告，否則發佈的 POM 會帶有繼承來的 Apache License 2.0（publish.yml 會檢查）。
     -->
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/license/mit</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
     <developers>
         <developer>
             <id>jacky917</id>

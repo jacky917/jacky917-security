@@ -760,3 +760,17 @@
 - **Decision Log**:
   - **DEC-089**: Authorization Server 於 2.1.0 起發佈並加入 BOM（使用者決定）。
   - **DEC-090**: Token 一律以目前金鑰的演算法簽章（在 encoder 處理，而不是 customizer）。
+
+---
+## Step 31: 授權條款（MIT）
+- **Status**: 🟢 Completed
+- **使用者決定**：使用最寬鬆、主流的授權條款 → **MIT License**。
+- **變更**：新增根目錄 `LICENSE`；根 POM 宣告 `<licenses>`（MIT），移除 TODO；README 新增「授權條款」；設計文件更新。
+- **Commands Run & Results**:
+  - `scripts/has-declared-license.py pom.xml`：`declared licenses: MIT License`（發佈流程的檢查通過）。
+  - flatten 後發佈的 POM（resource server starter、BOM、relocation）只帶 `MIT License`，不再有繼承的 Apache License 2.0。
+- **Decision Log**:
+  - **DEC-091**: 授權條款為 MIT（解決 DEC-058 的待決事項）。
+- **Next TODO**:
+  - 發佈 2.0.0：修改 `<revision>` 為 `2.0.0`，建立 `v2.0.0` tag 與 Release。
+  - `1.x` 分支是否也加入 MIT（目前只有 `main` 有 `LICENSE`）。
