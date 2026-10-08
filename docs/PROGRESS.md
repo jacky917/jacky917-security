@@ -984,3 +984,18 @@
   - 新增 `AdminApiIntegrationTest`（SQLite、PostgreSQL 各 6 個）：401／403、`client_credentials` 的 scope、稽核查詢與篩選、Problem Details、新的稽核值可以寫入。
   - `mvn -B -o test`（AS 模組）：**SUCCESS**，357 個測試。
 
+---
+## Step 45: Authorization Server——工作 19（管理 API：使用者）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `UserAdminService`、`UserAdminController`：`GET/POST /admin/api/users`（搜尋帳號、Email、顯示名稱，`%`、`_` 視為一般字元）、`GET/PATCH/DELETE /admin/api/users/{id}`、`POST …/unlock`、`PUT …/password`、`PUT/DELETE …/roles/{role}`（可設定到期時間）、`GET/DELETE …/sessions`、`DELETE /admin/api/sessions/{asid}`。
+  - 讓使用者無法登入（`LOCKED`、`DISABLED`、刪除）時撤銷所有登入 Session（`USER_DISABLED`）；管理員設定密碼時撤銷所有登入 Session（`PASSWORD_CHANGED`），預設下次登入必須變更。
+  - 管理員不能停用或刪除自己，也不能移除自己最後一個擁有 `as:user:write` 的角色。
+  - 每個寫入操作與 `admin_audit_log` 在同一個交易中；快照不含密碼雜湊。
+  - `UserAccount` 新增 `passwordChangeRequired`。
+- **Commands Run & Results**:
+  - `AdminApiIntegrationTest` 新增 9 個（兩種資料庫）：建立使用者後登入的 token 帶有角色與權限、`AS_SUPPORT` 不能寫入、搜尋、停用撤銷 Session、部分更新與 409、設定密碼與解鎖、角色指派與到期、保護操作者自己、登入 Session 管理。
+  - `mvn -B -o test`（AS 模組）：**SUCCESS**，375 個測試。
+- **Decision Log**:
+  - **DEC-113**: 管理 API 直接操作預設的使用者資料表；以其他使用者來源取代 `UserAccountService` 的應用程式應關閉管理 API 或自行提供。
+

@@ -6,7 +6,13 @@ import jacky917.security.authorizationserver.admin.AdminApiExceptionHandler;
 import jacky917.security.authorizationserver.admin.AdminAuditService;
 import jacky917.security.authorizationserver.admin.AdminJwtAuthenticationConverter;
 import jacky917.security.authorizationserver.admin.AuditAdminController;
+import jacky917.security.authorizationserver.admin.UserAdminController;
+import jacky917.security.authorizationserver.admin.UserAdminService;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
+import jacky917.security.authorizationserver.session.AuthSessionService;
+import jacky917.security.authorizationserver.session.Jacky917LogoutHandler;
+import jacky917.security.authorizationserver.user.PasswordPolicy;
+import jacky917.security.authorizationserver.user.UserAccountService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -25,7 +31,10 @@ import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.util.Collection;
@@ -122,5 +131,22 @@ class AuthorizationServerAdminApiConfiguration {
     @ConditionalOnMissingBean
     AuditAdminController jacky917AuditAdminController(JdbcClient jdbcClient) {
         return new AuditAdminController(jdbcClient);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    UserAdminService userAdminService(JdbcClient jdbcClient, UserAccountService users, AuthSessionService sessions,
+                                      PasswordEncoder passwordEncoder, PasswordPolicy passwordPolicy,
+                                      AdminAuditService audit, PlatformTransactionManager transactionManager,
+                                      Clock clock) {
+        return new UserAdminService(jdbcClient, users, sessions, passwordEncoder, passwordPolicy, audit,
+                new TransactionTemplate(transactionManager), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    UserAdminController jacky917UserAdminController(UserAdminService users, AuthSessionService sessions,
+                                                    Jacky917LogoutHandler logoutHandler, AdminAuditService audit) {
+        return new UserAdminController(users, sessions, logoutHandler, audit);
     }
 }

@@ -374,7 +374,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | # | 工作 | 狀態 |
 |---|---|---|
 | 18 | Admin API 基礎：Order 2 filter chain（`AdminJwtAuthenticationConverter`）、Problem Details、分頁、`AdminAuditService`、稽核查詢端點；migration V1_1_0 | ✅ |
-| 19 | 使用者管理 | |
+| 19 | 使用者管理：`UserAdminService`、`UserAdminController`（搜尋、建立、更新、刪除、解鎖、設定密碼、角色指派、登入 Session） | ✅ |
 | 20 | 角色、權限 | |
 | 21 | 寄信 SPI | |
 | 22 | 變更密碼、強制變更 | |

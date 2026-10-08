@@ -312,6 +312,6 @@ class RefreshTokenReuseDetectorTest {
 
     private static UserAccount user(UserStatus status, Instant lockedUntil, Instant passwordChangedAt) {
         return new UserAccount(USER, "alice", null, false, "{bcrypt}hash", null, null, null, status, lockedUntil,
-                passwordChangedAt, null, NOW.minus(Duration.ofDays(1)));
+                passwordChangedAt, null, NOW.minus(Duration.ofDays(1)), false);
     }
 }

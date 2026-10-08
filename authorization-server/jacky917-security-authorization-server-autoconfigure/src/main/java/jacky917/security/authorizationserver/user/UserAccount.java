@@ -37,6 +37,9 @@ import java.time.Instant;
  *                           <br>最後登入時間
  * @param createdAt          when the account was created
  *                           <br>建立時間
+ * @param passwordChangeRequired  whether the user must change the password
+ *                           at the next password login
+ *                           <br>下一次以密碼登入時是否必須變更密碼
  * @author Jacky
  * @since 2.1.0
  */
@@ -53,7 +56,8 @@ public record UserAccount(
         @Nullable Instant lockedUntil,
         @Nullable Instant passwordChangedAt,
         @Nullable Instant lastLoginAt,
-        Instant createdAt) {
+        Instant createdAt,
+        boolean passwordChangeRequired) {
 
     /**
      * Returns whether the account may log in at the given time.
