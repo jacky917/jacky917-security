@@ -68,5 +68,13 @@ public enum LoginFailureReason {
      * <p>
      * 第三方登入的已驗證 Email 屬於既有帳號。
      */
-    ACCOUNT_EXISTS
+    ACCOUNT_EXISTS,
+
+    /**
+     * The verified email of an external login belongs to an existing
+     * account; the user was asked to confirm the link.
+     * <p>
+     * 第三方登入的已驗證 Email 屬於既有帳號；已要求使用者確認連結。
+     */
+    LINK_REQUIRED
 }

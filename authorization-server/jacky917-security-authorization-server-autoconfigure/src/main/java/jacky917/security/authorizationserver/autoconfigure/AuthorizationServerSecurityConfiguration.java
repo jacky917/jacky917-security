@@ -29,7 +29,11 @@ import jacky917.security.authorizationserver.session.LoginSessionValidationFilte
 import jacky917.security.authorizationserver.session.SessionAuthorizationRepository;
 import jacky917.security.authorizationserver.session.SessionLinkingAuthorizationService;
 import jacky917.security.authorizationserver.user.UserAccountService;
+import jacky917.security.authorizationserver.authentication.LoginCompletion;
+import jacky917.security.authorizationserver.federation.PendingLinkService;
 import jacky917.security.authorizationserver.web.AccountController;
+import jacky917.security.authorizationserver.web.AccountLinkController;
+import jacky917.security.authorizationserver.web.IdentityProviders;
 import jacky917.security.authorizationserver.web.LoginController;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
@@ -60,6 +64,7 @@ import org.springframework.security.oauth2.server.authorization.oidc.web.authent
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
@@ -365,21 +370,63 @@ class AuthorizationServerSecurityConfiguration {
      *                       <br>使用者帳號
      * @param logoutHandler  ends login sessions
      *                       <br>結束登入 Session
+     * @param identities     the linked external accounts
+     *                       <br>已連結的外部帳號
+     * @param providers      the identity providers that can be linked
+     *                       <br>可以連結的身分提供者
+     * @param events         publishes the audit events
+     *                       <br>發布稽核事件
+     * @param clock          the clock
+     *                       <br>時鐘
      * @return the controller
      *         <br>controller
      */
     @Bean
     @ConditionalOnMissingBean
     AccountController jacky917AccountController(AuthorizationServerProperties properties, AuthSessionService sessions,
-                                                UserAccountService users, Jacky917LogoutHandler logoutHandler) {
-        return new AccountController(properties, sessions, users, logoutHandler, ZoneId.systemDefault());
+                                                UserAccountService users, Jacky917LogoutHandler logoutHandler,
+                                                FederatedIdentityService identities, IdentityProviders providers,
+                                                ApplicationEventPublisher events, Clock clock) {
+        return new AccountController(properties, sessions, users, logoutHandler, identities, providers, events, clock,
+                ZoneId.systemDefault());
     }
 
     @Bean
     @ConditionalOnMissingBean
-    LoginController jacky917LoginController(AuthorizationServerProperties properties,
-                                            ObjectProvider<ClientRegistrationRepository> clientRegistrations) {
-        return new LoginController(properties, clientRegistrations.getIfAvailable());
+    LoginController jacky917LoginController(AuthorizationServerProperties properties, IdentityProviders providers) {
+        return new LoginController(properties, providers);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    IdentityProviders jacky917IdentityProviders(AuthorizationServerProperties properties,
+                                                ObjectProvider<ClientRegistrationRepository> clientRegistrations) {
+        return new IdentityProviders(properties.getLogin().getProviders(), clientRegistrations.getIfAvailable());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    PendingLinkService pendingLinkService(JdbcClient jdbcClient, PlatformTransactionManager transactionManager,
+                                          Clock clock) {
+        return new PendingLinkService(jdbcClient, new TransactionTemplate(transactionManager), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    LoginCompletion loginCompletion(UserAccountService users, AuthSessionService sessions, PrincipalNormalizer normalizer,
+                                    ApplicationEventPublisher events, Clock clock) {
+        return new LoginCompletion(users, sessions, normalizer, events, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    AccountLinkController jacky917AccountLinkController(
+            AuthorizationServerProperties properties, PendingLinkService pendingLinks, UserAccountService users,
+            FederatedIdentityService identities, PasswordEncoder passwordEncoder, LoginCompletion completion,
+            IdentityProviders providers, ApplicationEventPublisher events, Clock clock) {
+        return new AccountLinkController(properties, pendingLinks, users, identities, passwordEncoder, completion,
+                providers, events, clock);
     }
 
     @Bean
@@ -392,8 +439,12 @@ class AuthorizationServerSecurityConfiguration {
     @ConditionalOnMissingBean
     @DependsOnDatabaseInitialization
     FederatedIdentityService federatedIdentityService(JdbcClient jdbcClient, UserAccountService users,
-                                                      PlatformTransactionManager transactionManager, Clock clock) {
-        return new FederatedIdentityService(jdbcClient, users, new TransactionTemplate(transactionManager), clock);
+                                                      PlatformTransactionManager transactionManager,
+                                                      AuthorizationServerProperties properties, Clock clock) {
+        boolean confirmLinks = properties.getAccountLinking().getMode()
+                == AuthorizationServerProperties.AccountLinkingMode.CONFIRM_WITH_EXISTING_LOGIN;
+        return new FederatedIdentityService(jdbcClient, users, new TransactionTemplate(transactionManager), confirmLinks,
+                clock);
     }
 
     /**
@@ -414,11 +465,11 @@ class AuthorizationServerSecurityConfiguration {
     @Bean
     @ConditionalOnMissingBean
     FederatedLoginSuccessHandler federatedLoginSuccessHandler(
-            ObjectProvider<FederatedUserInfoMapper> mappers, FederatedIdentityService identities, UserAccountService users,
-            AuthSessionService sessions, PrincipalNormalizer normalizer,
+            ObjectProvider<FederatedUserInfoMapper> mappers, FederatedIdentityService identities,
+            PendingLinkService pendingLinks, LoginCompletion completion,
             ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClients, ApplicationEventPublisher events,
             Clock clock) {
-        return new FederatedLoginSuccessHandler(mappers.orderedStream().toList(), identities, users, sessions, normalizer,
+        return new FederatedLoginSuccessHandler(mappers.orderedStream().toList(), identities, pendingLinks, completion,
                 authorizedClients.getIfAvailable(), events, clock);
     }
 }

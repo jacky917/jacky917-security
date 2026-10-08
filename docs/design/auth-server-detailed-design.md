@@ -995,7 +995,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 11 | 重用偵測：`RefreshTokenReuseDetector`（包裝 Spring 的刷新 provider）、`refresh_token_history`、`AuthSessionService#revoke`、稽核事件與 `login_audit` | ✅ |
 | 12 | 登出：`Jacky917LogoutHandler`（RP-Initiated Logout 與 `POST /logout`）、帳號頁 `/jacky917/account`（裝置清單、登出單一或所有裝置） | ✅ |
 | 13 | 登入保護：`LoginFailureHandler`（失敗計數、鎖定）、`LoginAttemptGuard`（IP 限流）、登入成功與失敗的稽核（密碼與第三方） | ✅ |
-| 14～17 | 第 2 階段其餘工作 | ⏳ |
+| 14 | 帳號連結：確認頁 `/jacky917/link-account`（原帳號密碼或已連結的提供者）、`account-linking.mode`、帳號頁的連結與解除連結（GitHub、LINE 進行中） | 🟡 |
+| 15～17 | 第 2 階段其餘工作 | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1033,7 +1034,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 第三方 client 的權限 | 第 3 階段 | `DefaultAuthorityResolver` 已實作資料模型 §11.3 的查詢 | 查詢簡單，先實作並以測試確認，第 3 階段只需加上同意畫面 |
 | Claim 的集合型別 | — | customizer 最後把所有集合轉為 `ArrayList`／`LinkedHashMap`（包含 `TokenClaimsContributor` 加入的） | 實測發現：claim 會隨授權存入資料庫，刷新時以型別允許清單讀回；`List.of()` 等不可變集合不在清單中，刷新會失敗 |
 | `token.audience-strategy`（`PER_SCOPE`） | 設定屬性 | 未提供；以替換 `AudienceResolver` Bean 達成 | 第 1 階段只需要共用 audience（D07-B） |
-| 第三方登入時 Email 已屬於既有帳號 | 第 2 階段：導向 `/link-account` 確認 | 第 1 階段直接拒絕（`/login?error=account_exists`），不建立任何帳號 | 連結確認不在第 1 階段範圍（工作 14）；拒絕比自動連結安全（D06）。只比對已驗證的 Email |
+| 第三方登入時 Email 已屬於既有帳號 | 導向 `/link-account?token=…` 確認 | 第 1 階段直接拒絕；工作 14 起導向 `/jacky917/link-account` 確認（`manual-only` 時仍直接拒絕）。只比對已驗證的 Email | 見下方「連結確認的 token」 |
 | 第三方登入的 factor authority | — | `PrincipalNormalizer` 在原登入沒有 factor authority 時加入帶登入時間的 `FACTOR_AUTHORIZATION_CODE` | 實測發現：Spring Security 7.1.1 的 `oauth2Login` 不會加入 factor authority，而 `JwtGenerator` 以它決定 `auth_time`、沒有時拒絕簽發 ID Token |
 | 第三方的 token | 不儲存 | 登入成功處理後立即從 `OAuth2AuthorizedClientRepository` 移除 | Spring 預設把它留在記憶體中 |
 | 第三方登入的設定 | — | 使用 Spring Boot 標準的 `spring.security.oauth2.client.registration.*`；有設定時才啟用 `oauth2Login`，登入頁自動顯示按鈕 | 不另外發明設定格式 |
@@ -1066,4 +1067,11 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 失敗計數與鎖定（工作 13） | `LoginFailureHandler`：失敗次數 + 1；達上限設定 `locked_until` | 以單一 `UPDATE … CASE` 完成計數與鎖定（併發的失敗不互相覆蓋）；**鎖定時計數歸零**；只有既有、可用帳號的密碼錯誤才計數，對已鎖定帳號的嘗試不延長鎖定 | 解鎖後重新給予相同的次數；若已鎖定的嘗試也延長鎖定，攻擊者可以讓帳號永久無法以密碼登入 |
 | IP 限流的實作（工作 13） | `LoginAttemptGuard` | 每次 `POST /login` 依資料模型 §11.7 查詢最近一分鐘的失敗；被拒絕的嘗試也寫入 `LOGIN`（`RATE_LIMITED`）並計入失敗。Filter 直接在登入頁的 filter chain 中建立，不是 Bean | 持續嘗試的 IP 會一直被拒絕；Spring Boot 會把 Filter Bean 自動註冊到所有請求 |
 | 稽核的失敗原因（工作 13） | — | `LoginFailureReason`：`BAD_CREDENTIALS`、`UNKNOWN_USER`、`LOCKED`、`DISABLED`、`RATE_LIMITED`、`FEDERATION`、`USER_CANNOT_LOG_IN`、`ACCOUNT_EXISTS`；失敗時記錄輸入的帳號（`username_attempted`），日誌中則不記錄 | 頁面訊息一律相同（§7.2），原因只寫入稽核。日誌依 §8.3 不記錄 username |
+| 連結確認的 token（工作 14） | 放在網址 `?token=…` | 明文 token 只存在 AS 的瀏覽器 Session；`user_action_token` 存其 SHA-256、10 分鐘、只能使用一次 | 網址中的 token 可能出現在瀏覽器紀錄、代理伺服器日誌，或被轉寄給其他人；綁定在發起登入的瀏覽器上較安全 |
+| 以已連結的提供者確認（工作 14） | 連結頁上的另一種驗證方式 | 連結頁列出原帳號已連結的提供者按鈕；以它登入後，第三方登入的成功處理器發現瀏覽器 Session 中有屬於同一位使用者的待確認連結，即完成連結 | 重用一般的第三方登入流程，不需要另一套回呼 |
+| 連結頁的密碼（工作 14） | — | 與登入頁相同：錯誤計入帳號鎖定（`recordLoginFailure`）、寫入 `LOGIN` 失敗稽核，並受 IP 限流保護；確認後的登入 Session 為 `FEDERATED`、`amr=fed,pwd` | 連結頁不能成為繞過登入保護的密碼猜測入口 |
+| 帳號頁的連結（工作 14，D06-D） | 已登入狀態下按「連結」 | 以 `LinkIntent`（使用者、提供者、原本的登入、時間）存在瀏覽器 Session 後走一般的第三方登入；成功處理器連結並**還原原本的登入**（不建立新的登入 Session），10 分鐘後失效 | 第三方登入會取代瀏覽器的 SecurityContext，連結完成後必須回到原使用者 |
+| 解除連結（工作 14） | — | 只有在使用者仍有密碼或其他已連結的提供者時才允許 | 避免使用者把自己鎖在帳號外 |
+| 第三方登入與暫時鎖定（工作 14） | `canLogIn` | 已連結帳號的第三方登入只要求 `status = ACTIVE` | 與 DEC-092 一致：暫時鎖定只阻擋密碼登入 |
+| 頁面共用元件（工作 14） | — | `IdentityProviders`（登入頁與帳號頁共用的提供者清單）、`LoginCompletion`（第三方登入與連結確認共用的「完成登入」：建立登入 Session、標準 principal、`LOGIN` 稽核） | 避免兩處各自實作 |
 

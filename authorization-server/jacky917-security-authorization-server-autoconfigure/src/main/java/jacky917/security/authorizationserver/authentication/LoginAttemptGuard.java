@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Set;
 
 /**
  * Refuses password logins from an IP address with too many recent failures
@@ -24,7 +25,8 @@ import java.time.Instant;
  * <p>
  * 拒絕近期登入失敗次數過多之 IP 的密碼登入（詳細設計 §5.1）。
  * <p>
- * Only {@code POST /login} is checked. When the failed logins of the last
+ * Only the password forms are checked: {@code POST /login} and
+ * {@code POST /jacky917/link-account}. When the failed logins of the last
  * minute from the request's IP reach the limit, the request is refused
  * before the password is checked: the browser is sent to
  * {@code /login?error=rate_limited}, and a failed {@code LOGIN} event with
@@ -32,7 +34,8 @@ import java.time.Instant;
  * failure. The IP is {@code HttpServletRequest#getRemoteAddr()}; behind a
  * reverse proxy, configure {@code server.forward-headers-strategy}.
  * <p>
- * 只檢查 {@code POST /login}。請求 IP 最近一分鐘的登入失敗次數達到上限時，在
+ * 只檢查輸入密碼的表單：{@code POST /login} 與
+ * {@code POST /jacky917/link-account}。請求 IP 最近一分鐘的登入失敗次數達到上限時，在
  * 檢查密碼之前就拒絕：瀏覽器被導向 {@code /login?error=rate_limited}，並發布
  * 原因為 {@code RATE_LIMITED} 的失敗 {@code LOGIN} 事件（它本身也計入失敗）。
  * IP 取自 {@code HttpServletRequest#getRemoteAddr()}；在反向代理之後請設定
@@ -45,6 +48,7 @@ import java.time.Instant;
 public class LoginAttemptGuard extends OncePerRequestFilter {
 
     private static final Duration WINDOW = Duration.ofMinutes(1);
+    private static final Set<String> PASSWORD_FORMS = Set.of("/login", "/jacky917/link-account");
 
     private final LoginAuditRepository audits;
     private final ApplicationEventPublisher events;
@@ -77,7 +81,7 @@ public class LoginAttemptGuard extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // 以 URI 判斷：servlet path 依部署方式不同可能為空
         return !("POST".equals(request.getMethod())
-                && (request.getContextPath() + "/login").equals(request.getRequestURI()));
+                && PASSWORD_FORMS.contains(request.getRequestURI().substring(request.getContextPath().length())));
     }
 
     @Override

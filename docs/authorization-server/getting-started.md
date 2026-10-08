@@ -132,6 +132,7 @@ public class AuthServerApplication {
 | `keys.encryption-key` | **必填** | Base64 的 32 bytes；**不可寫在設定檔中** |
 | `keys.encryption-key-id` | `v1` | 主金鑰的識別碼，更換主金鑰時一併修改 |
 | `password.min-length` | `12` | 8～64 |
+| `account-linking.mode` | `confirm-with-existing-login` | 第三方登入的已驗證 Email 屬於既有帳號時：`confirm-with-existing-login`（登入原帳號確認後連結）或 `manual-only`（拒絕，只能從帳號頁連結） |
 | `login-protection.max-failures` | `5` | 1～20。連續密碼錯誤達此次數時鎖定帳號（只阻擋密碼登入，已登入的裝置不受影響） |
 | `login-protection.lock-duration` | `15m` | 1 分鐘～24 小時 |
 | `login-protection.max-failures-per-ip-per-minute` | `20` | 1～10000。同一個 IP 最近一分鐘失敗達此次數後，該 IP 的登入一律拒絕（顯示「嘗試次數過多」）。IP 取自 `getRemoteAddr()`，在反向代理之後必須設定 `server.forward-headers-strategy` |
@@ -259,8 +260,12 @@ spring:
 | 情況 | 結果 |
 |---|---|
 | 第一次以這個 Google 帳號登入 | 建立新使用者（角色 `USER`）；只有 Google 已驗證的 Email 才會儲存 |
-| 已連結的 Google 帳號 | 登入同一位使用者；停用的使用者會被拒絕 |
-| Google 已驗證的 Email 屬於既有帳號 | **拒絕登入**（顯示「此 Email 已有帳號」），不會自動連結；帳號連結確認於第 2 階段提供 |
+| 已連結的 Google 帳號 | 登入同一位使用者；停用或被管理員鎖定的使用者會被拒絕 |
+| Google 已驗證的 Email 屬於既有帳號 | **不會自動連結**（D06）。導向 `/jacky917/link-account`：使用者輸入原帳號的密碼，或以原帳號已連結的其他提供者登入，確認後才連結並登入；取消或 10 分鐘內未確認則什麼都不建立。設定 `account-linking.mode: manual-only` 時改為直接拒絕（「此 Email 已有帳號」），只能從帳號頁連結 |
+| 已登入的使用者在帳號頁按「連結」 | 以該提供者登入後連結到目前的使用者；已屬於其他使用者的外部帳號會被拒絕 |
+| 帳號頁「解除連結」 | 移除連結；若它是唯一的登入方式（沒有密碼、也沒有其他連結）則拒絕 |
+
+連結確認頁輸入的密碼與登入頁相同：錯誤會計入帳號鎖定與 IP 限流。連結與解除連結都寫入稽核紀錄（`ACCOUNT_LINKED`、`ACCOUNT_UNLINKED`）。
 
 Google 的 token 只用於取得使用者資料，用完立即丟棄，不會儲存。
 
@@ -356,7 +361,7 @@ spring:
 |---|---|
 | BFF 導向 `/connect/logout?id_token_hint=…&post_logout_redirect_uri=…`（RP-Initiated Logout） | 撤銷該次登入的登入 Session（刪除其授權，Refresh Token 立即失效），結束登入服務的瀏覽器登入，導回 `post_logout_redirect_uri`（必須是 client 設定的 `post-logout-redirect-uris` 之一） |
 | 登入服務的瀏覽器 Session 已過期 | 仍以 `id_token_hint` 找到並撤銷登入 Session；ID Token 本身過期也可以 |
-| 帳號頁 `/jacky917/account` | 列出登入中的裝置（登入方式、時間、IP、瀏覽器），可以登出單一裝置或「登出所有裝置」 |
+| 帳號頁 `/jacky917/account` | 列出登入中的裝置（登入方式、時間、IP、瀏覽器），可以登出單一裝置或「登出所有裝置」；也可以連結或解除連結第三方帳號（見 [§6](#6-第三方登入google)） |
 | 登入服務的 `POST /logout` | 撤銷目前的登入 Session，回到 `/login?logout` |
 
 每次登出都寫入稽核紀錄（`login_audit` 的 `LOGOUT`）。已簽發的 Access Token 仍有效至到期（最長 `token.access-token-ttl`），見 [限制 §6](../resource-server/limitations.md#6-token-無法撤銷)。帳號頁的時間以伺服器的預設時區顯示。
@@ -372,7 +377,6 @@ spring:
 |---|---|---|
 | 金鑰輪換、資料清理 | 沒有排程；過期的授權不會自動刪除 | 第 2 階段 |
 | 多實例 | 登入頁的 Session 存在記憶體中，多實例需要黏性 Session；SQLite 只能單一實例 | 第 2 階段：PostgreSQL 搭配 Spring Session JDBC |
-| 第三方帳號連結 | Email 屬於既有帳號時拒絕登入 | 第 2 階段 |
 | 第三方 client、同意畫面、Admin API | 不支援（設定第三方 client 會啟動失敗） | 第 3 階段 |
 | 註冊、忘記密碼 | 不支援 | 依需求 |
 | MySQL | 不支援 | 第 5 階段 |

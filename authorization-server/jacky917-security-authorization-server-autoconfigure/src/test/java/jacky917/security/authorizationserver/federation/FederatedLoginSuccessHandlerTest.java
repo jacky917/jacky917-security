@@ -3,9 +3,7 @@ package jacky917.security.authorizationserver.federation;
 import jacky917.security.authorizationserver.audit.LoginAuditEvent;
 import jacky917.security.authorizationserver.audit.LoginAuditEventType;
 import jacky917.security.authorizationserver.audit.LoginFailureReason;
-import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
-import jacky917.security.authorizationserver.session.AuthSessionService;
-import jacky917.security.authorizationserver.user.UserAccountService;
+import jacky917.security.authorizationserver.authentication.LoginCompletion;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -27,9 +25,10 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 /**
@@ -40,9 +39,11 @@ import static org.mockito.Mockito.when;
 class FederatedLoginSuccessHandlerTest {
 
     private FederatedIdentityService identities;
-    private AuthSessionService sessions;
+    private LoginCompletion completion;
+    private PendingLinkService pendingLinks;
     private OAuth2AuthorizedClientRepository authorizedClients;
     private ApplicationEventPublisher events;
+    private final MockHttpServletRequest request = new MockHttpServletRequest();
     private final OAuth2AuthenticationToken authentication = new OAuth2AuthenticationToken(
             new DefaultOAuth2User(AuthorityUtils.createAuthorityList("OAUTH2_USER"), Map.of("id", "1"), "id"),
             AuthorityUtils.createAuthorityList("OAUTH2_USER"), "github");
@@ -50,7 +51,8 @@ class FederatedLoginSuccessHandlerTest {
     @BeforeEach
     void setUp() {
         identities = mock(FederatedIdentityService.class);
-        sessions = mock(AuthSessionService.class);
+        completion = mock(LoginCompletion.class);
+        pendingLinks = mock(PendingLinkService.class);
         authorizedClients = mock(OAuth2AuthorizedClientRepository.class);
         events = mock(ApplicationEventPublisher.class);
         SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -90,6 +92,18 @@ class FederatedLoginSuccessHandlerTest {
         assertAudited(LoginFailureReason.USER_CANNOT_LOG_IN);
     }
 
+    @Test
+    @DisplayName("已驗證的 Email 屬於既有帳號（確認模式）：保存待確認的連結，導向 /jacky917/link-account")
+    void linkRequired() throws Exception {
+        when(identities.login(any())).thenThrow(new FederatedLoginRejectedException(
+                FederatedLoginRejectedException.Reason.LINK_REQUIRED, "user-1", "link"));
+        when(pendingLinks.create(eq("user-1"), any())).thenReturn("pending-token");
+        assertThat(handle(List.of(new AcceptingMapper())).getRedirectedUrl()).isEqualTo("/jacky917/link-account");
+        assertThat(request.getSession().getAttribute(LinkIntent.PENDING_LINK_ATTRIBUTE)).isEqualTo("pending-token");
+        assertLoggedOutWithoutSession();
+        assertAudited(LoginFailureReason.LINK_REQUIRED);
+    }
+
     private void assertAudited(LoginFailureReason reason) {
         ArgumentCaptor<LoginAuditEvent> event = ArgumentCaptor.forClass(LoginAuditEvent.class);
         verify(events).publishEvent(event.capture());
@@ -100,17 +114,16 @@ class FederatedLoginSuccessHandlerTest {
     }
 
     private MockHttpServletResponse handle(List<FederatedUserInfoMapper> mappers) throws Exception {
-        FederatedLoginSuccessHandler handler = new FederatedLoginSuccessHandler(mappers, identities,
-                mock(UserAccountService.class), sessions, mock(PrincipalNormalizer.class), authorizedClients, events,
-                Clock.systemUTC());
+        FederatedLoginSuccessHandler handler = new FederatedLoginSuccessHandler(mappers, identities, pendingLinks,
+                completion, authorizedClients, events, Clock.systemUTC());
         MockHttpServletResponse response = new MockHttpServletResponse();
-        handler.onAuthenticationSuccess(new MockHttpServletRequest(), response, authentication);
+        handler.onAuthenticationSuccess(request, response, authentication);
         return response;
     }
 
     private void assertLoggedOutWithoutSession() {
-        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
-        verifyNoInteractions(sessions);
+        verify(completion).restore(isNull(), any(), any());
+        verify(completion, never()).logIn(any(), any(), any(), any(), any(), any(), any());
         verify(authorizedClients).removeAuthorizedClient(eq("github"), eq(authentication), any(), any());
     }
 

@@ -142,6 +142,13 @@ public class AuthorizationServerProperties implements Validator {
      */
     private LoginProtection loginProtection = new LoginProtection();
 
+    /**
+     * Linking external accounts to existing users.
+     * <p>
+     * 外部帳號與既有使用者的連結。
+     */
+    private AccountLinking accountLinking = new AccountLinking();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -465,6 +472,49 @@ public class AuthorizationServerProperties implements Validator {
                         "login-protection.max-failures-per-ip-per-minute must be between 1 and 10000");
             }
         }
+    }
+
+    /**
+     * Linking external accounts, bound from {@code .account-linking.*}
+     * (D06).
+     * <p>
+     * 外部帳號的連結，綁定自 {@code .account-linking.*}（D06）。
+     */
+    @Getter
+    @Setter
+    public static class AccountLinking {
+
+        /**
+         * What happens when the verified email of a new external login
+         * belongs to an existing user.
+         * <p>
+         * 新的第三方登入的已驗證 Email 屬於既有使用者時的處理方式。
+         */
+        private AccountLinkingMode mode = AccountLinkingMode.CONFIRM_WITH_EXISTING_LOGIN;
+    }
+
+    /**
+     * How an external login whose verified email belongs to an existing user
+     * is handled (D06). Emails are never linked automatically.
+     * <p>
+     * 第三方登入的已驗證 Email 屬於既有使用者時的處理方式（D06）。Email 一律不會
+     * 自動連結。
+     */
+    public enum AccountLinkingMode {
+        /**
+         * Ask the user to log in to the existing account, with its password
+         * or another linked provider, to confirm the link.
+         * <p>
+         * 要求使用者以既有帳號的密碼或另一個已連結的提供者登入，以確認連結。
+         */
+        CONFIRM_WITH_EXISTING_LOGIN,
+        /**
+         * Refuse the login; external accounts can be linked only from the
+         * account page.
+         * <p>
+         * 拒絕登入；外部帳號只能從帳號頁連結。
+         */
+        MANUAL_ONLY
     }
 
     /**

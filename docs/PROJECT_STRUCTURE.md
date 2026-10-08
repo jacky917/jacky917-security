@@ -31,6 +31,7 @@
 |   |       |   |               |   `-- LoginFailureReason.java
 |   |       |   |               |-- authentication
 |   |       |   |               |   |-- LoginAttemptGuard.java
+|   |       |   |               |   |-- LoginCompletion.java
 |   |       |   |               |   |-- LoginFailureHandler.java
 |   |       |   |               |   |-- LoginSuccessHandler.java
 |   |       |   |               |   `-- PrincipalNormalizer.java
@@ -63,7 +64,10 @@
 |   |       |   |               |   |-- FederatedLoginSuccessHandler.java
 |   |       |   |               |   |-- FederatedUserInfo.java
 |   |       |   |               |   |-- FederatedUserInfoMapper.java
-|   |       |   |               |   `-- OidcFederatedUserInfoMapper.java
+|   |       |   |               |   |-- LinkIntent.java
+|   |       |   |               |   |-- LinkedIdentity.java
+|   |       |   |               |   |-- OidcFederatedUserInfoMapper.java
+|   |       |   |               |   `-- PendingLinkService.java
 |   |       |   |               |-- keys
 |   |       |   |               |   |-- ActiveKeyJwtEncoder.java
 |   |       |   |               |   |-- JdbcSigningKeyStore.java
@@ -92,6 +96,7 @@
 |   |       |   |               |   `-- SessionLinkingAuthorizationService.java
 |   |       |   |               |-- support
 |   |       |   |               |   |-- Columns.java
+|   |       |   |               |   |-- Hashes.java
 |   |       |   |               |   `-- UuidV7.java
 |   |       |   |               |-- token
 |   |       |   |               |   |-- AudienceResolver.java
@@ -113,6 +118,8 @@
 |   |       |   |               |   `-- UserStatus.java
 |   |       |   |               `-- web
 |   |       |   |                   |-- AccountController.java
+|   |       |   |                   |-- AccountLinkController.java
+|   |       |   |                   |-- IdentityProviders.java
 |   |       |   |                   |-- LoginController.java
 |   |       |   |                   `-- PageSupport.java
 |   |       |   `-- resources
@@ -147,6 +154,7 @@
 |   |       |       `-- templates
 |   |       |           `-- jacky917
 |   |       |               |-- account.html
+|   |       |               |-- link-account.html
 |   |       |               |-- login.html
 |   |       |               `-- signed-in.html
 |   |       `-- test
@@ -174,15 +182,20 @@
 |   |           |               |   |-- FederatedLoginSuccessHandlerTest.java
 |   |           |               |   `-- OidcFederatedUserInfoMapperTest.java
 |   |           |               |-- flow
+|   |           |               |   |-- AbstractAccountLinkingIntegrationTest.java
 |   |           |               |   |-- AbstractAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- AbstractFlowIntegrationTest.java
+|   |           |               |   |-- AbstractGoogleIntegrationTest.java
 |   |           |               |   |-- AbstractGoogleLoginIntegrationTest.java
 |   |           |               |   |-- AbstractLoginProtectionIntegrationTest.java
 |   |           |               |   |-- AbstractLogoutIntegrationTest.java
+|   |           |               |   |-- ManualOnlyAccountLinkingIntegrationTest.java
+|   |           |               |   |-- PostgresqlAccountLinkingIntegrationTest.java
 |   |           |               |   |-- PostgresqlAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- PostgresqlGoogleLoginIntegrationTest.java
 |   |           |               |   |-- PostgresqlLoginProtectionIntegrationTest.java
 |   |           |               |   |-- PostgresqlLogoutIntegrationTest.java
+|   |           |               |   |-- SqliteAccountLinkingIntegrationTest.java
 |   |           |               |   |-- SqliteAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- SqliteEs256AuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- SqliteGoogleLoginIntegrationTest.java
@@ -467,8 +480,13 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../token/Jacky917TokenCustomizer.java` | `as-autoconfigure` | Token 的 claim | `aud`、`client_id`、`asid`、`idp`、`roles`、`permissions`、ID Token 的 `amr` 與使用者資料；簽發時檢查使用者與 Session 狀態。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../token/AuthorityResolver.java`、`DefaultAuthorityResolver.java` | `as-autoconfigure` | 權限計算 SPI | 第一方：全部角色與權限；第三方：scope 涵蓋的權限（資料模型 §11.3）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../token/AudienceResolver.java`、`ConfiguredAudienceResolver.java`、`TokenClaimsContributor.java` | `as-autoconfigure` | Token SPI | `aud`；業務自訂 claim。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/FederatedLoginSuccessHandler.java` | `as-autoconfigure` | 第三方登入成功 | 轉換使用者、找到或建立帳號、建立 `auth_session`（`FEDERATED`）、以標準 principal 取代、移除提供者的 token。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/FederatedIdentityService.java` | `as-autoconfigure` | 外部帳號 | 已連結 → 登入；已驗證的 Email 屬於既有帳號 → 拒絕；其餘建立新使用者。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/FederatedLoginSuccessHandler.java` | `as-autoconfigure` | 第三方登入成功 | 轉換使用者、找到或建立帳號並登入；Email 屬於既有帳號時保存待確認的連結並導向確認頁；從帳號頁發起時連結並還原原本的登入；完成同一位使用者的待確認連結；移除提供者的 token。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/FederatedIdentityService.java`、`LinkedIdentity.java` | `as-autoconfigure` | 外部帳號 | 已連結 → 登入；已驗證的 Email 屬於既有帳號 → `LINK_REQUIRED`（或 `manual-only` 時 `ACCOUNT_EXISTS`）；其餘建立新使用者。連結、列出、解除連結（保留最後一種登入方式）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/PendingLinkService.java`、`LinkIntent.java` | `as-autoconfigure` | 待確認的連結 | `user_action_token`（`LINK_ACCOUNT`，10 分鐘、只用一次、只存雜湊）；帳號頁發起連結時存在瀏覽器 Session 的請求。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/AccountLinkController.java`、`templates/jacky917/link-account.html` | `as-autoconfigure` | 連結確認頁 | `/jacky917/link-account`：原帳號密碼（計入鎖定與限流）或已連結的提供者確認；取消。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/IdentityProviders.java` | `as-autoconfigure` | 提供者清單 | 登入頁與帳號頁共用；`login.providers` 或依名稱排序。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginCompletion.java` | `as-autoconfigure` | 完成登入 | 建立登入 Session、以標準 principal 登入瀏覽器、發布 `LOGIN`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../support/Hashes.java` | `as-autoconfigure` | 雜湊 | 一次性秘密值的 SHA-256（Refresh Token 歷史、連結 token）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../federation/FederatedUserInfoMapper.java`、`OidcFederatedUserInfoMapper.java`、`FederatedUserInfo.java` | `as-autoconfigure` | 提供者資料轉換 SPI | 通用 OIDC（Google 等）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/PrincipalNormalizer.java` | `as-autoconfigure` | D16 | 轉為 `UsernamePasswordAuthenticationToken` + `User(使用者 ID)`；補上 factor authority。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../authentication/LoginSuccessHandler.java` | `as-autoconfigure` | 登入成功 | 記錄登入、建立 `auth_session`、發布 `LOGIN`、回到授權請求。 |
@@ -484,7 +502,7 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../refresh/RefreshTokenHistoryRepository.java`、`RotatedRefreshToken.java` | `as-autoconfigure` | 已輪換的 token | `refresh_token_history`：只存 SHA-256，保留至 `min(token 到期, 輪換 + 保留期)`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/RevokeReason.java` | `as-autoconfigure` | 撤銷原因 | `AuthSessionService#revoke`／`revokeAll` 撤銷 Session 並在同一個交易中刪除其授權（資料模型 §11.4、§11.5）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/Jacky917LogoutHandler.java` | `as-autoconfigure` | 登出（§5.5） | RP-Initiated Logout 與 `POST /logout`：從瀏覽器與 `id_token_hint` 找出登入 Session 並撤銷、發布 `LOGOUT`。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/AccountController.java`、`templates/jacky917/account.html` | `as-autoconfigure` | 帳號頁 | `/jacky917/account`：登入中的裝置、登出單一或所有裝置。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/AccountController.java`、`templates/jacky917/account.html` | `as-autoconfigure` | 帳號頁 | `/jacky917/account`：登入中的裝置、登出單一或所有裝置；已連結的帳號、連結與解除連結。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/PageSupport.java` | `as-autoconfigure` | 頁面共用 | Starter 自己的訊息檔與品牌設定。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../audit/LoginAuditEvent.java`、`LoginAuditEventType.java`、`JdbcLoginAuditListener.java` | `as-autoconfigure` | 稽核（§8.1） | 元件在交易提交後發布事件；listener 寫入 `login_audit`，失敗只記錄日誌。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/TestDatabases.java` | `as-test` | 測試資料庫 | SQLite 暫存檔；embedded PostgreSQL 16（不需 Docker）。 |
@@ -501,6 +519,8 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../user/UserAccountIntegrationTest.java` | `as-test` | 整合測試 | 帳號或 Email 登入、失敗訊息一致、停用與鎖定、角色過期、唯一性、密碼政策、重新雜湊、第一位管理員。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*AuthorizationFlowIntegrationTest.java` | `as-test` | 整合測試 | 授權碼 + PKCE 完整流程、Token 的 claim（第一方、第三方、client_credentials、ID Token）、刷新反映角色變更、Session 撤銷／停用／變更密碼後拒絕刷新（並撤銷）、暫時鎖定不影響刷新、重用偵測（T-REFRESH-01～03：記錄舊 token、寬限期內外、併發刷新依序執行）、自訂 claim、Session 連結、刷新輪換、沒有 Session 的授權被拒絕並回滾、登入失敗、標頭、無 PKCE、未註冊 redirect、client_credentials、停權 client、discovery 與 JWKS；SQLite 與 PostgreSQL 各一次。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*GoogleLoginIntegrationTest.java` | `as-test` | 整合測試 | T-FED-01／02／04／06、Email 屬於既有帳號時拒絕、登入頁按鈕；SQLite 與 PostgreSQL 各一次。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/AbstractGoogleIntegrationTest.java` | `as-test` | 測試共用 | 假的 Google（另有 `google-work` registration）與第三方登入流程的工具、可推移的時鐘。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*AccountLinkingIntegrationTest.java` | `as-test` | 整合測試 | 以密碼確認（錯誤計數）、取消與到期、以已連結的提供者確認、帳號頁連結與解除連結、連結他人帳號被拒、不能解除唯一的登入方式、`manual-only`；SQLite 與 PostgreSQL。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/FakeOidcProvider.java` | `as-test` | 測試用 OIDC 提供者 | JDK `HttpServer`：token、JWKS、userinfo；每個測試類別各自啟動與關閉，每次登入以授權碼區分。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/MutableClock.java` | `as-test` | 可推移的時鐘 | 測試到期行為（Session 90 天、登入 Session 過期）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../{token,session,federation,authentication,database,support}/*Test.java` | `as-test` | 單元測試 | `Jacky917TokenCustomizer`、`SessionLinkingAuthorizationService`、`LoginSessionValidationFilter`、`PrincipalNormalizer`、`OidcFederatedUserInfoMapper`、`FederatedLoginSuccessHandler`、`SqliteExceptionTranslator`、`DefaultSqliteEnvironmentPostProcessor`、`UuidV7`：Mockito、固定時鐘、每個分支一個案例。 |

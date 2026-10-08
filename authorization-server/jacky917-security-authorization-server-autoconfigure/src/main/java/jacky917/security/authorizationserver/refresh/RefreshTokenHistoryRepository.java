@@ -1,14 +1,11 @@
 package jacky917.security.authorizationserver.refresh;
 
+import jacky917.security.authorizationserver.support.Hashes;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.Optional;
 
 /**
@@ -60,12 +57,7 @@ public class RefreshTokenHistoryRepository {
      *         <br>64 個十六進位字元
      */
     public static String hash(String token) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is not available", ex);
-        }
+        return Hashes.sha256Hex(token);
     }
 
     /**

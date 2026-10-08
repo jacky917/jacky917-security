@@ -2,13 +2,9 @@ package jacky917.security.authorizationserver.web;
 
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.extern.slf4j.Slf4j;
-import org.jspecify.annotations.Nullable;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.oauth2.client.registration.ClientRegistration;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,7 +13,6 @@ import org.springframework.web.servlet.support.RequestContextUtils;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -40,7 +35,6 @@ import java.util.Map;
  * @author Jacky
  * @since 2.1.0
  */
-@Slf4j
 @Controller
 public class LoginController {
 
@@ -59,7 +53,7 @@ public class LoginController {
 
     private final AuthorizationServerProperties.Branding branding;
     private final PageSupport page;
-    private final List<Provider> providers;
+    private final IdentityProviders providers;
 
     /**
      * Creates the controller.
@@ -68,15 +62,13 @@ public class LoginController {
      *
      * @param properties           the authorization server properties
      *                             <br>Authorization Server 設定屬性
-     * @param clientRegistrations  the identity providers shown as buttons,
-     *                             or {@code null} without any
-     *                             <br>顯示為按鈕的身分提供者；沒有時為 {@code null}
+     * @param providers            the identity providers shown as buttons
+     *                             <br>顯示為按鈕的身分提供者
      */
-    public LoginController(AuthorizationServerProperties properties,
-                           @Nullable ClientRegistrationRepository clientRegistrations) {
+    public LoginController(AuthorizationServerProperties properties, IdentityProviders providers) {
         this.branding = properties.getBranding();
         this.page = new PageSupport(branding);
-        this.providers = providers(properties.getLogin().getProviders(), clientRegistrations);
+        this.providers = providers;
     }
 
     /**
@@ -155,42 +147,10 @@ public class LoginController {
     private void populate(Model model, Locale locale) {
         page.populate(model, locale, PAGE_KEYS);
         List<Map<String, String>> buttons = new ArrayList<>();
-        for (Provider provider : providers) {
+        for (IdentityProviders.Provider provider : providers.list()) {
             buttons.add(Map.of("url", "/oauth2/authorization/" + provider.registrationId(),
                     "label", page.message("login.with", new Object[]{provider.name()}, locale)));
         }
         model.addAttribute("providers", buttons);
-    }
-
-    private static List<Provider> providers(List<String> configured, @Nullable ClientRegistrationRepository repository) {
-        List<Provider> found = new ArrayList<>();
-        if (repository == null) {
-            return found;
-        }
-        if (!configured.isEmpty()) {
-            for (String registrationId : configured) {
-                ClientRegistration client = repository.findByRegistrationId(registrationId);
-                if (client == null) {
-                    throw new IllegalStateException("login.providers contains " + registrationId
-                            + ", but there is no client registration with that id");
-                }
-                found.add(new Provider(client.getRegistrationId(), client.getClientName()));
-            }
-        } else if (repository instanceof Iterable<?> registrations) {
-            for (Object registration : registrations) {
-                ClientRegistration client = (ClientRegistration) registration;
-                found.add(new Provider(client.getRegistrationId(), client.getClientName()));
-            }
-            // Spring Boot 預設的 repository 以雜湊表保存，列出的順序不固定：依顯示名稱排序
-            found.sort(Comparator.comparing(Provider::name, String.CASE_INSENSITIVE_ORDER));
-        } else {
-            // 無法列出的 repository（例如存放在資料庫中）：第三方登入仍可使用，但登入頁沒有按鈕
-            log.warn("The ClientRegistrationRepository cannot list its registrations, so the login page shows no "
-                    + "identity provider buttons; set " + AuthorizationServerProperties.PREFIX + ".login.providers");
-        }
-        return List.copyOf(found);
-    }
-
-    private record Provider(String registrationId, String name) {
     }
 }

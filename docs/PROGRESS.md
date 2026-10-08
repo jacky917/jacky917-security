@@ -853,3 +853,21 @@
   - **DEC-097**: 鎖定時失敗次數歸零；對已鎖定帳號的嘗試不延長鎖定。
   - **DEC-098**: 被限流拒絕的嘗試也計入該 IP 的失敗。
 
+---
+## Step 37: Authorization Server 第 2 階段——工作 14 之一（帳號連結）
+- **Status**: 🟢 Completed（GitHub、LINE 為工作 14 之二）
+- **變更**:
+  - 第三方登入的已驗證 Email 屬於既有帳號時，不再直接拒絕：保存待確認的連結（`user_action_token`，10 分鐘、只用一次），導向 `/jacky917/link-account`。使用者以原帳號的密碼，或以原帳號已連結的提供者登入確認後才連結並登入；取消則什麼都不建立。`account-linking.mode: manual-only` 時維持直接拒絕。
+  - 連結頁的密碼錯誤計入帳號鎖定與 IP 限流。
+  - 帳號頁：已連結的帳號、「連結」（以該提供者登入後連結到目前的使用者並還原原本的登入）、「解除連結」（不能解除唯一的登入方式）；寫入 `ACCOUNT_LINKED`、`ACCOUNT_UNLINKED`。
+  - 已連結帳號的第三方登入不再受暫時鎖定影響（與 DEC-092 一致）。
+  - 重構：`IdentityProviders`（登入頁與帳號頁共用）、`LoginCompletion`（完成登入）、`Hashes`（SHA-256）；第三方登入測試抽出 `AbstractGoogleIntegrationTest`。
+- **Commands Run & Results**:
+  - 新增 `*AccountLinkingIntegrationTest`（SQLite、PostgreSQL 各 6 個）、`ManualOnlyAccountLinkingIntegrationTest`；`FederatedLoginSuccessHandlerTest` 新增 `LINK_REQUIRED`。
+  - 破壞實驗：略過連結頁的密碼檢查、不完成待確認連結 → 對應的 2 個測試失敗；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，338 個測試（Resource Server 47、Authorization Server 273、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-099**: 連結確認的 token 只放在瀏覽器 Session，不放在網址中。
+  - **DEC-100**: 帳號頁發起的連結完成後還原原本的登入，不建立新的登入 Session。
+  - **DEC-101**: 不能解除唯一的登入方式。
+

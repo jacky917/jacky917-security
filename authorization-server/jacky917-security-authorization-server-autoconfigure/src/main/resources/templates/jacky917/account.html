@@ -14,6 +14,7 @@
         <p class="product" th:text="${productName}">jacky917</p>
         <h1 th:text="${text['account.title']}">Your account</h1>
     </header>
+    <p th:if="${error}" class="error" role="alert" th:text="${error}">The account could not be linked.</p>
     <p th:text="${userName}">alice</p>
 
     <h2 th:text="${text['account.devices']}">Signed-in devices</h2>
@@ -34,6 +35,27 @@
             <!-- th:action 讓 Spring Security 自動加入 CSRF 欄位 -->
             <form method="post" th:action="@{/jacky917/account/sessions/{id}/logout(id=${device.id})}">
                 <button type="submit" class="secondary" th:text="${text['account.logout']}">Sign out</button>
+            </form>
+        </li>
+    </ul>
+
+    <h2 th:unless="${#lists.isEmpty(identities)}" th:text="${text['account.identities']}">Linked accounts</h2>
+    <ul class="devices" th:unless="${#lists.isEmpty(identities)}">
+        <li th:each="identity : ${identities}" class="device">
+            <div class="device-info">
+                <p><strong th:text="${identity.name}">Google</strong></p>
+                <p class="meta" th:if="${identity.linked}">
+                    <span th:if="${identity.detail}" th:text="${identity.detail + ' · '}">alice@example.com · </span>
+                    <span th:text="${text['account.linked-at'] + ' ' + identity.linkedAt}">Linked</span>
+                </p>
+            </div>
+            <form th:if="${identity.linked}" method="post"
+                  th:action="@{/jacky917/account/unlink/{id}(id=${identity.id})}">
+                <button type="submit" class="secondary" th:text="${text['account.unlink']}">Unlink</button>
+            </form>
+            <form th:unless="${identity.linked}" method="post"
+                  th:action="@{/jacky917/account/link/{id}(id=${identity.id})}">
+                <button type="submit" class="secondary" th:text="${text['account.link']}">Link</button>
             </form>
         </li>
     </ul>
