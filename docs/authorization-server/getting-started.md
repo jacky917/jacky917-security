@@ -126,6 +126,8 @@ public class AuthServerApplication {
 | `token.authorization-code-ttl` | `1m` | 30 秒～5 分鐘 |
 | `token.session-max-age` | `90d` | 登入 Session 的絕對上限；不得短於 Refresh Token |
 | `token.audience` | `jacky917-api` | Access Token 的 `aud` |
+| `refresh.reuse-grace-period` | `30s` | 0～2 分鐘。已輪換的 Refresh Token 在此期間內再次出現時視為併發刷新：拒絕，但不撤銷登入 Session |
+| `refresh.history-retention` | `24h` | 1 小時～`token.refresh-token-ttl`。已輪換的 Refresh Token 保留多久以偵測重用；超過後再次出現仍會被拒絕，只是不撤銷 Session |
 | `keys.algorithm` | `RS256` | 新金鑰的演算法：`RS256`、`ES256`。Token 一律以**目前金鑰**的演算法簽章，修改此設定只影響之後產生的金鑰 |
 | `keys.encryption-key` | **必填** | Base64 的 32 bytes；**不可寫在設定檔中** |
 | `keys.encryption-key-id` | `v1` | 主金鑰的識別碼，更換主金鑰時一併修改 |
@@ -288,7 +290,8 @@ Google 的 token 只用於取得使用者資料，用完立即丟棄，不會儲
 
 - `client_credentials` 的 Token 只有 `aud`、`client_id`、`scope`，`sub` 為 client id。
 - ID Token 有 `name`、`picture`、`locale`（`profile` scope）、`email`（`email` scope 且已驗證）、`amr`（`pwd` 或 `fed`），**不含**角色與權限。
-- 使用者被停用或鎖定、或登入 Session 已失效時，刷新會得到 `invalid_grant`。
+- 使用者被停用或被管理員鎖定、在其他地方變更了密碼、或登入 Session 已失效時，刷新會得到 `invalid_grant`（前兩種情況會同時撤銷該登入 Session）。連續登入失敗造成的暫時鎖定只阻擋密碼登入，不影響已登入的裝置。
+- **重用偵測**：每次刷新都會換發新的 Refresh Token。舊的 Refresh Token 在寬限期（`refresh.reuse-grace-period`，預設 30 秒）之後再次出現，代表它可能已外洩：整個登入 Session 立即撤銷（最新的 Refresh Token 也失效），並寫入稽核紀錄（`login_audit` 的 `TOKEN_REFRESH_REUSE`）。BFF 請確保同一個使用者的刷新依序執行（[`example-bff`](../../examples/example-bff) 有示範），否則併發的刷新會有一個失敗。
 - 自訂 claim：提供 `TokenClaimsContributor` Bean。
 
 ---
@@ -338,10 +341,9 @@ spring:
 
 | 項目 | 現況 | 預計 |
 |---|---|---|
-| Refresh Token 重用偵測 | 舊的 Refresh Token 會被拒絕，但不會因此撤銷整個登入 Session | 第 2 階段 |
 | 登出 | 結束登入服務的瀏覽器 Session；已簽發的 Refresh Token 仍有效至過期 | 第 2 階段：登出時撤銷整個登入 Session |
 | 登入保護 | 沒有失敗次數鎖定與 IP 限流（管理員設定的 `locked_until` 會生效） | 第 2 階段 |
-| 稽核紀錄 | 不寫入 `login_audit` | 第 2 階段 |
+| 稽核紀錄 | 只寫入 Refresh Token 重用（`TOKEN_REFRESH_REUSE`）；登入、登出等事件尚未寫入 | 第 2 階段 |
 | 金鑰輪換、資料清理 | 沒有排程；過期的授權不會自動刪除 | 第 2 階段 |
 | 多實例 | 登入頁的 Session 存在記憶體中，多實例需要黏性 Session；SQLite 只能單一實例 | 第 2 階段：PostgreSQL 搭配 Spring Session JDBC |
 | 第三方帳號連結 | Email 屬於既有帳號時拒絕登入 | 第 2 階段 |

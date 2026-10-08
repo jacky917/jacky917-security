@@ -18,8 +18,8 @@ public class PostgresqlDialect implements AuthorizationServerDialect {
     }
 
     @Override
-    public String lockAuthorizationByRefreshTokenSql() {
-        return "SELECT id FROM oauth2_authorization WHERE refresh_token_value = ? FOR UPDATE";
+    public String lockAuthorizationSql() {
+        return "SELECT id FROM oauth2_authorization WHERE id = ? FOR UPDATE";
     }
 
     @Override

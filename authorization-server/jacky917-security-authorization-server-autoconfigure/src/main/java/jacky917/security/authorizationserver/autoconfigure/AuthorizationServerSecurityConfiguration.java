@@ -2,6 +2,7 @@ package jacky917.security.authorizationserver.autoconfigure;
 
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import jacky917.security.authorizationserver.audit.JdbcLoginAuditListener;
 import jacky917.security.authorizationserver.authentication.LoginSuccessHandler;
 import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
 import jacky917.security.authorizationserver.federation.FederatedIdentityService;
@@ -9,6 +10,9 @@ import jacky917.security.authorizationserver.federation.FederatedLoginSuccessHan
 import jacky917.security.authorizationserver.federation.FederatedUserInfoMapper;
 import jacky917.security.authorizationserver.federation.OidcFederatedUserInfoMapper;
 import jacky917.security.authorizationserver.client.ClientProfileRepository;
+import jacky917.security.authorizationserver.database.AuthorizationServerDialect;
+import jacky917.security.authorizationserver.refresh.RefreshTokenHistoryRepository;
+import jacky917.security.authorizationserver.refresh.RefreshTokenReuseDetector;
 import jacky917.security.authorizationserver.token.AudienceResolver;
 import jacky917.security.authorizationserver.token.AuthorityResolver;
 import jacky917.security.authorizationserver.token.ConfiguredAudienceResolver;
@@ -23,6 +27,7 @@ import jacky917.security.authorizationserver.session.SessionLinkingAuthorization
 import jacky917.security.authorizationserver.user.UserAccountService;
 import jacky917.security.authorizationserver.web.LoginController;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
@@ -96,12 +101,16 @@ class AuthorizationServerSecurityConfiguration {
     @Bean
     @Order(1)
     @ConditionalOnMissingBean(name = "authorizationServerSecurityFilterChain")
-    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http, AuthSessionService sessions, Clock clock)
+    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http, AuthSessionService sessions,
+                                                              RefreshTokenReuseDetector reuseDetector, Clock clock)
             throws Exception {
         // 已查證：Spring Security 7.1.1 的 OAuth2AuthorizationServerConfigurer 只有公開建構子
         OAuth2AuthorizationServerConfigurer authorizationServer = new OAuth2AuthorizationServerConfigurer();
         http.securityMatcher(authorizationServer.getEndpointsMatcher())
-                .with(authorizationServer, server -> server.oidc(Customizer.withDefaults()))
+                .with(authorizationServer, server -> server
+                        .oidc(Customizer.withDefaults())
+                        // 刷新改經過重用偵測（詳細設計 §5.4）
+                        .tokenEndpoint(token -> token.authenticationProviders(reuseDetector::install)))
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
                 // /userinfo 以 Access Token 存取
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(Customizer.withDefaults()))
@@ -211,8 +220,46 @@ class AuthorizationServerSecurityConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @DependsOnDatabaseInitialization
-    AuthSessionService authSessionService(JdbcClient jdbcClient, AuthorizationServerProperties properties, Clock clock) {
-        return new AuthSessionService(jdbcClient, properties.getToken().getSessionMaxAge(), clock);
+    AuthSessionService authSessionService(JdbcClient jdbcClient, PlatformTransactionManager transactionManager,
+                                          AuthorizationServerProperties properties, Clock clock) {
+        return new AuthSessionService(jdbcClient, new TransactionTemplate(transactionManager),
+                properties.getToken().getSessionMaxAge(), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    RefreshTokenHistoryRepository refreshTokenHistoryRepository(JdbcClient jdbcClient) {
+        return new RefreshTokenHistoryRepository(jdbcClient);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    RefreshTokenReuseDetector refreshTokenReuseDetector(
+            OAuth2AuthorizationService authorizations, JdbcClient jdbcClient, AuthorizationServerDialect dialect,
+            SessionAuthorizationRepository links, AuthSessionService sessions, UserAccountService users,
+            RefreshTokenHistoryRepository history, PlatformTransactionManager transactionManager,
+            ApplicationEventPublisher events, AuthorizationServerProperties properties, Clock clock) {
+        return new RefreshTokenReuseDetector(authorizations, jdbcClient, dialect, links, sessions, users, history,
+                new TransactionTemplate(transactionManager), events, properties.getRefresh().getReuseGracePeriod(),
+                properties.getRefresh().getHistoryRetention(), clock);
+    }
+
+    /**
+     * Writes the security events to {@code login_audit}.
+     * <p>
+     * 把安全事件寫入 {@code login_audit}。
+     *
+     * @param jdbcClient  the JDBC client of the authorization server database
+     *                    <br>Authorization Server 資料庫的 JDBC client
+     * @return the listener
+     *         <br>listener
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    JdbcLoginAuditListener jdbcLoginAuditListener(JdbcClient jdbcClient) {
+        return new JdbcLoginAuditListener(jdbcClient);
     }
 
     @Bean

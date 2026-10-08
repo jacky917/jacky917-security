@@ -23,6 +23,10 @@
 |   |       |   |   `-- jacky917
 |   |       |   |       `-- security
 |   |       |   |           `-- authorizationserver
+|   |       |   |               |-- audit
+|   |       |   |               |   |-- JdbcLoginAuditListener.java
+|   |       |   |               |   |-- LoginAuditEvent.java
+|   |       |   |               |   `-- LoginAuditEventType.java
 |   |       |   |               |-- authentication
 |   |       |   |               |   |-- LoginSuccessHandler.java
 |   |       |   |               |   `-- PrincipalNormalizer.java
@@ -57,6 +61,7 @@
 |   |       |   |               |   |-- FederatedUserInfoMapper.java
 |   |       |   |               |   `-- OidcFederatedUserInfoMapper.java
 |   |       |   |               |-- keys
+|   |       |   |               |   |-- ActiveKeyJwtEncoder.java
 |   |       |   |               |   |-- JdbcSigningKeyStore.java
 |   |       |   |               |   |-- KeyEncryptor.java
 |   |       |   |               |   |-- RotatingJwkSource.java
@@ -66,15 +71,22 @@
 |   |       |   |               |   `-- SigningKeyStore.java
 |   |       |   |               |-- properties
 |   |       |   |               |   `-- AuthorizationServerProperties.java
+|   |       |   |               |-- refresh
+|   |       |   |               |   |-- RefreshTokenHistoryRepository.java
+|   |       |   |               |   |-- RefreshTokenReuseDetector.java
+|   |       |   |               |   |-- ReuseDetectingRefreshTokenProvider.java
+|   |       |   |               |   `-- RotatedRefreshToken.java
 |   |       |   |               |-- session
 |   |       |   |               |   |-- AuthSession.java
 |   |       |   |               |   |-- AuthSessionService.java
 |   |       |   |               |   |-- AuthSessionStatus.java
 |   |       |   |               |   |-- LoginMethod.java
 |   |       |   |               |   |-- LoginSessionValidationFilter.java
+|   |       |   |               |   |-- RevokeReason.java
 |   |       |   |               |   |-- SessionAuthorizationRepository.java
 |   |       |   |               |   `-- SessionLinkingAuthorizationService.java
 |   |       |   |               |-- support
+|   |       |   |               |   |-- Columns.java
 |   |       |   |               |   `-- UuidV7.java
 |   |       |   |               |-- token
 |   |       |   |               |   |-- AudienceResolver.java
@@ -157,24 +169,31 @@
 |   |           |               |   |-- PostgresqlAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- PostgresqlGoogleLoginIntegrationTest.java
 |   |           |               |   |-- SqliteAuthorizationFlowIntegrationTest.java
+|   |           |               |   |-- SqliteEs256AuthorizationFlowIntegrationTest.java
 |   |           |               |   `-- SqliteGoogleLoginIntegrationTest.java
 |   |           |               |-- keys
+|   |           |               |   |-- ActiveKeyJwtEncoderTest.java
 |   |           |               |   |-- KeyEncryptorTest.java
 |   |           |               |   `-- SigningKeyIntegrationTest.java
 |   |           |               |-- properties
 |   |           |               |   `-- AuthorizationServerPropertiesTest.java
+|   |           |               |-- refresh
+|   |           |               |   `-- RefreshTokenReuseDetectorTest.java
 |   |           |               |-- session
 |   |           |               |   |-- LoginSessionValidationFilterTest.java
 |   |           |               |   `-- SessionLinkingAuthorizationServiceTest.java
 |   |           |               |-- support
+|   |           |               |   |-- ColumnsTest.java
 |   |           |               |   |-- FakeOidcProvider.java
 |   |           |               |   |-- MutableClock.java
 |   |           |               |   |-- TestDatabases.java
 |   |           |               |   `-- UuidV7Test.java
 |   |           |               |-- token
 |   |           |               |   `-- Jacky917TokenCustomizerTest.java
-|   |           |               `-- user
-|   |           |                   `-- UserAccountIntegrationTest.java
+|   |           |               |-- user
+|   |           |               |   `-- UserAccountIntegrationTest.java
+|   |           |               `-- web
+|   |           |                   `-- LoginControllerTest.java
 |   |           `-- resources
 |   |               `-- app-migrations
 |   |                   `-- V1__app_note.sql
@@ -440,13 +459,18 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/main/resources/db/jacky917-as/{postgresql,sqlite}/` | `as-autoconfigure` | Flyway V1 | 兩種資料庫各 7 個同名檔案：23 張表與內建資料。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../database/AuthorizationServerMigrations.java`、`AuthorizationServerMigrationsDetector.java` | `as-autoconfigure` | Migration 執行 | Starter 自己的 Flyway 與歷史表 `jacky917_as_schema_history`；讓依賴資料庫的 Bean 在 migration 之後建立。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/LoginSessionValidationFilter.java` | `as-autoconfigure` | 登入 Session 檢查 | 登入 Session 已失效時結束瀏覽器登入，授權請求回到登入頁。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../refresh/RefreshTokenReuseDetector.java`、`ReuseDetectingRefreshTokenProvider.java` | `as-autoconfigure` | 重用偵測（§5.4、D19） | 包裝 Spring 的刷新 provider：列鎖、刷新前檢查 Session 與使用者、記錄舊 token；寬限期後重用即撤銷 Session。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../refresh/RefreshTokenHistoryRepository.java`、`RotatedRefreshToken.java` | `as-autoconfigure` | 已輪換的 token | `refresh_token_history`：只存 SHA-256，保留至 `min(token 到期, 輪換 + 保留期)`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/RevokeReason.java` | `as-autoconfigure` | 撤銷原因 | `AuthSessionService#revoke`／`revokeAll` 撤銷 Session 並在同一個交易中刪除其授權（資料模型 §11.4、§11.5）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../audit/LoginAuditEvent.java`、`LoginAuditEventType.java`、`JdbcLoginAuditListener.java` | `as-autoconfigure` | 稽核（§8.1） | 元件在交易提交後發布事件；listener 寫入 `login_audit`，失敗只記錄日誌。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/TestDatabases.java` | `as-test` | 測試資料庫 | SQLite 暫存檔；embedded PostgreSQL 16（不需 Docker）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../database/*IntegrationTest.java` | `as-test` | 整合測試 | migration、官方 JDBC 類別相容性、約束、schema 一致性、SQLite 設定檢查、預設 SQLite。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../properties/AuthorizationServerPropertiesTest.java` | `as-test` | 單元測試 | 預設值、issuer、有效期與主金鑰驗證。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../properties/AuthorizationServerPropertiesTest.java` | `as-test` | 單元測試 | 預設值、issuer、有效期、寬限期與保留期、主金鑰驗證。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../refresh/RefreshTokenReuseDetectorTest.java` | `as-test` | 單元測試 | 重用偵測的每個分支（未知、寬限期內外、Session 與使用者狀態、記錄與保留期）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/KeyEncryptorTest.java` | `as-test` | 單元測試 | 加解密、錯誤主金鑰、竄改、`kid` 綁定。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../client/ClientRegistrationIntegrationTest.java` | `as-test` | 整合測試 | 註冊、重新啟動時更新、secret 輪換、缺少 secret、停權。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../user/UserAccountIntegrationTest.java` | `as-test` | 整合測試 | 帳號或 Email 登入、失敗訊息一致、停用與鎖定、角色過期、唯一性、密碼政策、重新雜湊、第一位管理員。 |
-| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*AuthorizationFlowIntegrationTest.java` | `as-test` | 整合測試 | 授權碼 + PKCE 完整流程、Token 的 claim（第一方、第三方、client_credentials、ID Token）、刷新反映角色變更、Session 撤銷／停用／鎖定後拒絕刷新、自訂 claim、Session 連結、刷新輪換、沒有 Session 的授權被拒絕並回滾、登入失敗、標頭、無 PKCE、未註冊 redirect、client_credentials、停權 client、discovery 與 JWKS；SQLite 與 PostgreSQL 各一次。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*AuthorizationFlowIntegrationTest.java` | `as-test` | 整合測試 | 授權碼 + PKCE 完整流程、Token 的 claim（第一方、第三方、client_credentials、ID Token）、刷新反映角色變更、Session 撤銷／停用／變更密碼後拒絕刷新（並撤銷）、暫時鎖定不影響刷新、重用偵測（T-REFRESH-01～03：記錄舊 token、寬限期內外、併發刷新依序執行）、自訂 claim、Session 連結、刷新輪換、沒有 Session 的授權被拒絕並回滾、登入失敗、標頭、無 PKCE、未註冊 redirect、client_credentials、停權 client、discovery 與 JWKS；SQLite 與 PostgreSQL 各一次。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*GoogleLoginIntegrationTest.java` | `as-test` | 整合測試 | T-FED-01／02／04／06、Email 屬於既有帳號時拒絕、登入頁按鈕；SQLite 與 PostgreSQL 各一次。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/FakeOidcProvider.java` | `as-test` | 測試用 OIDC 提供者 | JDK `HttpServer`：token、JWKS、userinfo；每個測試類別各自啟動與關閉，每次登入以授權碼區分。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/MutableClock.java` | `as-test` | 可推移的時鐘 | 測試到期行為（Session 90 天、登入 Session 過期）。 |

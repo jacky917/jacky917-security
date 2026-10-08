@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | ✅ 第 1 階段已實作（2.1.0 preview），見 [§13 實施紀錄](#13-實施紀錄)；第 2 階段（工作 11～17）尚未開始 |
+| 狀態 | ✅ 第 1 階段已實作（2.1.0 preview），見 [§13 實施紀錄](#13-實施紀錄)；第 2 階段（工作 11～17）進行中 |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -992,7 +992,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 8 | Token：`Jacky917TokenCustomizer`、`AuthorityResolver`（第一方與第三方）、`AudienceResolver`、`TokenClaimsContributor` | ✅ |
 | 9 | 第三方登入（Google）：通用 OIDC mapper、`FederatedIdentityService`、自動建立使用者、`PrincipalNormalizer` | ✅ |
 | 10 | `example-authorization-server`（改用 AS starter）、`example-bff`、`e2e-tests` | ✅ |
-| 11～17 | 第 2 階段 | ⏳ |
+| 11 | 重用偵測：`RefreshTokenReuseDetector`（包裝 Spring 的刷新 provider）、`refresh_token_history`、`AuthSessionService#revoke`、稽核事件與 `login_audit` | ✅ |
+| 12～17 | 第 2 階段其餘工作 | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1051,4 +1052,9 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 一次換 Token 的查詢次數（第二次 review） | — | 同一次請求內重複使用使用者與登入 Session 的查詢結果（約 8 次降為 5 次） | 只在同一個請求內有效，不影響「每次簽發都從資料庫讀取」（D18） |
 | `/userinfo` | — | SAS 端點的 filter chain 以 `oauth2ResourceServer().jwt()` 驗證 Access Token，`JwtDecoder` 由公開的金鑰建立 | OIDC userinfo 需要 Bearer Token |
 | 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
+| 列鎖（D19，工作 11） | `SELECT … WHERE refresh_token_value = ? FOR UPDATE` | 先以官方服務找到授權，再以**授權 ID** 鎖定該列（`lockAuthorizationSql`），鎖定後重新讀取一次 | 官方 `JdbcOAuth2AuthorizationService` 依欄位型別決定 token 值的繫結方式（PostgreSQL 為 TEXT、SQLite 為 BLOB），自行以 token 值查詢容易不一致；以 ID 鎖定兩種資料庫都簡單。重新讀取是為了發現等待期間已被輪換的 token |
+| 重用偵測的實作位置（工作 11） | `ReuseDetectingRefreshTokenProvider` 包含全部邏輯 | 邏輯在 `RefreshTokenReuseDetector` Bean；provider 只是轉接，於 token 端點的 `authenticationProviders` 中取代 Spring 的刷新 provider | Spring 的刷新 provider 由 configurer 建立、不是 Bean；偵測器需要的依賴則都是 Bean，可以整個替換 |
+| 稽核事件的發布時機（工作 11） | `@TransactionalEventListener(AFTER_COMMIT)` | 元件在交易**結束後**自行發布 `LoginAuditEvent`，`JdbcLoginAuditListener` 以一般 `@EventListener` 立即寫入 | xerial 在 `transaction_mode=IMMEDIATE` 下 commit 後會立刻開始新交易並持有寫入鎖（`SqliteDialect` 已記錄此行為），交易同步回調執行時連線尚未歸還，另一個連線的寫入會等到逾時；在交易外發布則兩種資料庫行為一致 |
+| 刷新時的暫時鎖定（工作 11） | 資料模型 §11.2：`locked_until > NOW()` 即拒絕刷新 | 暫時鎖定只阻擋密碼登入；刷新只檢查 `status = ACTIVE`（管理員鎖定為 `LOCKED`，仍會拒絕並撤銷） | 暫時鎖定由連續登入失敗觸發（工作 13）。若它也阻擋刷新，任何知道帳號的人只要故意輸錯密碼，就能讓帳號持有人所有裝置被登出 |
+| 刷新時 Session 已過期（工作 11） | 撤銷並寫入原因 | 只拒絕，不更改狀態 | 過期不是撤銷；由清理排程改為 `EXPIRED`（工作 15）。使用者停用、變更密碼仍會撤銷（`USER_DISABLED`、`PASSWORD_CHANGED`），並刪除其授權 |
 

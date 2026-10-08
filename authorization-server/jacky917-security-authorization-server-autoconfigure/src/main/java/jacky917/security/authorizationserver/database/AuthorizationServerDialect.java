@@ -30,17 +30,18 @@ public interface AuthorizationServerDialect {
     String vendor();
 
     /**
-     * Returns the SQL that locks the authorization holding a refresh token
-     * for the rest of the current transaction. It takes the token value as
-     * its only parameter.
+     * Returns the SQL that locks an authorization row for the rest of the
+     * current transaction, so concurrent refreshes of the same token run
+     * one after the other (D19). It takes the authorization id as its only
+     * parameter.
      * <p>
-     * 回傳在目前交易結束前鎖定持有指定 Refresh Token 之授權的 SQL，唯一的
-     * 參數為 token 值。
+     * 回傳在目前交易結束前鎖定一筆授權的 SQL，讓同一個 token 的併發刷新依序
+     * 執行（D19）。唯一的參數為授權 ID。
      *
      * @return the locking query
      *         <br>鎖定用的查詢
      */
-    String lockAuthorizationByRefreshTokenSql();
+    String lockAuthorizationSql();
 
     /**
      * Returns whether several application instances can share this

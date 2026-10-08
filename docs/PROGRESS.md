@@ -794,3 +794,26 @@
 - **Status**: 🟢 Completed（`v2.0.0` Release 建立後合併）
 - **變更**：根 POM 的 `<revision>` 改為 `2.1.0-SNAPSHOT`。
 - **注意**：`v2.0.0` 的 tag 必須建在版本為 `2.0.0` 的 commit（`303f62f`）上；若誤建在之後的 commit，發佈流程的 tag 檢查會中止發佈（`2.1.0-SNAPSHOT` ≠ `2.0.0`）。
+
+---
+## Step 34: Authorization Server 第 2 階段——工作 11（Refresh Token 重用偵測）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `RefreshTokenReuseDetector`：在 token 端點取代 Spring 的刷新 provider。每次刷新在同一個交易中：鎖定授權列（PostgreSQL `FOR UPDATE`、SQLite `IMMEDIATE`）、檢查登入 Session 與使用者、交給 Spring 簽發、把舊 token 的 SHA-256 記錄到 `refresh_token_history`、更新 `last_seen_at`。
+  - 已輪換的 token 再次出現：寬限期（`refresh.reuse-grace-period`，30 秒）內只拒絕；超過則撤銷登入 Session（`REUSE_DETECTED`，最新的 Refresh Token 一併失效）並寫入 `login_audit`。
+  - 使用者停用（含管理員鎖定、已刪除）或登入後變更密碼：拒絕並撤銷（`USER_DISABLED`、`PASSWORD_CHANGED`）。
+  - `AuthSessionService`：`revoke`、`revokeAll`（同一個交易中刪除授權）、`touch`、`findActive`。
+  - 稽核基礎：`LoginAuditEvent`、`JdbcLoginAuditListener`（交易結束後發布，寫入失敗只記錄日誌）。
+  - 新設定：`refresh.reuse-grace-period`（0～2 分鐘）、`refresh.history-retention`（24 小時，1 小時～Refresh Token 有效期）。
+  - Dialect：`lockAuthorizationByRefreshTokenSql` 改為以授權 ID 鎖定的 `lockAuthorizationSql`。
+- **行為調整**：暫時鎖定（`locked_until`）不再阻擋刷新，只阻擋密碼登入；否則任何人故意輸錯密碼就能讓帳號持有人所有裝置被登出。
+- **Commands Run & Results**:
+  - 新增整合測試（SQLite、PostgreSQL 各一次）：T-REFRESH-01～05、寬限期內不撤銷、暫時鎖定仍可刷新；`RefreshTokenReuseDetectorTest` 13 個分支。
+  - 破壞實驗：移除列鎖後，PostgreSQL 的併發刷新測試 3 次全部失敗（兩個請求都成功）；還原後通過。
+  - 第一次執行時寬限期測試失敗：測試推移剛好 30 秒，加上測試本身的時間就超過寬限期，改為 29 秒。
+  - `mvn -B -o clean verify`：**SUCCESS**，278 個測試（Resource Server 47、Authorization Server 213、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-092**: 暫時鎖定只阻擋密碼登入，不阻擋已登入 Session 的刷新。
+  - **DEC-093**: 稽核事件由元件在交易結束後發布，不使用 `@TransactionalEventListener`。
+  - **DEC-094**: 列鎖以授權 ID 進行，鎖定後重新讀取授權。
+

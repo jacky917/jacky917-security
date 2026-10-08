@@ -162,10 +162,18 @@ class Jacky917TokenCustomizerTest {
         }
 
         @Test
-        @DisplayName("使用者被暫時鎖定")
-        void temporarilyLockedUser() {
-            when(users.findById(USER)).thenReturn(Optional.of(user(UserStatus.ACTIVE, NOW.plusSeconds(60), true)));
+        @DisplayName("使用者被管理員鎖定（status = LOCKED）")
+        void lockedUser() {
+            when(users.findById(USER)).thenReturn(Optional.of(user(UserStatus.LOCKED, null, true)));
             assertRefused();
+        }
+
+        @Test
+        @DisplayName("暫時鎖定（登入失敗造成）不阻擋已登入的 Session 簽發 token")
+        void temporarilyLockedUserCanStillRefresh() {
+            when(users.findById(USER)).thenReturn(Optional.of(user(UserStatus.ACTIVE, NOW.plusSeconds(60), true)));
+            assertThat(customize(OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.REFRESH_TOKEN))
+                    .containsKey("asid");
         }
 
         @Test

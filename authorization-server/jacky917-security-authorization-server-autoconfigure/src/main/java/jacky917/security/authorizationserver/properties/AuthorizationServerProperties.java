@@ -83,6 +83,13 @@ public class AuthorizationServerProperties implements Validator {
     private Token token = new Token();
 
     /**
+     * Refresh token reuse detection.
+     * <p>
+     * Refresh Token 的重用偵測。
+     */
+    private Refresh refresh = new Refresh();
+
+    /**
      * Signing key settings.
      * <p>
      * 簽章金鑰設定。
@@ -141,6 +148,7 @@ public class AuthorizationServerProperties implements Validator {
         }
         validateIssuer(properties.getIssuer(), errors);
         properties.getToken().validate(errors);
+        properties.getRefresh().validate(properties.getToken(), errors);
         properties.getKeys().validate(errors);
         properties.getPassword().validate(errors);
         properties.getBootstrapAdmin().validate(errors);
@@ -233,6 +241,42 @@ public class AuthorizationServerProperties implements Validator {
              * 資料庫檔案的位置。上層資料夾不存在時會自動建立。
              */
             private Path path = Path.of("./data/jacky917-auth.db");
+        }
+    }
+
+    /**
+     * Refresh token reuse detection, bound from {@code .refresh.*} (D19).
+     * <p>
+     * Refresh Token 的重用偵測，綁定自 {@code .refresh.*}（D19）。
+     */
+    @Getter
+    @Setter
+    public static class Refresh {
+
+        /**
+         * How long a rotated refresh token is treated as a concurrent
+         * request rather than reuse, between 0 and 2 minutes. Within it the
+         * request is refused but the login session stays active.
+         * <p>
+         * 已輪換的 Refresh Token 再次出現時，視為併發請求而不是重用的時間，
+         * 0～2 分鐘。期間內的請求會被拒絕，但登入 Session 不會被撤銷。
+         */
+        private Duration reuseGracePeriod = Duration.ofSeconds(30);
+
+        /**
+         * How long a rotated refresh token is remembered, between 1 hour and
+         * the refresh token lifetime. Reuse after this is still refused but
+         * no longer revokes the login session.
+         * <p>
+         * 已輪換的 Refresh Token 保留多久，1 小時～Refresh Token 有效期。超過後
+         * 再次出現仍會被拒絕，只是不再撤銷登入 Session。
+         */
+        private Duration historyRetention = Duration.ofHours(24);
+
+        void validate(Token token, Errors errors) {
+            rejectOutOfRange(errors, "refresh.reuseGracePeriod", reuseGracePeriod, Duration.ZERO, Duration.ofMinutes(2));
+            Duration max = token.getRefreshTokenTtl() == null ? Duration.ofDays(90) : token.getRefreshTokenTtl();
+            rejectOutOfRange(errors, "refresh.historyRetention", historyRetention, Duration.ofHours(1), max);
         }
     }
 

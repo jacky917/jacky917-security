@@ -7,6 +7,7 @@ import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.session.SessionAuthorizationRepository;
 import jacky917.security.authorizationserver.user.UserAccount;
 import jacky917.security.authorizationserver.user.UserAccountService;
+import jacky917.security.authorizationserver.user.UserStatus;
 import jacky917.security.core.Jacky917ClaimNames;
 import jacky917.security.core.TrustLevel;
 import lombok.extern.slf4j.Slf4j;
@@ -58,10 +59,12 @@ import java.util.function.Supplier;
  * Roles and permissions are read from the database for every token,
  * including refreshes (D18). A user token is refused with
  * {@code invalid_grant} when its login session is no longer active or the
- * user can no longer log in.
+ * user is no longer {@code ACTIVE}. A temporary lock after failed logins
+ * blocks only password logins, not the sessions that already exist.
  * <p>
  * 角色與權限在每次簽發 token（包含刷新）時都從資料庫讀取（D18）。登入 Session
- * 已失效，或使用者已無法登入時，以 {@code invalid_grant} 拒絕簽發。
+ * 已失效，或使用者已不是 {@code ACTIVE} 時，以 {@code invalid_grant} 拒絕簽發。
+ * 登入失敗造成的暫時鎖定只阻擋密碼登入，不影響已存在的 Session。
  *
  * @author Jacky
  * @since 2.1.0
@@ -137,8 +140,9 @@ public class Jacky917TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodin
         Instant now = clock.instant();
         // 同一次 token 請求會依序簽發 Access Token 與 ID Token：使用者與登入 Session 只查一次
         UserAccount user = perRequest("user:" + userId, () -> users.findById(userId))
-                .filter(account -> account.canLogIn(now))
-                .orElseThrow(() -> refuse("user " + userId + " cannot log in"));
+                // 暫時鎖定不阻擋簽發：否則任何人故意輸錯密碼，就能讓帳號持有人所有裝置的刷新失敗
+                .filter(account -> account.status() == UserStatus.ACTIVE)
+                .orElseThrow(() -> refuse("user " + userId + " is not active"));
         OAuth2Authorization authorization = context.getAuthorization();
         AuthSession session = perRequest("session:" + (authorization == null ? "" : authorization.getId()),
                 () -> loginSession(authorization))

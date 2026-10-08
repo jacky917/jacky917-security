@@ -30,6 +30,8 @@ class AuthorizationServerPropertiesTest {
         assertThat(properties.getToken().getAudience()).containsExactly("jacky917-api");
         assertThat(properties.getKeys().getAlgorithm()).isEqualTo(AuthorizationServerProperties.SigningAlgorithm.RS256);
         assertThat(properties.getKeys().getEncryptionKeyId()).isEqualTo("v1");
+        assertThat(properties.getRefresh().getReuseGracePeriod()).isEqualTo(Duration.ofSeconds(30));
+        assertThat(properties.getRefresh().getHistoryRetention()).isEqualTo(Duration.ofHours(24));
     }
 
     @Test
@@ -63,6 +65,21 @@ class AuthorizationServerPropertiesTest {
         Errors errors = validate(properties);
         assertThat(errors.getFieldErrors()).extracting(error -> error.getField()).containsExactlyInAnyOrder(
                 "token.accessTokenTtl", "token.authorizationCodeTtl", "token.sessionMaxAge", "token.audience");
+    }
+
+    @Test
+    @DisplayName("寬限期超過 2 分鐘、保留期短於 1 小時或長於 Refresh Token 有效期時被拒絕")
+    void refreshRanges() {
+        AuthorizationServerProperties properties = withIssuer("https://auth.example.com");
+        properties.getRefresh().setReuseGracePeriod(Duration.ofMinutes(3));
+        properties.getRefresh().setHistoryRetention(Duration.ofMinutes(30));
+        assertThat(validate(properties).getFieldErrors()).extracting(error -> error.getField())
+                .containsExactlyInAnyOrder("refresh.reuseGracePeriod", "refresh.historyRetention");
+
+        properties.getRefresh().setReuseGracePeriod(Duration.ZERO);
+        properties.getRefresh().setHistoryRetention(Duration.ofDays(15));
+        assertThat(validate(properties).getFieldErrors()).extracting(error -> error.getField())
+                .containsExactly("refresh.historyRetention");
     }
 
     @Test

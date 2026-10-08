@@ -1,5 +1,6 @@
 package jacky917.security.authorizationserver.flow;
 
+import jacky917.security.authorizationserver.refresh.RefreshTokenHistoryRepository;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.support.TestDatabases;
 import jacky917.security.authorizationserver.token.TokenClaimsContributor;
@@ -215,24 +216,144 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("登入 Session 被撤銷、使用者被停用或暫時鎖定後，刷新回 invalid_grant")
-    void refreshIsRefusedWhenSessionOrUserIsNoLongerValid() throws Exception {
+    @DisplayName("登入 Session 被撤銷後刷新：invalid_grant")
+    void refreshIsRefusedWhenSessionIsRevoked() throws Exception {
         createUser("revoked-user", null);
         LoggedIn revoked = logInAndExchangeCode("revoked-user");
         jdbc.sql("UPDATE auth_session SET status = 'REVOKED', revoked_at = :now, revoke_reason = 'ADMIN' WHERE session_id = :id")
                 .param("now", java.sql.Timestamp.from(java.time.Instant.now())).param("id", revoked.asid()).update();
         assertRefreshRefused(revoked);
+    }
 
+    @Test
+    @DisplayName("使用者停用後刷新：invalid_grant，並撤銷登入 Session（T-REFRESH-04）")
+    void refreshIsRefusedAndSessionRevokedWhenUserIsDisabled() throws Exception {
         String disabledId = createUser("disabled-user", null);
         LoggedIn disabled = logInAndExchangeCode("disabled-user");
         jdbc.sql("UPDATE app_user SET status = 'DISABLED' WHERE id = :id").param("id", disabledId).update();
         assertRefreshRefused(disabled);
+        assertSession(disabled.asid(), "REVOKED", "USER_DISABLED");
+        assertThat(authorizationCount(disabled.asid())).as("授權一併刪除").isZero();
+    }
 
+    @Test
+    @DisplayName("變更密碼後，之前登入的 Session 刷新：invalid_grant，並撤銷（T-REFRESH-05）")
+    void refreshIsRefusedAfterPasswordChange() throws Exception {
+        String userId = createUser("password-user", null);
+        LoggedIn before = logInAndExchangeCode("password-user");
+        clock.advance(Duration.ofMinutes(1));
+        jdbc.sql("UPDATE app_user SET password_changed_at = :at WHERE id = :id")
+                .param("at", java.sql.Timestamp.from(clock.instant())).param("id", userId).update();
+        assertRefreshRefused(before);
+        assertSession(before.asid(), "REVOKED", "PASSWORD_CHANGED");
+
+        clock.advance(Duration.ofMinutes(1));
+        LoggedIn after = logInAndExchangeCode("password-user");
+        assertThat(refresh(after).has("access_token")).as("變更密碼之後的登入可以刷新").isTrue();
+    }
+
+    @Test
+    @DisplayName("暫時鎖定（連續登入失敗）只阻擋密碼登入，已登入的 Session 仍可刷新")
+    void temporaryLockDoesNotBlockRefresh() throws Exception {
         String lockedId = createUser("locked-user", null);
         LoggedIn locked = logInAndExchangeCode("locked-user");
         jdbc.sql("UPDATE app_user SET locked_until = :until WHERE id = :id")
-                .param("until", java.sql.Timestamp.from(java.time.Instant.now().plusSeconds(600))).param("id", lockedId).update();
-        assertRefreshRefused(locked);
+                .param("until", java.sql.Timestamp.from(clock.instant().plusSeconds(600))).param("id", lockedId).update();
+        assertThat(refresh(locked).has("access_token")).isTrue();
+        assertSession(locked.asid(), "ACTIVE", null);
+    }
+
+    @Test
+    @DisplayName("刷新後舊的 Refresh Token 以雜湊記錄在 refresh_token_history（T-REFRESH-01）")
+    void rotatedRefreshTokenIsRemembered() throws Exception {
+        createUser("history-user", null);
+        LoggedIn result = logInAndExchangeCode("history-user");
+        String old = result.tokens().get("refresh_token").asString();
+        clock.advance(Duration.ofMinutes(5));
+        refresh(result);
+        Map<String, Object> row = jdbc.sql("SELECT session_id, user_id, rotated_at, expires_at FROM refresh_token_history "
+                        + "WHERE token_hash = :hash")
+                .param("hash", RefreshTokenHistoryRepository.hash(old)).query().singleRow();
+        assertThat(row).containsEntry("session_id", result.asid()).containsEntry("user_id", result.userId());
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM refresh_token_history WHERE token_hash = :token")
+                .param("token", old).query(Integer.class).single()).as("不儲存 token 本身").isZero();
+        Map<String, Object> session = jdbc.sql("SELECT created_at, last_seen_at FROM auth_session WHERE session_id = :id")
+                .param("id", result.asid()).query((rs, n) -> Map.<String, Object>of(
+                        "created", rs.getTimestamp("created_at").toInstant(), "seen", rs.getTimestamp("last_seen_at").toInstant()))
+                .single();
+        assertThat(Duration.between((java.time.Instant) session.get("created"), (java.time.Instant) session.get("seen")))
+                .as("刷新時更新 last_seen_at").isGreaterThanOrEqualTo(Duration.ofMinutes(5));
+    }
+
+    @Test
+    @DisplayName("寬限期內重用舊的 Refresh Token：invalid_grant，但 Session 不撤銷，新的 Refresh Token 仍可用（D19）")
+    void reuseWithinGracePeriodKeepsTheSession() throws Exception {
+        createUser("grace-user", null);
+        LoggedIn result = logInAndExchangeCode("grace-user");
+        String old = result.tokens().get("refresh_token").asString();
+        JsonNode refreshed = refresh(result);
+        // 寬限期 30 秒；測試本身也需要一點時間，因此推移 29 秒
+        clock.advance(Duration.ofSeconds(29));
+        assertRefreshRefused(old);
+        assertSession(result.asid(), "ACTIVE", null);
+        assertThat(refresh(refreshed.get("refresh_token").asString()).has("access_token")).isTrue();
+    }
+
+    @Test
+    @DisplayName("超過寬限期重用舊的 Refresh Token：invalid_grant、撤銷 Session、新的 Refresh Token 也失效、寫入稽核（T-REFRESH-03）")
+    void reuseAfterGracePeriodRevokesTheSession() throws Exception {
+        createUser("reuse-user", null);
+        LoggedIn result = logInAndExchangeCode("reuse-user");
+        String old = result.tokens().get("refresh_token").asString();
+        JsonNode refreshed = refresh(result);
+        clock.advance(Duration.ofSeconds(31));
+        assertRefreshRefused(old);
+        assertSession(result.asid(), "REVOKED", "REUSE_DETECTED");
+        assertRefreshRefused(refreshed.get("refresh_token").asString());
+        Map<String, Object> audit = jdbc.sql("SELECT user_id, session_id, success, failure_reason FROM login_audit "
+                        + "WHERE event_type = 'TOKEN_REFRESH_REUSE' AND session_id = :asid")
+                .param("asid", result.asid()).query().singleRow();
+        assertThat(audit).containsEntry("user_id", result.userId()).containsEntry("failure_reason", "REUSE_DETECTED");
+        assertThat(audit.get("success")).isIn(false, 0);
+    }
+
+    @Test
+    @DisplayName("同一個 Refresh Token 的兩個併發刷新：一個成功、一個 invalid_grant，Session 不撤銷（T-REFRESH-02）")
+    void concurrentRefreshesAreSerialized() throws Exception {
+        createUser("concurrent-user", null);
+        LoggedIn result = logInAndExchangeCode("concurrent-user");
+        String token = result.tokens().get("refresh_token").asString();
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Callable<Integer> request = () -> {
+                start.await();
+                return mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                                .param("grant_type", "refresh_token").param("refresh_token", token))
+                        .andReturn().getResponse().getStatus();
+            };
+            java.util.concurrent.Future<Integer> first = executor.submit(request);
+            java.util.concurrent.Future<Integer> second = executor.submit(request);
+            start.countDown();
+            assertThat(java.util.List.of(first.get(), second.get())).containsExactlyInAnyOrder(200, 400);
+        } finally {
+            executor.shutdownNow();
+        }
+        assertSession(result.asid(), "ACTIVE", null);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM refresh_token_history WHERE session_id = :asid")
+                .param("asid", result.asid()).query(Integer.class).single()).isEqualTo(1);
+    }
+
+    private void assertSession(String asid, String status, String reason) {
+        Map<String, Object> row = jdbc.sql("SELECT status, revoke_reason FROM auth_session WHERE session_id = :id")
+                .param("id", asid).query().singleRow();
+        assertThat(row.get("status")).isEqualTo(status);
+        assertThat(row.get("revoke_reason")).isEqualTo(reason);
+    }
+
+    private int authorizationCount(String asid) {
+        return jdbc.sql("SELECT COUNT(*) FROM session_authorization WHERE session_id = :id").param("id", asid)
+                .query(Integer.class).single();
     }
 
     @Test
@@ -312,8 +433,12 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
     }
 
     private JsonNode refresh(LoggedIn result) throws Exception {
+        return refresh(result.tokens().get("refresh_token").asString());
+    }
+
+    private JsonNode refresh(String refreshToken) throws Exception {
         return tokenRequest(mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
-                .param("grant_type", "refresh_token").param("refresh_token", result.tokens().get("refresh_token").asString())));
+                .param("grant_type", "refresh_token").param("refresh_token", refreshToken)));
     }
 
     private void assertRefreshRefused(LoggedIn result) throws Exception {
