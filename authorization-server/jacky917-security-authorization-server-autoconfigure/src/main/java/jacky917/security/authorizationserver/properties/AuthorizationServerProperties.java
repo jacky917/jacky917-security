@@ -173,6 +173,13 @@ public class AuthorizationServerProperties implements Validator {
      */
     private Account account = new Account();
 
+    /**
+     * Two-step verification with an authenticator app.
+     * <p>
+     * 以驗證器 App 進行的兩步驟驗證。
+     */
+    private Mfa mfa = new Mfa();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -774,6 +781,34 @@ public class AuthorizationServerProperties implements Validator {
          * 拒絕登入；外部帳號只能從帳號頁連結。
          */
         MANUAL_ONLY
+    }
+
+    /**
+     * Two-step verification, bound from {@code .mfa.*} (D31).
+     * <p>
+     * 兩步驟驗證，綁定自 {@code .mfa.*}（D31）。
+     */
+    @Getter
+    @Setter
+    public static class Mfa {
+
+        /**
+         * Name that authenticator apps show for the account; defaults to
+         * {@code branding.product-name}.
+         * <p>
+         * 驗證器 App 中顯示的名稱，預設為 {@code branding.product-name}。
+         */
+        private String issuerName;
+
+        /**
+         * Roles that must use two-step verification, for example
+         * {@code AS_ADMIN}. Users with such a role who have not turned it on
+         * must do so before their login completes, and cannot turn it off.
+         * <p>
+         * 必須使用兩步驟驗證的角色，例如 {@code AS_ADMIN}。擁有這些角色但尚未
+         * 啟用的使用者，必須在登入完成前啟用，且不能停用。
+         */
+        private Set<String> requiredRoles = new LinkedHashSet<>();
     }
 
     /**

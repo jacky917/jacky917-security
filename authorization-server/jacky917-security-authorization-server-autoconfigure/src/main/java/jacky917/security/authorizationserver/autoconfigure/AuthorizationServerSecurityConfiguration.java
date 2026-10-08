@@ -29,6 +29,9 @@ import jacky917.security.authorizationserver.federation.GitHubFederatedUserInfoM
 import jacky917.security.authorizationserver.federation.LineIdTokens;
 import jacky917.security.authorizationserver.federation.OidcFederatedUserInfoMapper;
 import jacky917.security.authorizationserver.federation.PendingLinkService;
+import jacky917.security.authorizationserver.keys.KeyEncryptor;
+import jacky917.security.authorizationserver.mfa.MfaLoginFlow;
+import jacky917.security.authorizationserver.mfa.MfaService;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.refresh.RefreshTokenHistoryRepository;
 import jacky917.security.authorizationserver.refresh.RefreshTokenReuseDetector;
@@ -48,10 +51,13 @@ import jacky917.security.authorizationserver.user.PasswordPolicy;
 import jacky917.security.authorizationserver.user.UserAccountService;
 import jacky917.security.authorizationserver.web.AccountController;
 import jacky917.security.authorizationserver.web.AccountLinkController;
+import jacky917.security.authorizationserver.web.AccountMfaController;
 import jacky917.security.authorizationserver.web.AccountPasswordController;
 import jacky917.security.authorizationserver.web.ConsentController;
 import jacky917.security.authorizationserver.web.IdentityProviders;
 import jacky917.security.authorizationserver.web.LoginController;
+import jacky917.security.authorizationserver.web.MfaChallengeController;
+import jacky917.security.authorizationserver.web.MfaSetupSupport;
 import jacky917.security.authorizationserver.web.PageSupport;
 import jacky917.security.authorizationserver.web.PasswordResetController;
 import jacky917.security.authorizationserver.web.RegistrationController;
@@ -389,8 +395,48 @@ class AuthorizationServerSecurityConfiguration {
     @Bean
     @ConditionalOnMissingBean
     LoginSuccessHandler loginSuccessHandler(AuthSessionService sessions, UserAccountService users,
-                                            ApplicationEventPublisher events, Clock clock) {
-        return new LoginSuccessHandler(sessions, users, events, clock);
+                                            ApplicationEventPublisher events, MfaLoginFlow mfaLoginFlow, Clock clock) {
+        return new LoginSuccessHandler(sessions, users, events, mfaLoginFlow, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    MfaService mfaService(JdbcClient jdbcClient, UserAccountService users, KeyEncryptor keyEncryptor,
+                          AuthorizationServerProperties properties, PlatformTransactionManager transactionManager,
+                          Clock clock) {
+        return new MfaService(jdbcClient, users, keyEncryptor, properties.getMfa().getRequiredRoles(),
+                new TransactionTemplate(transactionManager), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    MfaLoginFlow mfaLoginFlow(MfaService mfa, LoginCompletion completion, UserAccountService users, Clock clock) {
+        return new MfaLoginFlow(mfa, completion, users, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    MfaSetupSupport jacky917MfaSetupSupport(AuthorizationServerProperties properties, UserAccountService users) {
+        return new MfaSetupSupport(properties, users);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    MfaChallengeController jacky917MfaChallengeController(
+            AuthorizationServerProperties properties, MfaLoginFlow flow, MfaService mfa, MfaSetupSupport setup,
+            UserAccountService users, AccountLockout lockout,
+            ObjectProvider<FederatedLoginSuccessHandler> federatedLogins, ApplicationEventPublisher events,
+            Clock clock) {
+        return new MfaChallengeController(properties, flow, mfa, setup, users, lockout, federatedLogins, events, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    AccountMfaController jacky917AccountMfaController(AuthorizationServerProperties properties, MfaService mfa,
+                                                      MfaSetupSupport setup, ApplicationEventPublisher events,
+                                                      Clock clock) {
+        return new AccountMfaController(properties, mfa, setup, events, clock, ZoneId.systemDefault());
     }
 
     @Bean
@@ -453,10 +499,10 @@ class AuthorizationServerSecurityConfiguration {
     AccountController jacky917AccountController(AuthorizationServerProperties properties, AuthSessionService sessions,
                                                 UserAccountService users, Jacky917LogoutHandler logoutHandler,
                                                 FederatedIdentityService identities, IdentityProviders providers,
-                                                AuthorizedApplicationService applications,
+                                                AuthorizedApplicationService applications, MfaService mfa,
                                                 ApplicationEventPublisher events, Clock clock) {
         return new AccountController(properties, sessions, users, logoutHandler, identities, providers, applications,
-                events, clock, ZoneId.systemDefault());
+                mfa, events, clock, ZoneId.systemDefault());
     }
 
     @Bean
@@ -549,9 +595,10 @@ class AuthorizationServerSecurityConfiguration {
     AccountLinkController jacky917AccountLinkController(
             AuthorizationServerProperties properties, PendingLinkService pendingLinks, UserAccountService users,
             FederatedIdentityService identities, PasswordEncoder passwordEncoder, LoginCompletion completion,
-            IdentityProviders providers, ApplicationEventPublisher events, AccountLockout lockout, Clock clock) {
+            MfaLoginFlow mfaLoginFlow, IdentityProviders providers, ApplicationEventPublisher events,
+            AccountLockout lockout, Clock clock) {
         return new AccountLinkController(properties, pendingLinks, users, identities, passwordEncoder, completion,
-                providers, events, lockout, clock);
+                mfaLoginFlow, providers, events, lockout, clock);
     }
 
     @Bean
@@ -623,11 +670,11 @@ class AuthorizationServerSecurityConfiguration {
     @ConditionalOnMissingBean
     FederatedLoginSuccessHandler federatedLoginSuccessHandler(
             ObjectProvider<FederatedUserInfoMapper> mappers, FederatedIdentityService identities,
-            PendingLinkService pendingLinks, LoginCompletion completion,
+            PendingLinkService pendingLinks, LoginCompletion completion, MfaLoginFlow mfaLoginFlow,
             ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClients, ApplicationEventPublisher events,
             Clock clock) {
         return new FederatedLoginSuccessHandler(mappers.orderedStream().toList(), identities, pendingLinks, completion,
-                authorizedClients.getIfAvailable(), events, clock);
+                mfaLoginFlow, authorizedClients.getIfAvailable(), events, clock);
     }
 
     @Bean

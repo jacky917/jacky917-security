@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class DatabaseMigrationIntegrationTest {
 
     static final List<String> TABLES = List.of(
-            "app_user", "user_federated_identity", "user_action_token",
+            "app_user", "user_federated_identity", "user_action_token", "user_mfa_totp", "user_recovery_code",
             "app_role", "app_permission", "app_user_role", "app_role_permission",
             "api_resource", "app_scope", "app_scope_permission",
             "oauth2_registered_client", "oauth2_authorization", "oauth2_authorization_consent", "client_profile",

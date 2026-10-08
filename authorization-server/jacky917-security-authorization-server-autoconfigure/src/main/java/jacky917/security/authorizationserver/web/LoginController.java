@@ -118,6 +118,7 @@ public class LoginController {
                 case "link_failed" -> "login.error.link-failed";
                 case "linked_elsewhere" -> "login.error.linked-elsewhere";
                 case "provider_already_linked" -> "login.error.provider-already-linked";
+                case "mfa" -> "login.error.mfa";
                 default -> "login.error.bad-credentials";
             };
             model.addAttribute("error", page.message(key, null, locale));

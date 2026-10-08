@@ -8,6 +8,7 @@ import jacky917.security.authorizationserver.federation.FederatedLoginSuccessHan
 import jacky917.security.authorizationserver.federation.LinkIntent;
 import jacky917.security.authorizationserver.federation.LinkedIdentity;
 import jacky917.security.authorizationserver.federation.UnlinkResult;
+import jacky917.security.authorizationserver.mfa.MfaService;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.session.AuthSession;
 import jacky917.security.authorizationserver.session.AuthSessionService;
@@ -84,8 +85,9 @@ public class AccountController {
     private static final String[] PAGE_KEYS = {"account.title", "account.devices", "account.current",
             "account.signed-in-at", "account.last-active", "account.logout", "account.logout-all",
             "account.logout-all.hint", "account.ip", "account.identities", "account.link", "account.unlink",
-            "account.linked-at", "account.password", "account.apps", "account.apps.revoke"};
-    private static final List<String> NOTICES = List.of("password_changed", "app_revoked");
+            "account.linked-at", "account.password", "account.apps", "account.apps.revoke", "account.mfa",
+            "account.mfa.on", "account.mfa.off"};
+    private static final List<String> NOTICES = List.of("password_changed", "app_revoked", "mfa_disabled");
 
     private final AuthSessionService sessions;
     private final UserAccountService users;
@@ -93,6 +95,7 @@ public class AccountController {
     private final FederatedIdentityService identities;
     private final IdentityProviders providers;
     private final AuthorizedApplicationService applications;
+    private final MfaService mfa;
     private final ApplicationEventPublisher events;
     private final Clock clock;
     private final PageSupport page;
@@ -117,6 +120,8 @@ public class AccountController {
      *                       <br>可以連結的身分提供者
      * @param applications   the applications the user consented to
      *                       <br>使用者同意過的應用程式
+     * @param mfa            tells whether two-step verification is on
+     *                       <br>判斷是否已啟用兩步驟驗證
      * @param events         publishes the audit events
      *                       <br>發布稽核事件
      * @param clock          the clock
@@ -127,14 +132,15 @@ public class AccountController {
     public AccountController(AuthorizationServerProperties properties, AuthSessionService sessions,
                              UserAccountService users, Jacky917LogoutHandler logoutHandler,
                              FederatedIdentityService identities, IdentityProviders providers,
-                             AuthorizedApplicationService applications, ApplicationEventPublisher events, Clock clock,
-                             ZoneId zone) {
+                             AuthorizedApplicationService applications, MfaService mfa,
+                             ApplicationEventPublisher events, Clock clock, ZoneId zone) {
         this.sessions = sessions;
         this.users = users;
         this.logoutHandler = logoutHandler;
         this.identities = identities;
         this.providers = providers;
         this.applications = applications;
+        this.mfa = mfa;
         this.events = events;
         this.clock = clock;
         this.page = new PageSupport(properties.getBranding());
@@ -187,6 +193,7 @@ public class AccountController {
         model.addAttribute("devices", devices);
         model.addAttribute("identities", identities(userId, format));
         model.addAttribute("apps", applications.list(userId));
+        model.addAttribute("mfaEnabled", mfa.isEnabled(userId));
         String error = request.getParameter("error");
         String pendingLinkError = takeLinkError(request);
         if (error == null) {

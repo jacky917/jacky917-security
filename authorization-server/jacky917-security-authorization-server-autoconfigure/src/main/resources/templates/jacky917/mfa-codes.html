@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${text['mfa.codes.title'] + ' · ' + productName}">Recovery codes</title>
+    <link rel="stylesheet" th:href="@{/jacky917/authorization-server.css}">
+    <link rel="stylesheet" th:href="@{/jacky917/theme.css}">
+</head>
+<body>
+<main class="card">
+    <header>
+        <img th:if="${logoUrl}" th:src="${logoUrl}" alt="" class="logo">
+        <p class="product" th:text="${productName}">jacky917</p>
+        <h1 th:text="${text['mfa.codes.title']}">Recovery codes</h1>
+    </header>
+    <p class="notice" role="status" th:text="${text['mfa.codes.message']}">Keep these codes somewhere safe.</p>
+    <ul class="codes">
+        <li th:each="code : ${codes}"><code th:text="${code}">abcde-fghjk</code></li>
+    </ul>
+    <p><a class="link" th:href="${next}" th:text="${text['mfa.codes.continue']}">Continue</a></p>
+</main>
+</body>
+</html>

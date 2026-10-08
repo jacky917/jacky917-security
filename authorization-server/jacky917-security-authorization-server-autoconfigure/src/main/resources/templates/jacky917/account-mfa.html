@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${text['mfa.account.title'] + ' · ' + productName}">Two-step verification</title>
+    <link rel="stylesheet" th:href="@{/jacky917/authorization-server.css}">
+    <link rel="stylesheet" th:href="@{/jacky917/theme.css}">
+</head>
+<body>
+<main class="card">
+    <header>
+        <img th:if="${logoUrl}" th:src="${logoUrl}" alt="" class="logo">
+        <p class="product" th:text="${productName}">jacky917</p>
+        <h1 th:text="${text['mfa.account.title']}">Two-step verification</h1>
+    </header>
+    <p th:if="${error}" class="error" role="alert" th:text="${error}">The code is wrong.</p>
+    <p th:text="${text['mfa.account.enabled-at'] + ' ' + enabledAt}">Turned on 2026-10-09</p>
+    <p th:text="${text['mfa.account.remaining'] + ' ' + remaining}">Recovery codes left: 10</p>
+    <p th:if="${remaining &lt; 3}" class="notice" role="status" th:text="${text['mfa.account.low']}">
+        Few recovery codes are left. Create new ones.</p>
+
+    <h2 th:text="${text['mfa.account.regenerate']}">Create new recovery codes</h2>
+    <!-- th:action 讓 Spring Security 自動加入 CSRF 欄位 -->
+    <form method="post" th:action="@{/jacky917/account/mfa/recovery-codes}">
+        <label for="regenerate-code" th:text="${text['mfa.code']}">Code</label>
+        <input id="regenerate-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code"
+               maxlength="8" required>
+        <button type="submit" class="secondary" th:text="${text['mfa.account.regenerate']}">Create</button>
+    </form>
+
+    <th:block th:if="${canDisable}">
+        <h2 th:text="${text['mfa.account.disable']}">Turn off</h2>
+        <form method="post" th:action="@{/jacky917/account/mfa/disable}">
+            <label for="disable-code" th:text="${text['mfa.code']}">Code</label>
+            <input id="disable-code" name="code" type="text" autocomplete="one-time-code" maxlength="32" required>
+            <button type="submit" class="secondary" th:text="${text['mfa.account.disable']}">Turn off</button>
+        </form>
+    </th:block>
+    <p th:unless="${canDisable}" class="meta" th:text="${text['mfa.account.required']}">Your role requires it.</p>
+    <p><a class="link" th:href="@{/jacky917/account}" th:text="${text['password.change.back']}">Back</a></p>
+</main>
+</body>
+</html>

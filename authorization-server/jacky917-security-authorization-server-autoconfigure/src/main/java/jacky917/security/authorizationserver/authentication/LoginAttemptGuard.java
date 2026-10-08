@@ -1,6 +1,7 @@
 package jacky917.security.authorizationserver.authentication;
 
 import jacky917.security.authorizationserver.account.AccountPaths;
+import jacky917.security.authorizationserver.mfa.MfaPaths;
 import jacky917.security.authorizationserver.audit.LoginAuditEvent;
 import jacky917.security.authorizationserver.audit.LoginAuditEventType;
 import jacky917.security.authorizationserver.audit.LoginAuditRepository;
@@ -32,8 +33,9 @@ import java.time.Instant;
  * Only the forms that check a password, send a mail or set a password are
  * checked: {@code POST /login}, {@code /jacky917/link-account},
  * {@code /jacky917/password/forgot}, {@code /jacky917/password/reset},
- * {@code /jacky917/register}, {@code /jacky917/verify-email} and
- * {@code /jacky917/verify-email/resend}. They are matched on the decoded path the same
+ * {@code /jacky917/register}, {@code /jacky917/verify-email},
+ * {@code /jacky917/verify-email/resend}, {@code /jacky917/mfa} and
+ * {@code /jacky917/mfa/setup}. They are matched on the decoded path the same
  * way Spring Security and Spring MVC match them, so an encoded path such as
  * {@code /%6Cogin} cannot skip the check. When the failed logins of the last
  * minute from the request's IP reach the limit, the request is refused
@@ -46,8 +48,8 @@ import java.time.Instant;
  * 只檢查會檢查密碼、寄信或設定密碼的表單：{@code POST /login}、
  * {@code /jacky917/link-account}、{@code /jacky917/password/forgot}、
  * {@code /jacky917/password/reset}、{@code /jacky917/register}、
- * {@code /jacky917/verify-email} 與 {@code /jacky917/verify-email/resend}。與
- * Spring Security、Spring MVC 一樣以解碼後的路徑比對，因此 {@code /%6Cogin} 這類編碼
+ * {@code /jacky917/verify-email}、{@code /jacky917/verify-email/resend}、
+ * {@code /jacky917/mfa} 與 {@code /jacky917/mfa/setup}。與 Spring Security、Spring MVC 一樣以解碼後的路徑比對，因此 {@code /%6Cogin} 這類編碼
  * 過的路徑無法略過檢查。請求 IP 最近一分鐘的登入失敗次數達到上限時，在處理之前
  * 就拒絕：瀏覽器被導向 {@code /login?error=rate_limited}，並發布原因為
  * {@code RATE_LIMITED} 的失敗 {@code LOGIN} 事件（它本身也計入失敗）。IP 取自
@@ -69,7 +71,9 @@ public class LoginAttemptGuard extends OncePerRequestFilter {
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, AccountPaths.RESET_PASSWORD),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, AccountPaths.REGISTER),
             PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, AccountPaths.RESEND_VERIFICATION),
-            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, AccountPaths.VERIFY_EMAIL));
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, AccountPaths.VERIFY_EMAIL),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, MfaPaths.VERIFY),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, MfaPaths.SETUP));
 
     private final LoginAuditRepository audits;
     private final ApplicationEventPublisher events;

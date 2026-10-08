@@ -124,7 +124,14 @@ public enum LoginFailureReason {
      * <p>
      * 已輪換的 Refresh Token 在寬限期之後再次被使用。
      */
-    REUSE_DETECTED;
+    REUSE_DETECTED,
+
+    /**
+     * The two-step verification code or recovery code was wrong.
+     * <p>
+     * 兩步驟驗證的驗證碼或復原碼錯誤。
+     */
+    MFA_FAILED;
 
     /**
      * Returns whether a failure for this reason counts towards locking the

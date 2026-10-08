@@ -153,6 +153,8 @@ public class AuthServerApplication {
 | `account.password-reset-ttl` | `1h` | 10 分鐘～24 小時。重設密碼連結的有效期 |
 | `account.mail.from` | — | 寄件者；使用 `spring.mail.*` 寄信時必填 |
 | `account.mail.log-links` | `false` | 沒有 SMTP 時把信件連結寫入日誌（只用於開發） |
+| `mfa.issuer-name` | `branding.product-name` | 驗證器 App 中顯示的名稱（見 [兩步驟驗證](#兩步驟驗證)） |
+| `mfa.required-roles` | — | 必須使用兩步驟驗證的角色，例如 `AS_ADMIN` |
 | `branding.product-name` | `jacky917` | 登入頁上的產品名稱 |
 | `branding.logo-url` | — | `https://` 網址或本伺服器上的路徑 |
 | `branding.primary-color` | `#2563eb` | `#rgb` 或 `#rrggbb` |
@@ -452,12 +454,13 @@ spring:
 
 | `event_type` | 何時 | `failure_reason` |
 |---|---|---|
-| `LOGIN` | 每次登入（密碼或第三方），成功或失敗 | `BAD_CREDENTIALS`、`UNKNOWN_USER`、`LOCKED`、`DISABLED`、`NO_PASSWORD`、`RATE_LIMITED`、`ERROR`、`FEDERATION`、`USER_CANNOT_LOG_IN`、`ACCOUNT_EXISTS`、`LINK_REQUIRED` |
+| `LOGIN` | 每次登入（密碼或第三方），成功或失敗 | `BAD_CREDENTIALS`、`UNKNOWN_USER`、`LOCKED`、`DISABLED`、`NO_PASSWORD`、`RATE_LIMITED`、`ERROR`、`FEDERATION`、`USER_CANNOT_LOG_IN`、`ACCOUNT_EXISTS`、`LINK_REQUIRED`、`MFA_FAILED` |
 | `ACCOUNT_LOCKED` | 連續失敗造成鎖定 | — |
 | `ACCOUNT_LINKED` | 連結第三方帳號，成功或失敗 | `LINK_EXPIRED`、`LINKED_TO_ANOTHER_USER`、`PROVIDER_ALREADY_LINKED`、`FEDERATION` |
 | `ACCOUNT_UNLINKED` | 解除連結 | — |
 | `LOGOUT` | 登出（見下一節） | — |
 | `TOKEN_REFRESH_REUSE` | 偵測到 Refresh Token 重用（每次都寫入，即使 Session 已撤銷） | `REUSE_DETECTED` |
+| `MFA_ENABLED`、`MFA_DISABLED` | 使用者啟用或停用兩步驟驗證 | — |
 | `CONSENT_GRANTED`、`CONSENT_REVOKED` | 使用者同意第三方應用程式；在帳號頁移除存取權（或在同意畫面拒絕而刪除先前的同意） | — |
 
 稽核事件同時以 Spring 的 `ApplicationEvent`（`LoginAuditEvent`）發布，應用程式可以另外監聽並轉送到 SIEM。寫入失敗不影響登入：整個事件（不含輸入的帳號）記錄在 `ERROR` 日誌中以便補回，並計入 `jacky917.as.audit.write_failures`。IP 限流計算的是寫入 `login_audit` 的失敗，寫入失敗期間看不到這些嘗試。
@@ -489,6 +492,17 @@ spring:
 - **註冊**：建立擁有 `USER` 角色、Email 未驗證的帳號，寄出驗證連結；驗證前無法登入。驗證時必須再輸入註冊時設定的密碼，因此以他人地址註冊的人無法在對方開啟連結時取得帳號。Email 已屬於其他帳號時不變更任何資料，改寄「帳號已存在」通知（附重設密碼連結）；未完成的註冊（未驗證、從未登入）可以被新的註冊取代。各種情況的畫面都相同。
 - 同一位使用者、同一種信件 60 秒內最多寄一封。這些表單與登入頁共用 IP 限流。
 - 稽核（`login_audit`）：`PASSWORD_CHANGED`（失敗時 `BAD_CREDENTIALS`）、`PASSWORD_RESET`、`USER_REGISTERED`、`EMAIL_VERIFIED`（密碼錯誤時 `BAD_CREDENTIALS`）。
+
+### 兩步驟驗證
+
+使用者在帳號頁的「兩步驟驗證」（`/jacky917/account/mfa`）以 Google Authenticator、Microsoft Authenticator 等驗證器 App 掃描 QR code 並輸入驗證碼後啟用，同時取得 10 組一次性復原碼（只顯示一次，可以用目前的驗證碼重新產生）。
+
+- 啟用後，密碼登入與第三方登入（以及以密碼確認帳號連結）通過第一步後都會要求 6 位數驗證碼或復原碼；第二步通過之前瀏覽器不是已登入狀態，也不會建立登入 Session。待驗證的登入保留 5 分鐘。
+- 驗證碼在前後各 30 秒內有效，且每個只能使用一次；復原碼也只能使用一次。
+- 錯誤 5 次會結束這次登入並回到登入頁；每次錯誤都稽核為 `LOGIN`（`MFA_FAILED`）並計入帳號鎖定，與密碼錯誤共用 IP 限流。
+- `mfa.required-roles` 中的角色尚未啟用時，登入過程中會先要求啟用，且不能停用。建議至少設定 `AS_ADMIN`。
+- ID Token 的 `amr` 為 `["pwd","otp"]` 或 `["fed","otp"]`。
+- 密鑰以 `keys.encryption-key` 加密儲存，復原碼只儲存雜湊。使用者同時遺失手機與復原碼時，管理員以 `DELETE /admin/api/users/{id}/mfa` 停用（見 [§9](#9-管理-api)）。
 
 > [!WARNING]
 > 在同一台主機上以不同埠號執行登入服務與 BFF 時（例如 `localhost:9000` 與 `localhost:8082`），兩者預設的 `JSESSIONID` Cookie 會互相覆蓋（瀏覽器的 Cookie 不區分埠號），登入流程會失敗。請為登入服務設定不同的 Cookie 名稱：`server.servlet.session.cookie.name: JACKY917_AS_SESSION`。
@@ -531,6 +545,7 @@ spring:
 | `PUT /admin/api/users/{id}/roles/{role}` | 指派角色；本文可帶 `expiresAt` 設定到期時間 |
 | `DELETE /admin/api/users/{id}/roles/{role}` | 移除角色 |
 | `GET`／`DELETE /admin/api/users/{id}/sessions` | 登入中的裝置；撤銷全部 |
+| `GET`／`DELETE /admin/api/users/{id}/mfa` | 兩步驟驗證的狀態（是否啟用、剩餘復原碼、角色是否要求）；停用（使用者遺失手機與復原碼時） |
 | `DELETE /admin/api/sessions/{asid}` | 撤銷一個登入 Session |
 | `GET`／`POST /admin/api/roles`、`GET`／`PUT`／`DELETE /admin/api/roles/{code}` | 角色；`PUT` 取代名稱、說明與權限清單 |
 | `GET`／`POST /admin/api/permissions`、`GET`／`PUT`／`DELETE /admin/api/permissions/{code}` | 權限 |
@@ -586,5 +601,6 @@ curl -X POST https://auth.example.com/admin/api/users \
 - [ ] PostgreSQL：專屬資料庫、應用程式帳號只有必要權限（[資料模型 §13.3](../design/auth-server-data-model.md#133-資料庫帳號與權限)）
 - [ ] 全程 HTTPS；反向代理有正確傳遞 `X-Forwarded-*`（`server.forward-headers-strategy`）
 - [ ] 第一位管理員已登入並變更密碼（`bootstrap-admin.password-change-required` 預設會要求），之後從設定移除 `bootstrap-admin.password`
+- [ ] `mfa.required-roles` 至少包含 `AS_ADMIN`
 - [ ] 使用忘記密碼或註冊時：已設定 `spring.mail.*` 與 `account.mail.from`，正式環境沒有開啟 `account.mail.log-links`
 - [ ] 已了解 [§10 目前的限制](#10-目前的限制)

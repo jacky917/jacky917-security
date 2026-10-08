@@ -1094,3 +1094,15 @@
   - 使用指南 §3（設定）、§7（`aud` 的決定方式與管理 API 的注意事項）。
 - **Commands Run & Results**:
   - 新增 `ScopeAudienceResolverIntegrationTest`（兩種資料庫）：多個 API resource 去除重複並排序、只有一個、沒有任何 scope 屬於 API resource、`app_scope` 中沒有的 scope、沒有 scope。
+
+## Step 55: Authorization Server——工作 28（兩步驟驗證），群組 D 完成
+- **Status**: 🟢 Completed
+- **變更**:
+  - Migration V1_1_1（兩種資料庫）：`user_mfa_totp`（以主金鑰加密的密鑰、最後使用的時間步）、`user_recovery_code`（SHA-256）。
+  - `Totp`（RFC 6238：HMAC-SHA1、30 秒、6 位數、前後各一個時間步、同一時間步只接受一次）、`QrCodes`（ZXing core → SVG `data:` 網址）、`MfaService`（啟用、驗證、復原碼、停用、`mfa.required-roles`）。
+  - `MfaLoginFlow` 與 `PendingLogin`：密碼登入、第三方登入、以密碼確認帳號連結通過第一步後，若已啟用（或角色要求）則清除登入狀態、保存待驗證的登入（5 分鐘）並導向 `/jacky917/mfa`（或 `/jacky917/mfa/setup`）；通過後更換 Session ID、建立 `amr` 含 `otp` 的登入 Session，再執行原入口的後續（強制變更密碼、等待中的帳號連結）。
+  - `MfaChallengeController`：驗證碼或復原碼；錯誤稽核 `LOGIN`（`MFA_FAILED`）、計入帳號鎖定，5 次後回到登入頁。`AccountMfaController`：帳號頁啟用、重新產生復原碼、停用（角色要求時不可停用），稽核 `MFA_ENABLED`／`MFA_DISABLED`。`MfaAdminController`：`GET`／`DELETE /admin/api/users/{id}/mfa`。
+  - `mfa.issuer-name`、`mfa.required-roles`；IP 限流涵蓋第二步的 POST；帳號頁顯示狀態。使用指南新增「兩步驟驗證」與設定、管理 API、稽核、上線檢查清單。
+- **Commands Run & Results**:
+  - `TotpTest`：RFC 6238 附錄 B 的測試向量、Base32、時間步容許範圍與重複使用、QR code。
+  - 新增 `MfaIntegrationTest`（兩種資料庫各 5 個）：啟用後要求驗證碼、第二步之前未登入、`amr`（T-MFA-01、06）；驗證碼與復原碼只能用一次、停用（T-MFA-02）；錯誤 5 次（T-MFA-03）；角色要求時登入中啟用（T-MFA-05）；管理員重設。`FederatedLoginSuccessHandlerTest`：第三方登入交給兩步驟驗證（T-MFA-04）。

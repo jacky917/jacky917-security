@@ -19,6 +19,8 @@
     <p th:text="${userName}">alice</p>
     <p th:if="${hasPassword}"><a class="link" th:href="@{/jacky917/account/password}"
                                  th:text="${text['account.password']}">Change password</a></p>
+    <p><a class="link" th:href="@{/jacky917/account/mfa}" th:text="${text['account.mfa']}">Two-step verification</a>
+        <span class="badge" th:text="${mfaEnabled ? text['account.mfa.on'] : text['account.mfa.off']}">Off</span></p>
 
     <h2 th:text="${text['account.devices']}">Signed-in devices</h2>
     <ul class="devices">

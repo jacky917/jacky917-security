@@ -383,7 +383,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 25 | 第三方 client、scope、API resource 管理：設定檔 `trust-level: third-party`（`ClientUris`、`ClientDetails`）、`ClientAdminService`／`ClientAdminController`、`ScopeAdminService`／`ScopeAdminController`；使用指南 §5、§9 | ✅ |
 | 26 | 同意畫面、撤回授權：`ConsentController`（`/oauth2/consent`）、`AuditingAuthorizationConsentService`、`ScopeDescriptions`、`AuthorizedApplicationService`、帳號頁「已授權的應用程式」 | ✅ |
 | 27 | `aud` 依 scope 決定：`token.audience-strategy`（`shared`／`per-scope`）、`ScopeAudienceResolver`；使用指南 §3、§7 | ✅ |
-| 28 | 兩步驟驗證 | |
+| 28 | 兩步驟驗證：migration V1_1_1、`Totp`、`MfaService`、`MfaLoginFlow`（密碼、第三方、帳號連結三個入口）、`MfaChallengeController`、`AccountMfaController`、`QrCodes`、`MfaAdminController`；使用指南「兩步驟驗證」 | ✅ |
 | 29 | 發佈準備 | |
 
 ### 12.2 與設計不同的地方
@@ -399,4 +399,8 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 不需要同意的 scope（工作 26） | §6.2：不列出 | 不列出，並隨「允許」以隱藏欄位送出 | Spring Authorization Server 只自動核准 `openid`；其他 `consent_required=false` 的 scope 必須在同意請求中送出才會授予 |
 | 撤回授權（工作 26） | §6.3：刪除同意紀錄與授權 | 以 SQL 刪除並自行稽核 `CONSENT_REVOKED`，不經過 `OAuth2AuthorizationConsentService` | `JdbcOAuth2AuthorizationConsentService` 讀取同意紀錄時要求 client 為啟用中，已停權 client 的同意紀錄因此無法撤回 |
 | 內容安全政策（修正） | 詳細設計：`form-action 'self'` | 移除 `form-action`（DEC-116） | Chrome 對表單送出後的重導套用 `form-action`，登入與同意表單導回 client 時會被擋下 |
+| QR code（工作 28） | D31：ZXing 產生 | 只用 ZXing `core`，自行輸出 SVG 並以 `data:` 網址嵌入 | 不需要 `javase` 模組與 `java.desktop`（AWT），也不需要另外的圖片端點 |
+| 管理員查詢兩步驟驗證（工作 28） | §7：只有重設 | 另加 `GET /admin/api/users/{id}/mfa`（是否啟用、剩餘復原碼、角色是否要求） | 管理員重設前需要知道狀態；使用者摘要不必為此多一次查詢 |
+| 登入時啟用的錯誤（工作 28） | §7.2：錯誤計入帳號鎖定 | 登入過程中啟用（`required-roles`）時輸入錯誤只計入 5 次的上限，不計入帳號鎖定、不稽核 `MFA_FAILED` | 此時的驗證碼只用來確認 App 已加入密鑰，不是驗證身分 |
+| 完成登入後的後續（工作 28） | §7.2：回到授權請求 | 待驗證的登入記住入口（密碼、第三方、帳號連結）：密碼登入完成後仍套用強制變更密碼；第三方登入完成後仍完成等待中的帳號連結 | 第二步不能略過原本入口在建立登入 Session 之後要做的事 |
 | `admin_audit_log` 的對象種類（工作 18） | 資料模型 §8.3 的 7 種 | V1_1_0 加入 `API_RESOURCE` | API resource 的管理也要稽核；SQLite 無法修改約束，與 `login_audit` 一起重建 |

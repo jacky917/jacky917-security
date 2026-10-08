@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${text['mfa.title'] + ' · ' + productName}">Two-step verification</title>
+    <link rel="stylesheet" th:href="@{/jacky917/authorization-server.css}">
+    <link rel="stylesheet" th:href="@{/jacky917/theme.css}">
+</head>
+<body>
+<main class="card">
+    <header>
+        <img th:if="${logoUrl}" th:src="${logoUrl}" alt="" class="logo">
+        <p class="product" th:text="${productName}">jacky917</p>
+        <h1 th:text="${text['mfa.title']}">Two-step verification</h1>
+    </header>
+    <p th:text="${text['mfa.message']}">Enter the code from your authenticator app.</p>
+    <p th:if="${error}" class="error" role="alert" th:text="${error}">The code is wrong.</p>
+    <!-- th:action 讓 Spring Security 自動加入 CSRF 欄位 -->
+    <form method="post" th:action="@{/jacky917/mfa}">
+        <label for="code" th:text="${text['mfa.code']}">Code</label>
+        <input id="code" name="code" type="text" autocomplete="one-time-code" autocapitalize="none" maxlength="32"
+               required autofocus>
+        <p class="meta" th:text="${text['mfa.recovery-hint']}">Lost your phone? Enter a recovery code.</p>
+        <button type="submit" th:text="${text['mfa.submit']}">Verify</button>
+    </form>
+    <form method="post" th:action="@{/jacky917/mfa/cancel}">
+        <button type="submit" class="secondary" th:text="${text['mfa.cancel']}">Cancel</button>
+    </form>
+</main>
+</body>
+</html>

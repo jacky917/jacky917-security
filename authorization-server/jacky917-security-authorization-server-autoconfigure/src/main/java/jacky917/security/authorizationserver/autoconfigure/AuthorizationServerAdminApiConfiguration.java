@@ -8,6 +8,7 @@ import jacky917.security.authorizationserver.admin.AdminJwtAuthenticationConvert
 import jacky917.security.authorizationserver.admin.AuditAdminController;
 import jacky917.security.authorizationserver.admin.ClientAdminController;
 import jacky917.security.authorizationserver.admin.ClientAdminService;
+import jacky917.security.authorizationserver.admin.MfaAdminController;
 import jacky917.security.authorizationserver.admin.RoleAdminController;
 import jacky917.security.authorizationserver.admin.RoleAdminService;
 import jacky917.security.authorizationserver.admin.ScopeAdminController;
@@ -15,6 +16,7 @@ import jacky917.security.authorizationserver.admin.ScopeAdminService;
 import jacky917.security.authorizationserver.admin.UserAdminController;
 import jacky917.security.authorizationserver.admin.UserAdminService;
 import jacky917.security.authorizationserver.client.ClientProfileRepository;
+import jacky917.security.authorizationserver.mfa.MfaService;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.session.Jacky917LogoutHandler;
@@ -188,6 +190,13 @@ class AuthorizationServerAdminApiConfiguration {
     @ConditionalOnMissingBean
     ClientAdminController jacky917ClientAdminController(ClientAdminService clients) {
         return new ClientAdminController(clients);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    MfaAdminController jacky917MfaAdminController(MfaService mfa, UserAccountService users, AdminAuditService audit,
+                                                  PlatformTransactionManager transactionManager) {
+        return new MfaAdminController(mfa, users, audit, new TransactionTemplate(transactionManager));
     }
 
     @Bean
