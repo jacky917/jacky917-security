@@ -125,8 +125,10 @@ import java.time.ZoneId;
 @EnableWebSecurity
 class AuthorizationServerSecurityConfiguration {
 
+    // 不設 form-action：Chrome 對表單送出後的每一次重導都套用它，登入後經授權端點導回 client（其他網域或 App 的
+    // scheme）會被擋下
     private static final String CONTENT_SECURITY_POLICY =
-            "default-src 'self'; img-src 'self' https: data:; frame-ancestors 'none'; form-action 'self'";
+            "default-src 'self'; img-src 'self' https: data:; frame-ancestors 'none'";
 
     @Bean
     @Order(1)

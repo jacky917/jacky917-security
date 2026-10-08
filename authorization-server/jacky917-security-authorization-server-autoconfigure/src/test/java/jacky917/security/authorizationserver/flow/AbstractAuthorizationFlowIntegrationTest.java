@@ -367,13 +367,15 @@ abstract class AbstractAuthorizationFlowIntegrationTest extends AbstractFlowInte
     }
 
     @Test
-    @DisplayName("登入頁不可被嵌入 iframe，並帶內容安全政策")
+    @DisplayName("登入頁不可被嵌入 iframe，並帶內容安全政策；不限制 form-action，登入後才能經授權端點導回其他網域的 client")
     void loginPageHeaders() throws Exception {
         mockMvc.perform(get("/login"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Frame-Options", "DENY"))
                 .andExpect(header().string("Content-Security-Policy",
-                        org.hamcrest.Matchers.containsString("frame-ancestors 'none'")));
+                        org.hamcrest.Matchers.containsString("frame-ancestors 'none'")))
+                .andExpect(header().string("Content-Security-Policy",
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("form-action"))));
     }
 
     @Test

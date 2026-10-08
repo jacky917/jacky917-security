@@ -1069,3 +1069,11 @@
   - `AdminApiIntegrationTest` 新增 4 個（兩種資料庫）：第三方 client 的建立與 secret（T-ADMIN-07）、規則與設定中的 client 唯讀、狀態轉換、scope 與 API resource。
   - `AuthorizationServerPropertiesTest`：第三方 client 規則；`ClientRegistrationIntegrationTest`：設定檔中的第三方 client 要求同意並儲存資訊。
 
+## Step 52: Authorization Server——修正：內容安全政策擋下登入後導回 client
+- **Status**: 🟢 Completed
+- **問題**: 頁面的內容安全政策含 `form-action 'self'`。Chrome 對表單送出後的每一次重導都套用 `form-action`，因此登入表單送出 → 授權端點 → 導向 client 的 redirect URI（其他網域、`localhost` 的其他埠號或 App 的 scheme）時被擋下，瀏覽器停在登入頁。MockMvc 不執行 CSP，整合測試沒有發現。
+- **驗證**: 以內建瀏覽器（Chromium）與兩個本機伺服器重現：`form-action 'self'` 的頁面送出表單，同源重導可以通過，重導到另一個來源時被擋下（主控台：violates the following Content Security Policy directive: "form-action 'self'"）。
+- **變更**: 移除 `form-action`，保留 `default-src 'self'`、`img-src 'self' https: data:`、`frame-ancestors 'none'`；`loginPageHeaders` 測試確認不含 `form-action`；詳細設計 §13.2 更新。
+- **Decision Log**:
+  - **DEC-116**: 頁面不使用 CSP `form-action`。允許的目的地取決於所有 client 的 redirect URI（含管理 API 建立的 client 與 App 的 scheme），無法以固定的政策表達；表單內容由 Thymeleaf 轉義，注入表單的風險另以 `default-src 'self'` 限制。
+
