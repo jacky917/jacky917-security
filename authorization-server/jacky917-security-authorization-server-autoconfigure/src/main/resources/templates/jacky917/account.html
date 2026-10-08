@@ -63,6 +63,24 @@
         </li>
     </ul>
 
+    <h2 th:unless="${#lists.isEmpty(apps)}" th:text="${text['account.apps']}">Authorized applications</h2>
+    <ul class="devices" th:unless="${#lists.isEmpty(apps)}">
+        <li th:each="app : ${apps}" class="device">
+            <div class="device-info">
+                <p>
+                    <img th:if="${app.logoUrl}" th:src="${app.logoUrl}" alt="" class="app-logo">
+                    <a th:if="${app.homepageUrl}" class="link" th:href="${app.homepageUrl}" rel="noopener"
+                       th:text="${app.name}">Partner App</a>
+                    <strong th:unless="${app.homepageUrl}" th:text="${app.name}">Partner App</strong>
+                </p>
+                <p class="meta" th:text="${#strings.listJoin(app.scopes.![name], '、')}">Profile、Email</p>
+            </div>
+            <form method="post" th:action="@{/jacky917/account/apps/{id}/revoke(id=${app.clientId})}">
+                <button type="submit" class="secondary" th:text="${text['account.apps.revoke']}">Remove access</button>
+            </form>
+        </li>
+    </ul>
+
     <form method="post" th:action="@{/jacky917/account/logout-all}">
         <button type="submit" th:text="${text['account.logout-all']}">Sign out of all devices</button>
     </form>

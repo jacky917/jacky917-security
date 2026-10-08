@@ -381,7 +381,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 23 | 忘記密碼：`PasswordResetController`（`/jacky917/password/forgot`、`/jacky917/password/reset`）、登入頁的連結、IP 限流涵蓋這些表單 | ✅ |
 | 24 | 註冊與 Email 驗證：`RegistrationService`、`RegistrationController`（`/jacky917/register`、`/jacky917/verify-email`、`/jacky917/verify-email/resend`）、登入頁的連結；使用指南「帳號自助功能」 | ✅ |
 | 25 | 第三方 client、scope、API resource 管理：設定檔 `trust-level: third-party`（`ClientUris`、`ClientDetails`）、`ClientAdminService`／`ClientAdminController`、`ScopeAdminService`／`ScopeAdminController`；使用指南 §5、§9 | ✅ |
-| 26 | 同意畫面、撤回授權 | |
+| 26 | 同意畫面、撤回授權：`ConsentController`（`/oauth2/consent`）、`AuditingAuthorizationConsentService`、`ScopeDescriptions`、`AuthorizedApplicationService`、帳號頁「已授權的應用程式」 | ✅ |
 | 27 | `aud` 依 scope 決定 | |
 | 28 | 兩步驟驗證 | |
 | 29 | 發佈準備 | |
@@ -396,4 +396,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 重新寄送驗證信（工作 24） | §5.4：可重新寄送 | 獨立的 `POST /jacky917/verify-email/resend`，只對未完成的註冊寄信，畫面一律相同 | 寄送畫面不保留密碼，重新寄送不能再走註冊表單 |
 | 管理 API 建立的 client（工作 25） | §6.4：建立 client | 一律為第三方 client，grant type 由驗證方式決定（confidential：`authorization_code`、`refresh_token`；public：`authorization_code`）；scope 必須已在 `app_scope` 定義 | 第一方 client 由設定管理；讓同意畫面一定能顯示 scope 的名稱與說明 |
 | 內建 scope 的更新（工作 25） | §6.4：內建 scope 不可刪除 | 內建 scope 也只能修改名稱與說明（不能改是否需要同意與權限對應） | `openid` 等 OIDC scope 的行為由規格決定 |
+| 不需要同意的 scope（工作 26） | §6.2：不列出 | 不列出，並隨「允許」以隱藏欄位送出 | Spring Authorization Server 只自動核准 `openid`；其他 `consent_required=false` 的 scope 必須在同意請求中送出才會授予 |
+| 撤回授權（工作 26） | §6.3：刪除同意紀錄與授權 | 以 SQL 刪除並自行稽核 `CONSENT_REVOKED`，不經過 `OAuth2AuthorizationConsentService` | `JdbcOAuth2AuthorizationConsentService` 讀取同意紀錄時要求 client 為啟用中，已停權 client 的同意紀錄因此無法撤回 |
+| 內容安全政策（修正） | 詳細設計：`form-action 'self'` | 移除 `form-action`（DEC-116） | Chrome 對表單送出後的重導套用 `form-action`，登入與同意表單導回 client 時會被擋下 |
 | `admin_audit_log` 的對象種類（工作 18） | 資料模型 §8.3 的 7 種 | V1_1_0 加入 `API_RESOURCE` | API resource 的管理也要稽核；SQLite 無法修改約束，與 `login_audit` 一起重建 |

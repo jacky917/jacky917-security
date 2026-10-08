@@ -28,6 +28,21 @@ import java.util.Map;
  */
 public class PageSupport {
 
+    /**
+     * The content security policy of the authorization server's pages:
+     * resources and framing only from this server, images also from
+     * {@code https} addresses. It has no {@code form-action}, because
+     * browsers apply it to the redirects after a form, and the login and
+     * consent forms end at a client's redirect URI.
+     * <p>
+     * Authorization Server 頁面的內容安全政策：資源與嵌入只限本伺服器，圖片另
+     * 可來自 {@code https} 網址。不設 {@code form-action}，因為瀏覽器會把它
+     * 套用到表單之後的重導，而登入與同意表單最後都會導向 client 的
+     * redirect URI。
+     */
+    public static final String CONTENT_SECURITY_POLICY =
+            "default-src 'self'; img-src 'self' https: data:; frame-ancestors 'none'";
+
     private final AuthorizationServerProperties.Branding branding;
     private final MessageSource messages;
 

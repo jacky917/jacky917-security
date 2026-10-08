@@ -310,7 +310,7 @@ jacky917:
 | `trust-level` | `first-party` | `third-party`：見下方 |
 | `description`、`logo-url`、`homepage-url`、`privacy-policy-url`、`terms-url` | — | 顯示在同意畫面上；網址必須是 `https` |
 
-**第三方 client**（`trust-level: third-party`）：使用者第一次授權時必須同意要求的 scope；必須有 `privacy-policy-url`；不可使用 `client-credentials`（沒有使用者可以同意）；不可要求以 `as:` 開頭的 scope（會授予管理權限）。Token 不含角色，`permissions` 只有「使用者同意的 scope 對應的權限」中使用者也擁有的部分（見 [§7](#7-token-內容)）。
+**第三方 client**（`trust-level: third-party`）：使用者第一次授權時會看到同意畫面（`/oauth2/consent`：應用程式的名稱、Logo、說明、隱私權政策與服務條款，以及要求的 scope 的名稱與說明），可以只勾選部分 scope；之後只在要求新的 scope 時再次詢問。Scope 的名稱與說明以[管理 API](#9-管理-api) 的 `/admin/api/scopes` 設定，`consentRequired: false` 的 scope 不詢問；必須有 `privacy-policy-url`；不可使用 `client-credentials`（沒有使用者可以同意）；不可要求以 `as:` 開頭的 scope（會授予管理權限）。Token 不含角色，`permissions` 只有「使用者同意的 scope 對應的權限」中使用者也擁有的部分（見 [§7](#7-token-內容)）。
 
 **一律套用、無法關閉**：所有 client 都必須使用 PKCE；Refresh Token 每次使用都會換發新的（舊的立即失效）。有效期取自 `token.*`。
 
@@ -456,6 +456,7 @@ spring:
 | `ACCOUNT_UNLINKED` | 解除連結 | — |
 | `LOGOUT` | 登出（見下一節） | — |
 | `TOKEN_REFRESH_REUSE` | 偵測到 Refresh Token 重用（每次都寫入，即使 Session 已撤銷） | `REUSE_DETECTED` |
+| `CONSENT_GRANTED`、`CONSENT_REVOKED` | 使用者同意第三方應用程式；在帳號頁移除存取權（或在同意畫面拒絕而刪除先前的同意） | — |
 
 稽核事件同時以 Spring 的 `ApplicationEvent`（`LoginAuditEvent`）發布，應用程式可以另外監聽並轉送到 SIEM。寫入失敗不影響登入：整個事件（不含輸入的帳號）記錄在 `ERROR` 日誌中以便補回，並計入 `jacky917.as.audit.write_failures`。IP 限流計算的是寫入 `login_audit` 的失敗，寫入失敗期間看不到這些嘗試。
 
@@ -465,7 +466,7 @@ spring:
 |---|---|
 | BFF 導向 `/connect/logout?id_token_hint=…&post_logout_redirect_uri=…`（RP-Initiated Logout） | 撤銷該次登入的登入 Session（刪除其授權，Refresh Token 立即失效），結束登入服務的瀏覽器登入，導回 `post_logout_redirect_uri`（必須是 client 設定的 `post-logout-redirect-uris` 之一） |
 | 登入服務的瀏覽器 Session 已過期 | 仍以 `id_token_hint` 找到並撤銷登入 Session；ID Token 本身過期也可以 |
-| 帳號頁 `/jacky917/account` | 列出登入中的裝置（登入方式、時間、IP、瀏覽器），可以登出單一裝置或「登出所有裝置」；也可以連結或解除連結第三方帳號（見 [§6](#6-第三方登入googlegithubline)） |
+| 帳號頁 `/jacky917/account` | 列出登入中的裝置（登入方式、時間、IP、瀏覽器），可以登出單一裝置或「登出所有裝置」；也可以連結或解除連結第三方帳號（見 [§6](#6-第三方登入googlegithubline)），以及移除已授權之第三方應用程式的存取權（刪除同意紀錄與該應用程式的授權，Refresh Token 立即失效） |
 | 登入服務的 `POST /logout` | 撤銷目前的登入 Session，回到 `/login?logout` |
 
 每次登出都寫入稽核紀錄（`login_audit` 的 `LOGOUT`）。已簽發的 Access Token 仍有效至到期（最長 `token.access-token-ttl`），見 [限制 §6](../resource-server/limitations.md#6-token-無法撤銷)。帳號頁的時間以伺服器的預設時區顯示。
@@ -569,7 +570,6 @@ curl -X POST https://auth.example.com/admin/api/users \
 
 | 項目 | 現況 | 預計 |
 |---|---|---|
-| 第三方 client 的同意畫面 | 暫時使用 Spring Authorization Server 的預設頁面 | 第 3 階段（工作 26） |
 | 管理畫面 | 不提供；以[管理 API](#9-管理-api) 自行整合 | — |
 | MySQL | 不支援 | 第 5 階段 |
 

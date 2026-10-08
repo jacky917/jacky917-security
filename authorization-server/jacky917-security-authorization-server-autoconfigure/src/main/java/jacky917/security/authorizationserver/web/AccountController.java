@@ -2,6 +2,7 @@ package jacky917.security.authorizationserver.web;
 
 import jacky917.security.authorizationserver.audit.LoginAuditEvent;
 import jacky917.security.authorizationserver.audit.LoginAuditEventType;
+import jacky917.security.authorizationserver.consent.AuthorizedApplicationService;
 import jacky917.security.authorizationserver.federation.FederatedIdentityService;
 import jacky917.security.authorizationserver.federation.FederatedLoginSuccessHandler;
 import jacky917.security.authorizationserver.federation.LinkIntent;
@@ -83,13 +84,15 @@ public class AccountController {
     private static final String[] PAGE_KEYS = {"account.title", "account.devices", "account.current",
             "account.signed-in-at", "account.last-active", "account.logout", "account.logout-all",
             "account.logout-all.hint", "account.ip", "account.identities", "account.link", "account.unlink",
-            "account.linked-at", "account.password"};
+            "account.linked-at", "account.password", "account.apps", "account.apps.revoke"};
+    private static final List<String> NOTICES = List.of("password_changed", "app_revoked");
 
     private final AuthSessionService sessions;
     private final UserAccountService users;
     private final Jacky917LogoutHandler logoutHandler;
     private final FederatedIdentityService identities;
     private final IdentityProviders providers;
+    private final AuthorizedApplicationService applications;
     private final ApplicationEventPublisher events;
     private final Clock clock;
     private final PageSupport page;
@@ -112,6 +115,8 @@ public class AccountController {
      *                       <br>已連結的外部帳號
      * @param providers      the identity providers that can be linked
      *                       <br>可以連結的身分提供者
+     * @param applications   the applications the user consented to
+     *                       <br>使用者同意過的應用程式
      * @param events         publishes the audit events
      *                       <br>發布稽核事件
      * @param clock          the clock
@@ -122,12 +127,14 @@ public class AccountController {
     public AccountController(AuthorizationServerProperties properties, AuthSessionService sessions,
                              UserAccountService users, Jacky917LogoutHandler logoutHandler,
                              FederatedIdentityService identities, IdentityProviders providers,
-                             ApplicationEventPublisher events, Clock clock, ZoneId zone) {
+                             AuthorizedApplicationService applications, ApplicationEventPublisher events, Clock clock,
+                             ZoneId zone) {
         this.sessions = sessions;
         this.users = users;
         this.logoutHandler = logoutHandler;
         this.identities = identities;
         this.providers = providers;
+        this.applications = applications;
         this.events = events;
         this.clock = clock;
         this.page = new PageSupport(properties.getBranding());
@@ -157,8 +164,9 @@ public class AccountController {
         UserAccount user = users.findById(userId).orElse(null);
         model.addAttribute("userName", user == null ? userId : displayName(user));
         model.addAttribute("hasPassword", user != null && user.passwordHash() != null);
-        if ("password_changed".equals(request.getParameter("notice"))) {
-            model.addAttribute("notice", page.message("account.notice.password_changed", null, locale));
+        String notice = request.getParameter("notice");
+        if (notice != null && NOTICES.contains(notice)) {
+            model.addAttribute("notice", page.message("account.notice." + notice, null, locale));
         }
         DateTimeFormatter format = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z", locale).withZone(zone);
         String current = currentSessionId(request);
@@ -178,6 +186,7 @@ public class AccountController {
         }
         model.addAttribute("devices", devices);
         model.addAttribute("identities", identities(userId, format));
+        model.addAttribute("apps", applications.list(userId));
         String error = request.getParameter("error");
         String pendingLinkError = takeLinkError(request);
         if (error == null) {
@@ -214,6 +223,28 @@ public class AccountController {
         request.getSession().setAttribute(LinkIntent.SESSION_ATTRIBUTE,
                 new LinkIntent(authentication.getName(), provider.registrationId(), authentication, clock.instant()));
         return "redirect:/oauth2/authorization/" + provider.registrationId();
+    }
+
+    /**
+     * Withdraws the user's consent to an application and deletes its
+     * authorizations; its refresh tokens stop working at once.
+     * <p>
+     * 撤回使用者對應用程式的同意並刪除其授權；它的 Refresh Token 立即失效。
+     *
+     * @param clientId        the client id of the application
+     *                        <br>應用程式的 client id
+     * @param authentication  the logged-in user
+     *                        <br>已登入的使用者
+     * @param request         the current request, for the audit
+     *                        <br>目前的請求，用於稽核
+     * @return a redirect to the account page
+     *         <br>重導至帳號頁
+     */
+    @PostMapping(ACCOUNT_PATH + "/apps/{clientId}/revoke")
+    public String revokeApplication(@PathVariable String clientId, Authentication authentication,
+                                    HttpServletRequest request) {
+        applications.revoke(authentication.getName(), clientId, request);
+        return "redirect:" + ACCOUNT_PATH + "?notice=app_revoked";
     }
 
     /**

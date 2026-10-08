@@ -67,7 +67,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "jacky917.security.authorization-server.clients.suspended.scopes=report.generate",
         "jacky917.security.authorization-server.clients.admin-sync.secret=sync-secret",
         "jacky917.security.authorization-server.clients.admin-sync.grant-types=client_credentials",
-        "jacky917.security.authorization-server.clients.admin-sync.scopes=as:audit:read,as:user:read"
+        "jacky917.security.authorization-server.clients.admin-sync.scopes=as:audit:read,as:user:read",
+        "jacky917.security.authorization-server.clients.partner.trust-level=third-party",
+        "jacky917.security.authorization-server.clients.partner.display-name=Partner App",
+        "jacky917.security.authorization-server.clients.partner.secret=partner-secret",
+        "jacky917.security.authorization-server.clients.partner.redirect-uris=" + AbstractFlowIntegrationTest.PARTNER_REDIRECT_URI,
+        "jacky917.security.authorization-server.clients.partner.scopes=openid,profile,email",
+        "jacky917.security.authorization-server.clients.partner.privacy-policy-url=https://partner.example.com/privacy"
 })
 @AutoConfigureMockMvc
 abstract class AbstractFlowIntegrationTest {
@@ -77,6 +83,8 @@ abstract class AbstractFlowIntegrationTest {
     static final String REDIRECT_URI = "https://app.example.com/login/oauth2/code/jacky917";
 
     static final String LOGGED_OUT_URI = "https://app.example.com/logged-out";
+
+    static final String PARTNER_REDIRECT_URI = "https://partner.example.com/callback";
 
     /**
      * 不為零時，刷新在持有授權列鎖的交易中等待這麼久才記錄舊 token，讓併發的刷新穩定地與它重疊。

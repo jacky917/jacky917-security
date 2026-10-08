@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${text['consent.title'] + ' · ' + productName}">Allow access</title>
+    <link rel="stylesheet" th:href="@{/jacky917/authorization-server.css}">
+    <link rel="stylesheet" th:href="@{/jacky917/theme.css}">
+</head>
+<body>
+<main class="card">
+    <header>
+        <img th:if="${client.logoUrl}" th:src="${client.logoUrl}" alt="" class="logo">
+        <img th:if="${client.logoUrl == null and logoUrl != null}" th:src="${logoUrl}" alt="" class="logo">
+        <p class="product" th:text="${productName}">jacky917</p>
+        <h1 th:text="${heading}">Partner App wants to access your account</h1>
+    </header>
+    <p th:if="${client.description}" th:text="${client.description}">Imports your orders.</p>
+    <!-- Spring Authorization Server 以 client_id、state 與勾選的 scope 判斷同意的內容 -->
+    <form method="post" th:action="@{/oauth2/authorize}" id="allow">
+        <input type="hidden" name="client_id" th:value="${clientId}">
+        <input type="hidden" name="state" th:value="${state}">
+        <input th:each="code : ${automaticScopes}" type="hidden" name="scope" th:value="${code}">
+        <th:block th:unless="${#lists.isEmpty(scopes)}">
+            <h2 th:text="${text['consent.requested']}">This application asks to</h2>
+            <ul class="scopes">
+                <li th:each="scope : ${scopes}">
+                    <label>
+                        <input type="checkbox" name="scope" th:value="${scope.code}" checked>
+                        <strong th:text="${scope.name}">Read your orders</strong>
+                    </label>
+                    <p class="meta" th:if="${scope.description}" th:text="${scope.description}">Order history</p>
+                </li>
+            </ul>
+        </th:block>
+        <th:block th:unless="${#lists.isEmpty(previousScopes)}">
+            <h2 th:text="${text['consent.previous']}">You already allowed</h2>
+            <ul class="scopes">
+                <li th:each="scope : ${previousScopes}"><strong th:text="${scope.name}">Profile</strong></li>
+            </ul>
+        </th:block>
+        <button type="submit" th:text="${text['consent.allow']}">Allow</button>
+    </form>
+    <!-- 不送 scope：client 收到 access_denied -->
+    <form method="post" th:action="@{/oauth2/authorize}">
+        <input type="hidden" name="client_id" th:value="${clientId}">
+        <input type="hidden" name="state" th:value="${state}">
+        <button type="submit" class="secondary" th:text="${text['consent.deny']}">Deny</button>
+    </form>
+    <p class="hint" th:text="${text['consent.hint']}">You can withdraw this on your account page.</p>
+    <p class="meta">
+        <a class="link" th:if="${client.homepageUrl}" th:href="${client.homepageUrl}" rel="noopener"
+           th:text="${text['consent.homepage']}">Home page</a>
+        <a class="link" th:if="${client.privacyPolicyUrl}" th:href="${client.privacyPolicyUrl}" rel="noopener"
+           th:text="${text['consent.privacy']}">Privacy policy</a>
+        <a class="link" th:if="${client.termsUrl}" th:href="${client.termsUrl}" rel="noopener"
+           th:text="${text['consent.terms']}">Terms of service</a>
+    </p>
+</main>
+</body>
+</html>

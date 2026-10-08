@@ -12,9 +12,15 @@ import jacky917.security.authorizationserver.audit.JdbcLoginAuditListener;
 import jacky917.security.authorizationserver.audit.LoginAuditRepository;
 import jacky917.security.authorizationserver.authentication.AccountLockout;
 import jacky917.security.authorizationserver.authentication.LoginAttemptGuard;
+import jacky917.security.authorizationserver.authentication.LoginCompletion;
 import jacky917.security.authorizationserver.authentication.LoginFailureHandler;
 import jacky917.security.authorizationserver.authentication.LoginSuccessHandler;
 import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
+import jacky917.security.authorizationserver.client.ClientProfileRepository;
+import jacky917.security.authorizationserver.consent.AuditingAuthorizationConsentService;
+import jacky917.security.authorizationserver.consent.AuthorizedApplicationService;
+import jacky917.security.authorizationserver.consent.ScopeDescriptions;
+import jacky917.security.authorizationserver.database.AuthorizationServerDialect;
 import jacky917.security.authorizationserver.federation.FederatedIdentityService;
 import jacky917.security.authorizationserver.federation.FederatedLoginFailureHandler;
 import jacky917.security.authorizationserver.federation.FederatedLoginSuccessHandler;
@@ -22,33 +28,32 @@ import jacky917.security.authorizationserver.federation.FederatedUserInfoMapper;
 import jacky917.security.authorizationserver.federation.GitHubFederatedUserInfoMapper;
 import jacky917.security.authorizationserver.federation.LineIdTokens;
 import jacky917.security.authorizationserver.federation.OidcFederatedUserInfoMapper;
-import jacky917.security.authorizationserver.client.ClientProfileRepository;
-import jacky917.security.authorizationserver.database.AuthorizationServerDialect;
+import jacky917.security.authorizationserver.federation.PendingLinkService;
+import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.refresh.RefreshTokenHistoryRepository;
 import jacky917.security.authorizationserver.refresh.RefreshTokenReuseDetector;
+import jacky917.security.authorizationserver.session.AuthSessionService;
+import jacky917.security.authorizationserver.session.Jacky917LogoutHandler;
+import jacky917.security.authorizationserver.session.LoginSessionValidationFilter;
+import jacky917.security.authorizationserver.session.SessionAuthorizationRepository;
+import jacky917.security.authorizationserver.session.SessionLinkingAuthorizationService;
 import jacky917.security.authorizationserver.token.AudienceResolver;
 import jacky917.security.authorizationserver.token.AuthorityResolver;
 import jacky917.security.authorizationserver.token.ConfiguredAudienceResolver;
 import jacky917.security.authorizationserver.token.DefaultAuthorityResolver;
 import jacky917.security.authorizationserver.token.Jacky917TokenCustomizer;
 import jacky917.security.authorizationserver.token.TokenClaimsContributor;
-import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
-import jacky917.security.authorizationserver.session.AuthSessionService;
-import jacky917.security.authorizationserver.session.Jacky917LogoutHandler;
-import jacky917.security.authorizationserver.session.LoginSessionValidationFilter;
-import jacky917.security.authorizationserver.session.SessionAuthorizationRepository;
-import jacky917.security.authorizationserver.session.SessionLinkingAuthorizationService;
-import jacky917.security.authorizationserver.user.UserAccountService;
-import jacky917.security.authorizationserver.authentication.LoginCompletion;
-import jacky917.security.authorizationserver.federation.PendingLinkService;
 import jacky917.security.authorizationserver.user.PasswordPolicy;
+import jacky917.security.authorizationserver.user.UserAccountService;
 import jacky917.security.authorizationserver.web.AccountController;
-import jacky917.security.authorizationserver.web.AccountPasswordController;
-import jacky917.security.authorizationserver.web.PasswordResetController;
-import jacky917.security.authorizationserver.web.RegistrationController;
 import jacky917.security.authorizationserver.web.AccountLinkController;
+import jacky917.security.authorizationserver.web.AccountPasswordController;
+import jacky917.security.authorizationserver.web.ConsentController;
 import jacky917.security.authorizationserver.web.IdentityProviders;
 import jacky917.security.authorizationserver.web.LoginController;
+import jacky917.security.authorizationserver.web.PageSupport;
+import jacky917.security.authorizationserver.web.PasswordResetController;
+import jacky917.security.authorizationserver.web.RegistrationController;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -125,11 +130,6 @@ import java.time.ZoneId;
 @EnableWebSecurity
 class AuthorizationServerSecurityConfiguration {
 
-    // 不設 form-action：Chrome 對表單送出後的每一次重導都套用它，登入後經授權端點導回 client（其他網域或 App 的
-    // scheme）會被擋下
-    private static final String CONTENT_SECURITY_POLICY =
-            "default-src 'self'; img-src 'self' https: data:; frame-ancestors 'none'";
-
     @Bean
     @Order(1)
     @ConditionalOnMissingBean(name = "authorizationServerSecurityFilterChain")
@@ -145,6 +145,8 @@ class AuthorizationServerSecurityConfiguration {
         http.securityMatcher(authorizationServer.getEndpointsMatcher())
                 .with(authorizationServer, server -> server
                         .oidc(oidc -> oidc.logoutEndpoint(logout -> logout.logoutResponseHandler(logoutResponse)))
+                        // 第三方 client 的同意畫面（第 3、4 階段設計 §6.2）
+                        .authorizationEndpoint(authorization -> authorization.consentPage(ConsentController.CONSENT_PATH))
                         // 刷新改經過重用偵測（詳細設計 §5.4）
                         .tokenEndpoint(token -> token.authenticationProviders(reuseDetector::install)))
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
@@ -203,7 +205,7 @@ class AuthorizationServerSecurityConfiguration {
                 .addFilterBefore(new PasswordChangeRequiredFilter(), AuthorizationFilter.class)
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
-                        .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY)));
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(PageSupport.CONTENT_SECURITY_POLICY)));
         return http.build();
     }
 
@@ -253,8 +255,36 @@ class AuthorizationServerSecurityConfiguration {
     @ConditionalOnMissingBean
     @DependsOnDatabaseInitialization
     OAuth2AuthorizationConsentService authorizationConsentService(JdbcOperations jdbcOperations,
-                                                                  RegisteredClientRepository clients) {
-        return new JdbcOAuth2AuthorizationConsentService(jdbcOperations, clients);
+                                                                  RegisteredClientRepository clients,
+                                                                  ApplicationEventPublisher events, Clock clock) {
+        // 同意與撤回寫入稽核（第 3、4 階段設計 §6.2）
+        return new AuditingAuthorizationConsentService(new JdbcOAuth2AuthorizationConsentService(jdbcOperations,
+                clients), events, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    ScopeDescriptions scopeDescriptions(JdbcClient jdbcClient) {
+        return new ScopeDescriptions(jdbcClient);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    AuthorizedApplicationService authorizedApplicationService(JdbcClient jdbcClient, ScopeDescriptions scopes,
+                                                              ApplicationEventPublisher events,
+                                                              PlatformTransactionManager transactionManager,
+                                                              Clock clock) {
+        return new AuthorizedApplicationService(jdbcClient, scopes, events, new TransactionTemplate(transactionManager),
+                clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    ConsentController jacky917ConsentController(AuthorizationServerProperties properties,
+                                                RegisteredClientRepository clients, ClientProfileRepository profiles,
+                                                OAuth2AuthorizationConsentService consents, ScopeDescriptions scopes) {
+        return new ConsentController(properties, clients, profiles, consents, scopes);
     }
 
     /**
@@ -419,9 +449,10 @@ class AuthorizationServerSecurityConfiguration {
     AccountController jacky917AccountController(AuthorizationServerProperties properties, AuthSessionService sessions,
                                                 UserAccountService users, Jacky917LogoutHandler logoutHandler,
                                                 FederatedIdentityService identities, IdentityProviders providers,
+                                                AuthorizedApplicationService applications,
                                                 ApplicationEventPublisher events, Clock clock) {
-        return new AccountController(properties, sessions, users, logoutHandler, identities, providers, events, clock,
-                ZoneId.systemDefault());
+        return new AccountController(properties, sessions, users, logoutHandler, identities, providers, applications,
+                events, clock, ZoneId.systemDefault());
     }
 
     @Bean

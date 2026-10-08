@@ -1077,3 +1077,13 @@
 - **Decision Log**:
   - **DEC-116**: 頁面不使用 CSP `form-action`。允許的目的地取決於所有 client 的 redirect URI（含管理 API 建立的 client 與 App 的 scheme），無法以固定的政策表達；表單內容由 Thymeleaf 轉義，注入表單的風險另以 `default-src 'self'` 限制。
 
+## Step 53: Authorization Server——工作 26（同意畫面、撤回授權）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `ConsentController`（`/oauth2/consent`，`consent.html`，繁中與英文）：應用程式的名稱、Logo、說明、首頁、隱私權政策、服務條款；要同意的 scope（名稱與說明取自 `app_scope`，可取消勾選）、先前已同意的 scope；不需要同意的 scope 隨「允許」送出。「拒絕」讓 client 收到 `access_denied`。Spring Authorization Server 以 `consentPage` 指向此頁。
+  - `AuditingAuthorizationConsentService`：儲存同意時稽核 `CONSENT_GRANTED`，刪除時 `CONSENT_REVOKED`。
+  - 帳號頁「已授權的應用程式」（`AuthorizedApplicationService`）：列出同意過的應用程式與 scope；「移除存取權」刪除同意紀錄與該 client 對此使用者的授權（Refresh Token 立即失效），稽核 `CONSENT_REVOKED`。
+  - 測試設定加入第三方 client `partner`；`PageSupport.CONTENT_SECURITY_POLICY` 集中頁面的內容安全政策。
+- **Commands Run & Results**:
+  - 新增 `ConsentIntegrationTest`（兩種資料庫各 3 個）：只同意勾選的 scope、之後不再詢問、新增 scope 只詢問新的（T-CONSENT-01）；拒絕；帳號頁撤回後 Refresh Token 失效並再次詢問（T-CONSENT-02）。
+
