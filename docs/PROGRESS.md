@@ -548,3 +548,215 @@
   - **Updated**: `Jacky917SecurityAutoConfiguration.java`、`AutoConfiguration.imports`、`PrefixAndDefaultsIntegrationTest.java`、`AutoConfigurationOrderingIntegrationTest.java`、`Jacky917SecurityProperties.java`、`.github/workflows/publish.yml`、`scripts/check-doc-links.py`、`pom.xml`、`docs/resource-server/{getting-started,configuration,limitations}.md`、`docs/guides/{upgrade-to-2.0,github-packages}.md`、`docs/design/starter-design.md`、`docs/PROGRESS.md`、`docs/PROJECT_STRUCTURE.md`
 - **Next TODO**:
   - 決定授權條款（新增 `LICENSE` 與 `<licenses>`）後才能發佈 2.0.0。
+
+---
+## Step 20: Authorization Server 第 1 階段——工作 1、2（模組骨架、資料庫）
+- **Status**: 🟢 Completed（分支 `claude/as-phase1`，以 `claude/m2-restructure` 為基礎）
+- **Acceptance Criteria**:
+  - [x] 新增 `authorization-server/jacky917-security-authorization-server-autoconfigure` 與 `-starter`，加入根 POM 與 BOM。
+  - [x] `AuthorizationServerProperties`（`jacky917.security.authorization-server.*`）：`enabled`、`issuer`（必填，非 localhost 必須 https）、`database.*`、`token.*`；設定錯誤時啟動失敗。
+  - [x] D22：`AuthorizationServerDialect`（PostgreSQL、SQLite）、依 JDBC URL 自動選擇；`DefaultSqliteEnvironmentPostProcessor` 在未設定 `spring.datasource.url` 時使用 SQLite，建立資料夾與權限 600 的檔案；SQLite 缺少必要參數或關閉自動提交時啟動失敗。
+  - [x] Flyway V1：PostgreSQL 與 SQLite 各 7 個同名檔案（23 張表 + 內建資料）。
+  - [x] 新增 `SqliteExceptionTranslator`：SQLite 的約束違反轉為 Spring 的 `DuplicateKeyException`／`DataIntegrityViolationException`。
+- **Commands Run & Results**:
+  - AS 模組 26 個測試全數通過，SQLite 與 PostgreSQL 16.15（embedded-postgres）各跑一次：migration 與內建資料、官方 `JdbcRegisteredClientRepository`／`JdbcOAuth2AuthorizationService` 相容性（不需自訂 mixin）、約束、外鍵連帶刪除、兩種資料庫的 schema 一致性（T-DB-04）、SQLite 設定檢查（T-DB-02）、預設 SQLite（T-DB-01）、屬性驗證。
+  - 破壞實驗：只改 SQLite 的一個索引名稱 → 一致性測試失敗；停用例外轉換 → 約束測試失敗；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，82 個測試（Resource Server 47、Authorization Server 26、範例 9）。
+  - 文件連結、錨點、YAML 檢查：無錯誤。
+- **Decision Log**:
+  - **DEC-062**: 實測發現 Spring 沒有 SQLite 的錯誤碼，約束違反會變成 `UncategorizedSQLException`；新增 `SqliteExceptionTranslator` 並套用到所有 `JdbcTemplate`，讓兩種資料庫丟出相同的例外。
+  - **DEC-063**: PostgreSQL 測試改用 embedded-postgres（真正的 PostgreSQL 16.15），不依賴 Docker。
+  - **DEC-064**: 設定屬性只加入已實作功能使用的項目，其餘隨各工作加入。
+  - **DEC-065**: 第一方 client 不寫入 migration，改由工作 4 處理。
+  - **DEC-066**: 兩種資料庫的約束與索引使用相同名稱，以一致性測試防止兩份 migration 逐漸不同。
+- **Files Changed**: `authorization-server/**`（新增）、`pom.xml`、`jacky917-security-bom/pom.xml`、`README.md`、`docs/design/auth-server-detailed-design.md`、`docs/design/auth-server-data-model.md`、`docs/PROGRESS.md`、`docs/PROJECT_STRUCTURE.md`
+- **Next TODO**:
+  - 工作 3：簽章金鑰（`SigningKeyStore`、`KeyEncryptor`、`RotatingJwkSource`）。
+
+---
+## Step 21: Authorization Server 第 1 階段——工作 3（簽章金鑰）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `SigningKeyStore` SPI 與 `JdbcSigningKeyStore`；`KeyEncryptor`（AES-256-GCM，`kid` 為附加驗證資料）；`SigningKeyService`（RS256 3072 位元／ES256，快取 1 分鐘）；`RotatingJwkSource`。
+  - [x] 首次啟動自動產生 `ACTIVE` 金鑰；多實例同時建立時由唯一索引擋下並改用對方的金鑰。
+  - [x] 主金鑰（`keys.encryption-key`）必填、必須是 32 bytes 的 Base64；主金鑰錯誤時啟動失敗。
+  - [x] JWKS 只有公鑰；簽章另以只看得到 `ACTIVE` 私鑰的 `JwtEncoder` 進行，header 自動帶 `kid`。
+- **Commands Run & Results**:
+  - AS 模組 39 個測試全數通過：T-KEY-01（首次啟動、密文儲存、以 JWKS 驗證）、T-KEY-03（主金鑰錯誤時啟動失敗）、重新啟動沿用金鑰、輪換期間公開 3 把但只以 `ACTIVE` 簽章、輪換後舊 token 仍可驗證、ES256；SQLite 與 PostgreSQL 各跑一次。
+  - 查證：Spring Security 7.1.1 的 `NimbusJwtEncoder` 在多把 RSA 金鑰符合時拒絕簽章，因此簽章與 JWKS 必須分開。
+- **Decision Log**:
+  - **DEC-067**: JWKS 與簽章使用不同的金鑰來源（公鑰／`ACTIVE` 私鑰）。
+  - **DEC-068**: 私鑰密文以 `kid` 綁定；主金鑰錯誤在啟動時就失敗。
+- **Next TODO**:
+  - 工作 4：client（JDBC repository、`client_profile`、`ClientSecretInitializer`、第一方 client）。
+
+---
+## Step 22: Authorization Server 第 1 階段——工作 4（Client）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `RegisteredClientRepository`：官方 `JdbcRegisteredClientRepository` + `ActiveClientRegisteredClientRepository`（停權的 client 不存在 → `invalid_client`）。
+  - [x] 第一方 client 在設定中宣告（`clients.<client-id>.*`），每次啟動同步：一律 `requireProofKey=true`、`reuseRefreshTokens=false`、有效期取自 `token.*`、ID Token 演算法與簽章金鑰一致。
+  - [x] Secret 以 `{bcrypt}` 雜湊；設定改變時更換，相同時沿用；confidential client 沒有 secret 時啟動失敗。
+  - [x] 設定驗證：redirect URI（https／localhost／RFC 8252 原生 App scheme、無 fragment）、grant type 組合、public client 限制、client id 格式；第三方 client 在第 3 階段前拒絕。
+- **Commands Run & Results**:
+  - AS 模組 47 個測試全數通過（SQLite 與 PostgreSQL 各跑一次）。
+  - 測試發現並修正 2 個問題：① 原生 App 的 `com.example.app:/callback` 被誤判為不合法（改為允許 RFC 8252 的反向網域 scheme）；② 已停權的 client 在重新啟動時被重複新增而啟動失敗（同步改用未過濾的 repository）。
+- **Decision Log**:
+  - **DEC-069**: 第一方 client 以設定為準，啟動時同步（取代 migration seed 與 `ClientSecretInitializer`）。
+  - **DEC-070**: 第三方 client 在同意畫面完成前直接拒絕。
+- **Next TODO**:
+  - 工作 5：使用者（`UserAccountService`、`UserDetailsService`、密碼政策）。
+
+---
+## Step 23: Authorization Server 第 1 階段——工作 5（使用者）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `UserAccountService` SPI 與 `JdbcUserAccountService`：以帳號或已驗證的 Email 查詢（不分大小寫）、建立使用者（UUIDv7、`USER` 角色）、角色與權限（排除過期的角色）。
+  - [x] `Jacky917UserDetailsService`：username 為使用者 ID（D16）；帳號不存在、沒有密碼、已刪除、未驗證的 Email 都回相同的錯誤；停用、鎖定、`locked_until` 未到期時無法登入；強度調高後登入時自動重新雜湊（D21）。
+  - [x] `PasswordPolicy`（12～128 字元）、`password.min-length`；第一位管理員（`bootstrap-admin.*`）。
+- **Commands Run & Results**:
+  - AS 模組 58 個測試全數通過（SQLite 與 PostgreSQL 各跑一次），以 Spring Security 的 `DaoAuthenticationProvider` 實際驗證。
+  - 發現：Spring Security 的錯誤訊息依 JVM 語系翻譯，測試改為比對「所有失敗的訊息相同」；Spring Security 7 會在帳號密碼登入時加入 `FACTOR_PASSWORD` authority。
+- **Decision Log**:
+  - **DEC-071**: `UserDetails` 的 username 直接使用使用者 ID，帳號密碼登入不需要 `PrincipalNormalizer`。
+  - **DEC-072**: 帳號不可含 `@`，讓「帳號或 Email」登入不會混淆。
+  - **DEC-073**: 第一位管理員在第 1 階段即提供（不開放註冊時的唯一入口）。
+- **Next TODO**:
+  - 工作 6：登入（filter chain、登入頁、成功／失敗處理、`auth_session`）。
+
+---
+## Step 24: Authorization Server 第 1 階段——工作 6（登入）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] Order 1 filter chain：Spring Authorization Server 端點（OIDC、`/userinfo` 以 Access Token 存取）；未登入的瀏覽器導向 `/login`。
+  - [x] Order 3 filter chain：登入表單（CSRF）、登入後更換 Session ID、`X-Frame-Options: DENY`、CSP。
+  - [x] 登入頁（Thymeleaf）：依請求語言顯示繁體中文或英文；所有錯誤顯示相同訊息；品牌設定（產品名稱、logo、主色）。
+  - [x] `LoginSuccessHandler`：記錄登入、建立 `auth_session`（`PASSWORD`／`local`／`pwd`）、瀏覽器 Session 存放 `asid`。
+  - [x] 自動配置排在 Spring Boot 的安全性與 Authorization Server 自動配置之前（以測試確認類別名稱存在）。
+- **Commands Run & Results**:
+  - 以 MockMvc 模擬瀏覽器與 BFF 走完授權碼 + PKCE 流程（從登入頁 HTML 取得 CSRF token），SQLite 與 PostgreSQL 各一次：Access Token 的 `sub` 為使用者 ID、帶 `kid`、有 Refresh Token 與 ID Token；另驗證無 PKCE 被拒、未註冊的 redirect 回 400、`client_credentials` 的 `sub` 為 client id、停權 client 回 `invalid_client`、discovery 的 issuer、JWKS 只有公鑰。
+  - 測試發現並修正：`?error` 沒有值時，部分容器傳回 null，登入頁因此不顯示錯誤（改為判斷參數是否存在）。
+  - `mvn -B -o clean verify`：**SUCCESS**，131 個測試（Resource Server 47、Authorization Server 75、範例 9）。
+- **Decision Log**:
+  - **DEC-074**: 登入頁使用 starter 自己的訊息檔，不依賴應用程式的 `MessageSource`。
+  - **DEC-075**: 主色以 `/jacky917/theme.css` 提供，只接受色碼。
+- **Next TODO**:
+  - 工作 7：`SessionLinkingAuthorizationService`（授權與 `auth_session` 的連結）。
+
+---
+## Step 25: Authorization Server 第 1 階段——工作 7（授權與登入 Session 的連結）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `SessionLinkingAuthorizationService` 包裝官方 `JdbcOAuth2AuthorizationService`：授權碼流程的授權第一次儲存時，從瀏覽器 Session 取得 `asid`，在同一個交易中寫入 `session_authorization`。
+  - [x] 換 Token、刷新沿用既有連結；`client_credentials` 不建立連結。
+  - [x] 沒有 `asid`、或 `asid` 不是同一位使用者的 `ACTIVE` Session 時拒絕，授權一併回滾。
+- **Commands Run & Results**:
+  - AS 模組 79 個測試全數通過；新增：連結建立一次、刷新換發新的 Refresh Token 且舊的失效、連結不變、拒絕沒有 Session 的授權並確認沒有殘留（SQLite 與 PostgreSQL）。
+  - 破壞實驗：移除交易 → 「不留下沒有連結的授權」的斷言失敗；還原後通過。
+- **Decision Log**:
+  - **DEC-076**: 以「連結是否已存在」決定是否需要 `asid`（換 Token 也有 HTTP 請求，原設計的判斷會誤擋）。
+- **Next TODO**:
+  - 工作 8：`Jacky917TokenCustomizer`（`aud`、`asid`、`idp`、`roles`、`permissions`、ID Token 的使用者資料）。
+
+---
+## Step 26: Authorization Server 第 1 階段——工作 8（Token）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] `Jacky917TokenCustomizer`：Access Token 的 `aud`（`jacky917-api`）、`client_id`、`asid`、`idp`、`roles`（只給第一方）、`permissions`；ID Token 的 `amr`、`name`／`picture`／`locale`（`profile` scope）、`email`（`email` scope 且已驗證）；ID Token 不放角色與權限。
+  - [x] `client_credentials` 的 Token 只有 `aud`、`client_id`、`scope`（`sub` 為 client id）。
+  - [x] 角色與權限每次簽發都從資料庫讀取（D18）；使用者無法登入或登入 Session 失效時回 `invalid_grant`。
+  - [x] SPI：`AuthorityResolver`（含第三方的 scope 交集）、`AudienceResolver`、`TokenClaimsContributor`。
+- **Commands Run & Results**:
+  - AS 模組 87 個測試全數通過（SQLite 與 PostgreSQL 各一次）：T-TOKEN-01～05、Session 撤銷／停用／暫時鎖定後拒絕刷新、自訂 claim 經刷新後仍存在。
+  - 查證：Spring Security 7.1.1 的 `JwtGenerator` 已設定 ID Token 的 `sid`、`auth_time`、`azp`、`nonce`；Access Token 的 `aud` 預設為 client id，且沒有 `client_id` claim。
+  - 測試發現並修正：claim 使用 `List.of()` 等不可變集合時，授權存入資料庫後無法讀回，刷新失敗（customizer 最後統一轉為 `ArrayList`／`LinkedHashMap`）。
+  - `mvn -B -o clean verify`：**SUCCESS**，143 個測試（Resource Server 47、Authorization Server 87、範例 9）。
+- **Decision Log**:
+  - **DEC-077**: `auth_time` 沿用 Spring Security 的值，不覆寫。
+  - **DEC-078**: 第 1 階段在簽發 Token 時即檢查使用者與 Session 狀態。
+  - **DEC-079**: 沒有 `client_profile` 的 client 視為第三方。
+- **Next TODO**:
+  - 工作 9：Google 登入（通用 OIDC mapper、`FederatedIdentityService`、自動建立使用者）。
+
+---
+## Step 27: Authorization Server 第 1 階段——工作 9（Google 登入）
+- **Status**: 🟢 Completed
+- **Acceptance Criteria**:
+  - [x] 以 Spring Boot 標準的 `spring.security.oauth2.client.registration.*` 設定提供者；有設定時才啟用 `oauth2Login`，登入頁自動顯示「使用 Google 登入」。
+  - [x] `OidcFederatedUserInfoMapper`（通用 OIDC）、`FederatedIdentityService`：已連結 → 登入（停用者拒絕）；已驗證的 Email 屬於既有帳號 → 拒絕；其餘建立新使用者（只儲存已驗證的 Email）。
+  - [x] `FederatedLoginSuccessHandler`：建立 `auth_session`（`FEDERATED`／提供者／`fed`）、`PrincipalNormalizer`（D16）、移除提供者的 token。
+- **Commands Run & Results**:
+  - 以 JDK `HttpServer` 實作假的 Google（token、JWKS、userinfo），Spring 的 oauth2Login 實際換 code 並驗證 ID Token；SQLite 與 PostgreSQL 各 6 個測試全數通過（T-FED-01／02／04／06、Email 屬於既有帳號、登入頁按鈕）。
+  - 測試發現：Spring Security 7.1.1 的 `oauth2Login` 不會加入 factor authority，`JwtGenerator` 因而無法決定 `auth_time` 而拒絕簽發 ID Token；`PrincipalNormalizer` 補上 `FACTOR_AUTHORIZATION_CODE`。
+  - `mvn -B -o clean verify`：**SUCCESS**，155 個測試（Resource Server 47、Authorization Server 99、範例 9）。
+- **Decision Log**:
+  - **DEC-080**: 第 1 階段第三方登入的 Email 屬於既有帳號時直接拒絕，帳號連結確認於工作 14 加入。
+  - **DEC-081**: 第三方登入使用 Spring Boot 標準的 OAuth2 Client 設定。
+  - **DEC-082**: `PrincipalNormalizer` 在沒有 factor authority 時加入 `FACTOR_AUTHORIZATION_CODE`。
+- **Next TODO**:
+  - 工作 10：`example-authorization-server` 改用 AS starter、`example-bff`、E2E 測試。
+
+---
+## Step 28: Authorization Server 第 1 階段——工作 10（範例與 E2E），第 1 階段完成
+- **Status**: 🟢 Completed（M4 已實作，尚未發佈）
+- **Acceptance Criteria**:
+  - [x] `example-authorization-server` 改用 AS starter（port 9000、預設 SQLite、示範使用者 alice／bob、角色 A），移除舊的 HS256 示範簽發端點。
+  - [x] `example-resource-server` 改以登入服務的 JWKS 驗證 RS256 Token，檢查 `iss` 與 `aud`；移除 HS256 金鑰與測試 JWT CLI。
+  - [x] 新增 `example-bff`：oauth2Login、`/me`、`/api/**` 代理（自動附帶並刷新 Access Token，同一位使用者的刷新依序執行）、RP-Initiated Logout、示範頁面。
+  - [x] 新增 `e2e-tests`：同一個 JVM 啟動四個應用程式，模擬瀏覽器（T-E2E-01、T-E2E-03、登出）。
+  - [x] 新增 [Authorization Server 使用指南](authorization-server/getting-started.md)；改寫 E2E 測試指南與 README 的範例說明。
+- **Commands Run & Results**:
+  - E2E 4 個測試第一次執行即全數通過：alice 登入後呼叫 API 200、bob 403、audience 不同的服務拒絕同一個 Token、登出後兩邊都需要重新登入。
+  - `mvn -B -o clean verify`：**SUCCESS**，161 個測試（Resource Server 47、Authorization Server 99、範例 11、E2E 4）。
+  - 文件連結檢查發現 Resource Server 使用指南仍連到已刪除的 `DemoJwtDecoderConfiguration`，已修正。
+- **Decision Log**:
+  - **DEC-083**: 範例 jar 以 `exec` classifier 產生可執行檔，主要 artifact 維持一般 jar，供 `e2e-tests` 引用。
+  - **DEC-084**: E2E 在同一個 JVM 執行，以 `spring.config.name` 避免載入同名的 `application.yml`；不需要 Docker。
+  - **DEC-085**: 範例登入服務使用自己的 Session Cookie 名稱，避免與同主機的 BFF 互相覆蓋。
+- **Next TODO**:
+  - 待使用者決定：授權條款（發佈 2.0.0 的前提）、合併 PR #3 與本分支的 PR、1.1.0 發佈時間。
+  - 第 2 階段（工作 11～17）：重用偵測、登出撤銷 Session、登入保護與稽核、帳號連結、排程（金鑰輪換、清理）、Spring Session JDBC、metrics。
+
+---
+## Step 29: PR #4 review 修正（10 項全部修正）
+- **Status**: 🟢 Completed
+- **修正內容**:
+  1. 登入 Session 已撤銷或過期、但瀏覽器仍登入時，授權請求原本以 HTTP 500 結束：新增 `LoginSessionValidationFilter`，結束瀏覽器登入並回到登入頁；建立連結時也檢查到期時間。
+  2. Starter 對應 `GET /` 會與應用程式的首頁衝突：改為 `/jacky917/signed-in`（需要登入）。
+  3. 設定 `spring.flyway.locations` 會讓應用程式在 `db/migration` 的 migration 靜默不執行：改為 Starter 自己的 Flyway 與歷史表（`jacky917_as_schema_history`），migration 移到 `db/jacky917-as/{vendor}`；應用程式的 Flyway 遇到 Starter 的表時以版本 0 建立 baseline。資料庫檔案改為在寫入機密前才設為 600。
+  4. BFF 代理：原樣轉送 query、不當成 URI 樣板、自行拒絕 `//` 開頭的路徑。
+  5. BFF 的鎖改為固定 64 個。
+  6. 新增 9 個單元測試類別（Mockito、固定時鐘、每個分支一個案例），涵蓋原本未測的錯誤路徑；第三方登入無法處理時改為回到登入頁（原本 500）。
+  7. 新增可推移的 `Clock` Bean：T-REFRESH-06（Session 超過 90 天）、登入 Session 過期時回到登入頁。
+  8. 新增 `/userinfo` 測試。
+  9. E2E 只有登入服務事先決定埠號，其餘以 `server.port=0` 啟動；埠號衝突時重試。
+  10. 假的 OIDC 提供者每個測試類別各自啟動與關閉，每次登入以授權碼區分。
+- **Commands Run & Results**:
+  - 破壞實驗：移除 `LoginSessionValidationFilter` → 重現原本的 `IllegalStateException`（500）、過期案例發出授權碼；移除代理的 `//` 檢查 → 代理測試失敗；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，215 個測試（Resource Server 47、Authorization Server 150、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-086**: Starter 的 migration 使用自己的 Flyway 與歷史表，不改變應用程式的 Flyway。
+  - **DEC-087**: 登入 Session 失效時結束瀏覽器登入（重新登入），而不是拒絕授權。
+  - **DEC-088**: Starter 的頁面一律放在 `/jacky917/` 之下。
+
+---
+## Step 30: 第二次 review 修正（使用者的 8 項審查）
+- **Status**: 🟢 Completed
+- **確認結果**：8 項中 7 項正確；第 3 項（側檔權限）方向正確但嚴重度較低：實測在目前的啟動順序下側檔已是 600，只是順序沒有保證。
+- **修正內容**:
+  1. ES256 時每次簽發都失敗：新增 `ActiveKeyJwtEncoder`，一律以目前金鑰的演算法簽章；授權流程測試另以 ES256 完整執行。
+  2. 發佈流程的授權條款檢查被註解中的字樣騙過：改以 XML 解析（`scripts/has-declared-license.py`），並改寫 TODO 註解。
+  3. 調整權限時一併處理 `-wal`、`-shm`；Starter 建立的資料夾為 `700`。
+  4. Authorization Server 模組 2.1.0 起才發佈（使用者決定）：設 `maven.deploy.skip`，並從 BOM 移除。
+  5. 移除誤提交的空資料庫檔案。
+  6. 新增 `login.providers`；未設定時依名稱排序（測試發現 Spring Boot 預設 repository 的順序不固定）；無法列出時於啟動時警告。
+  7. `Columns`：共用的截斷與欄位長度常數（不切斷 emoji）。
+  8. 同一次 token 請求內重複使用使用者與登入 Session 的查詢（約 8 次降為 5 次）。
+- **Commands Run & Results**:
+  - 以 ES256 執行授權流程：修正前 12／18 失敗（`Failed to select a JWK signing key`），修正後 18／18 通過。
+  - 授權條款檢查：目前的 `pom.xml` 回傳 1（拒絕發佈）；加入 `<licenses>` 後回傳 0。
+  - `mvn help:evaluate -Dexpression=maven.deploy.skip`：AS 兩個模組為 `true`，Resource Server 未設定。
+  - `mvn -B -o clean verify`：**SUCCESS**，242 個測試（Resource Server 47、Authorization Server 177、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-089**: Authorization Server 於 2.1.0 起發佈並加入 BOM（使用者決定）。
+  - **DEC-090**: Token 一律以目前金鑰的演算法簽章（在 encoder 處理，而不是 customizer）。

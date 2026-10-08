@@ -27,8 +27,8 @@
 
     <!--
       覆寫自 spring-boot-starter-parent 繼承的 Spring 專案資訊。
-      TODO: 尚未決定授權條款。在宣告 <licenses> 之前，發佈的 POM 會帶有繼承來的 Apache License 2.0，
-            正式發佈 2.0.0 前必須決定（新增 LICENSE 檔並宣告 <licenses>；publish.yml 在兩者齊備前會拒絕發佈）。
+      TODO: 尚未決定授權條款。在本檔宣告 licenses 元素之前，發佈的 POM 會帶有繼承來的 Apache License 2.0，
+            正式發佈 2.0.0 前必須決定（新增 LICENSE 檔並宣告 licenses 元素；publish.yml 在兩者齊備前會拒絕發佈）。
     -->
     <developers>
         <developer>
@@ -62,10 +62,14 @@
         <module>resource-server/jacky917-security-annotations</module>
         <module>resource-server/jacky917-security-resource-server-autoconfigure</module>
         <module>resource-server/jacky917-security-resource-server-starter</module>
+        <module>authorization-server/jacky917-security-authorization-server-autoconfigure</module>
+        <module>authorization-server/jacky917-security-authorization-server-starter</module>
         <module>jacky917-security-bom</module>
         <module>relocation/jacky917-security-starter</module>
         <module>examples/example-resource-server</module>
         <module>examples/example-authorization-server</module>
+        <module>examples/example-bff</module>
+        <module>e2e-tests</module>
     </modules>
 
     <dependencyManagement>
@@ -89,6 +93,16 @@
             <dependency>
                 <groupId>io.github.jacky917</groupId>
                 <artifactId>jacky917-security-annotations</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.jacky917</groupId>
+                <artifactId>jacky917-security-authorization-server-autoconfigure</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.jacky917</groupId>
+                <artifactId>jacky917-security-authorization-server-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

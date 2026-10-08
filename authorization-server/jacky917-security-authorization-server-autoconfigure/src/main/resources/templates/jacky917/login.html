@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${text['login.title'] + ' · ' + productName}">Sign in</title>
+    <link rel="stylesheet" th:href="@{/jacky917/authorization-server.css}">
+    <link rel="stylesheet" th:href="@{/jacky917/theme.css}">
+</head>
+<body>
+<main class="card">
+    <header>
+        <img th:if="${logoUrl}" th:src="${logoUrl}" alt="" class="logo">
+        <p class="product" th:text="${productName}">jacky917</p>
+        <h1 th:text="${text['login.title']}">Sign in</h1>
+    </header>
+    <p th:if="${error}" class="error" role="alert" th:text="${error}">Incorrect username or password.</p>
+    <!-- th:action 讓 Spring Security 自動加入 CSRF 欄位 -->
+    <form method="post" th:action="@{/login}">
+        <label for="username" th:text="${text['login.username']}">Username or email</label>
+        <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" required autofocus>
+        <label for="password" th:text="${text['login.password']}">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button type="submit" th:text="${text['login.submit']}">Sign in</button>
+    </form>
+    <div th:unless="${#lists.isEmpty(providers)}" class="providers">
+        <p class="divider" th:text="${text['login.or']}">or</p>
+        <a th:each="provider : ${providers}" class="provider" th:href="@{${provider.url}}"
+           th:text="${provider.label}">Continue with Google</a>
+    </div>
+</main>
+</body>
+</html>

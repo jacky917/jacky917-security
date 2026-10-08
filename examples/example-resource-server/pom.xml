@@ -68,12 +68,10 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <!-- Spring Boot 4 不再管理此外掛版本，需明確指定 -->
-                <version>3.6.4</version>
+                <configuration>
+                    <!-- 可執行 jar 加上 classifier，主要 artifact 保持一般 jar，e2e-tests 才能引用 -->
+                    <classifier>exec</classifier>
+                </configuration>
             </plugin>
         </plugins>
     </build>

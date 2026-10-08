@@ -4,6 +4,12 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password:
+  # 測試以 SecurityMockMvcRequestPostProcessors.jwt() 模擬 Token，不會實際連到 JWKS
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:9000/oauth2/jwks
   jpa:
     hibernate:
       ddl-auto: create-drop

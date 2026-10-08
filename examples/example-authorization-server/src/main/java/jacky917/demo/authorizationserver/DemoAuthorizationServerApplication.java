@@ -4,18 +4,19 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Entry point of the demo authorization server, which issues test JWTs on
- * port 8081.
+ * Entry point of the example login service on port 9000, built on the
+ * jacky917-security authorization server starter.
  * <p>
- * Demo Authorization Server 的程式進入點，於 8081 埠簽發測試用 JWT。
+ * 範例登入服務的程式進入點，於 9000 埠啟動，以 jacky917-security
+ * Authorization Server starter 建立。
  */
 @SpringBootApplication
 public class DemoAuthorizationServerApplication {
 
     /**
-     * Starts the demo authorization server.
+     * Starts the example login service.
      * <p>
-     * 啟動 Demo Authorization Server。
+     * 啟動範例登入服務。
      *
      * @param args  the command-line arguments passed to Spring Boot
      *              <br>傳給 Spring Boot 的命令列參數
@@ -24,4 +25,3 @@ public class DemoAuthorizationServerApplication {
         SpringApplication.run(DemoAuthorizationServerApplication.class, args);
     }
 }
-

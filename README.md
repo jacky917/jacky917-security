@@ -39,13 +39,14 @@ class OrderController {
 | [JWT Claims 契約](docs/resource-server/jwt-claims.md) | Token 內容格式、claim 解析規則與範例 |
 | [授權模型](docs/resource-server/authorization-model.md) | RBAC / Permission / Scope / ABAC 的使用方式與組合 |
 | [Starter 設計](docs/design/starter-design.md) | 自動配置架構、Bean 清單、啟用條件與擴充點 |
-| [E2E 測試指南](docs/guides/e2e-testing.md) | 同時啟動兩個 Demo 服務，走完取 Token → 呼叫 API 的流程 |
+| [Authorization Server 使用指南](docs/authorization-server/getting-started.md) | **預覽版**：建立登入服務、設定、資料庫、client、Google 登入、Token 內容、目前的限制 |
+| [E2E 測試指南](docs/guides/e2e-testing.md) | 啟動登入服務、API 與 BFF，以瀏覽器走完登入 → 呼叫 API → 登出；以及自動化的端對端測試 |
 | [GitHub Packages](docs/guides/github-packages.md) | 發佈與引用設定 |
 | [升級到 2.0](docs/guides/upgrade-to-2.0.md) | **從 1.x 升級必讀**：座標改名、Spring Boot 4.1、行為變更 |
 | [2.0 總設計](docs/design/v2-overview.md) | **進行中**：升級 Spring Boot 4.1 與新增 Authorization Server 的目標、里程碑、破壞性變更與待確認事項 |
 | [Spring Boot 4.1 升級設計](docs/design/boot4-migration-design.md)、[Repo 拆分設計](docs/design/repo-structure-design.md) | 2.0 的升級影響清單與步驟；repo 結構、命名、建置、版本與 CI |
-| [AS 資料模型](docs/design/auth-server-data-model.md)、[AS 詳細設計](docs/design/auth-server-detailed-design.md) | **規劃中**：Authorization Server 的完整表設計（DDL、索引、狀態機、Flyway），以及元件、流程、Token、威脅模型與測試案例 |
-| [Authorization Server 設計](docs/design/auth-server-design.md) | **規劃中**：以 Spring Authorization Server 建置登入服務（支援第三方登入）的架構、決策、資料表與實作計畫 |
+| [AS 資料模型](docs/design/auth-server-data-model.md)、[AS 詳細設計](docs/design/auth-server-detailed-design.md) | 第 1 階段已實作：Authorization Server 的完整表設計（DDL、索引、狀態機、Flyway），以及元件、流程、Token、威脅模型與測試案例 |
+| [Authorization Server 設計](docs/design/auth-server-design.md) | 以 Spring Authorization Server 建置登入服務（支援第三方登入）的架構、決策、資料表與實作計畫 |
 | [Refresh Token Rotation](docs/design/refresh-rotation.md)、[資料表設計](docs/design/database-schema.md) | Authorization Server 端的早期參考設計 |
 
 ---
@@ -78,11 +79,15 @@ groupId 皆為 `io.github.jacky917`（1.x 為 `com.github.jacky917`）。
 | `resource-server/` | `jacky917-security-resource-server-starter` | **業務 API 只需引入這一個** | ✅ |
 | | `jacky917-security-resource-server-autoconfigure` | 自動配置：`SecurityFilterChain`、claims → authorities、401/403 JSON、方法級授權 | ✅ |
 | | `jacky917-security-annotations` | `@RequireRole` / `@RequirePerm` / `@RequireScope` / `@RequireAny` / `@RequireAll` | ✅ |
+| `authorization-server/` | `jacky917-security-authorization-server-starter` | **預覽版（2.1.0 preview）**：OAuth 2.0／OIDC 登入服務（帳號密碼、Google），預設 SQLite、可切換 PostgreSQL。見 [使用指南](docs/authorization-server/getting-started.md) | ❌ 2.1.0 起發佈 |
+| | `jacky917-security-authorization-server-autoconfigure` | 自動配置：資料庫、簽章金鑰、client、使用者、登入頁、Token claim、第三方登入 | ❌ 2.1.0 起發佈 |
 | `core/` | `jacky917-security-core` | 與 Authorization Server 共用的 claim 契約（純 Java，無任何依賴） | ✅ |
-| 根目錄 | `jacky917-security-bom` | 統一管理以上模組的版本 | ✅ |
+| 根目錄 | `jacky917-security-bom` | 統一管理以上已發佈模組的版本（Authorization Server 於 2.1.0 加入） | ✅ |
 | `relocation/` | `jacky917-security-starter`（舊座標） | 只在 2.0.x 發佈：把 1.x 的座標導向新的 starter | ✅ |
 | `examples/` | `example-resource-server` | 示範如何使用 Starter（RBAC、AND/OR、資料庫導向 ABAC、Swagger） | ❌ |
-| | `example-authorization-server` | 最小化的測試用 Token 簽發服務 | ❌ |
+| | `example-authorization-server` | 以 Authorization Server starter 建立的登入服務（示範使用者 alice、bob） | ❌ |
+| | `example-bff` | 網頁前端的 BFF：登入、以 Access Token 呼叫 API、自動刷新、登出 | ❌ |
+| `e2e-tests/` | `e2e-tests` | 在同一個 JVM 啟動登入服務、API、BFF，以模擬的瀏覽器走完整流程 | ❌ |
 
 業務 API 的模組**不能**依賴 Authorization Server 的模組，`core` 不能依賴任何函式庫；兩者都由建置時的 enforcer 規則檢查。
 
@@ -232,7 +237,9 @@ jacky917:
 mvn clean verify
 ```
 
-### 執行 Demo
+### 執行範例
+
+三個範例組成完整的架構：瀏覽器 → `example-bff`（8082）→ `example-authorization-server`（9000，登入）→ `example-resource-server`（8080，API）。
 
 1) 啟動 MySQL（`example-resource-server` 預設連線 `localhost:3307/demo_db`，帳密 `root` / `root`）
 
@@ -246,35 +253,33 @@ docker run -d --name jacky917-demo-mysql -p 3307:3306 -e MYSQL_ROOT_PASSWORD=roo
 mvn -DskipTests install
 ```
 
-3) 啟動 Resource Server（port 8080）
-
-```bash
-mvn -pl examples/example-resource-server spring-boot:run
-```
-
-4) 另開終端啟動 Authorization Server（port 8081）
+3) 依序在三個終端啟動（登入服務使用 `./data/` 下的 SQLite，不需要另外準備資料庫）
 
 ```bash
 mvn -pl examples/example-authorization-server spring-boot:run
 ```
 
-5) 取得 Token 並呼叫 API
+```bash
+mvn -pl examples/example-resource-server spring-boot:run
+```
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8081/oauth2/token -H "Content-Type: application/json" -d '{"username":"alice","password":"password"}' | sed -E 's/.*"accessToken":"([^"]+)".*/\1/')
+mvn -pl examples/example-bff spring-boot:run
+```
+
+4) 開啟 <http://localhost:8082>，以 `alice` 或 `bob`（密碼 `demo-password-123`）登入，再按頁面上的按鈕呼叫 API。alice 擁有角色 `A`，bob 沒有。
+
+不經過瀏覽器、以 `client_credentials` 取得 Token：
+
+```bash
+TOKEN=$(curl -s -u report-batch:batch-secret-for-local-demo -d grant_type=client_credentials -d scope=report.generate http://localhost:9000/oauth2/token | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
 ```
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/secure/me
 ```
 
-不想啟動 Auth Server 時，也可以用 CLI 直接產生測試 JWT：
-
-```bash
-mvn -pl examples/example-resource-server -q exec:java -Dexec.mainClass=jacky917.demo.resourceserver.tools.GenerateTestJwtMain -Dexec.args="--sub=alice --roles=A --perms=bb,clip:read --scope=profile.read --minutes=30"
-```
-
-完整流程與預期結果見 [E2E 測試指南](docs/guides/e2e-testing.md)。
+完整流程、預期結果與自動化的端對端測試見 [E2E 測試指南](docs/guides/e2e-testing.md)。
 
 ### Demo 端點
 
@@ -288,12 +293,11 @@ mvn -pl examples/example-resource-server -q exec:java -Dexec.mainClass=jacky917.
 | `GET /secure/or` | 需 `ROLE_A` **或** `PERM_bb` | `@RequireAny("ROLE_A\|PERM_bb")` |
 | `GET /secure/abac/{clipId}` | 需 `PERM_clip:read`，且 `clip.ownerId == JWT sub` | `@PreAuthorize` + `@authzService` |
 
-Demo 內建資料：`demo-001`（owner：`alice`）、`private-001`（owner：`bob`）。
+Demo 內建資料：`demo-001`（owner：`alice`）、`private-001`（owner：`bob`）。ABAC 比對的是 Token 的 `sub`，而登入服務簽發的 `sub` 是使用者 ID（UUID），因此要以真實 Token 示範 ABAC 時，請把 `clip.owner_id` 改成 alice 的使用者 ID（`GET /api/secure/me` 回傳的 `sub`）。
 
 ### Swagger UI
 
 - Resource Server：<http://localhost:8080/swagger-ui.html>
-- Authorization Server：<http://localhost:8081/swagger-ui.html>
 
 ---
 

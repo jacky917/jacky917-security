@@ -1,0 +1,8 @@
+# 測試用：資料庫放在 target 下，每次執行使用新的檔案
+# （放在 config/ 目錄，會與主程式的 application.yml 一起載入，並在 EnvironmentPostProcessor 執行前生效）
+jacky917:
+  security:
+    authorization-server:
+      database:
+        sqlite:
+          path: target/test-data/auth-${random.uuid}.db

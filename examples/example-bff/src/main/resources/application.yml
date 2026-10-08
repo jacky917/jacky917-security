@@ -1,0 +1,26 @@
+server:
+  port: 8082
+
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          jacky917:
+            client-id: web-bff
+            client-secret: ${WEB_BFF_SECRET:bff-secret-for-local-demo}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: openid,profile,email
+        provider:
+          # 逐一指定端點：BFF 啟動時不需要連到登入服務（只設定 issuer-uri 時會在啟動時查詢 discovery）
+          jacky917:
+            authorization-uri: http://localhost:9000/oauth2/authorize
+            token-uri: http://localhost:9000/oauth2/token
+            jwk-set-uri: http://localhost:9000/oauth2/jwks
+            user-info-uri: http://localhost:9000/userinfo
+            user-name-attribute: sub
+
+demo:
+  authorization-server-url: http://localhost:9000
+  resource-server-url: http://localhost:8080

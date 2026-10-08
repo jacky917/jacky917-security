@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 📝 詳細設計草案 |
+| 狀態 | ✅ V1 migration 已實作（`authorization-server/.../db/jacky917-as/`），以該處檔案為準 |
 | 日期 | 2026-10-07 |
 | 資料庫 | **預設 SQLite**（零設定即可啟動）；正式環境可在 YAML 切換為 **PostgreSQL 16 以上**（[詳細設計 D22](auth-server-detailed-design.md#d22-資料庫抽象)） |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（內含 Authorization Server）、Spring Session 4.1.1 |
@@ -1092,19 +1092,15 @@ WHERE ip_address = :ip
 
 ### 13.1 檔案結構
 
-Starter 隨附 migration，**依資料庫分資料夾**，由 Spring Boot 的 `{vendor}` 佔位符自動選擇（已查證：Boot 4.1.1 的 Flyway 自動配置支援 `{vendor}`，`DatabaseDriver` 含 `SQLITE` 與 `POSTGRESQL`）：
+Starter 隨附 migration，**依資料庫分資料夾**，由 Starter 自己的 Flyway 實例依方言選擇資料夾執行，使用專屬的歷史表 `jacky917_as_schema_history`，與應用程式的 Flyway（`db/migration`、`flyway_schema_history`）完全分開。
 
-```yaml
-spring:
-  flyway:
-    locations: classpath:db/migration/jacky917-as/{vendor}   # 由 starter 預設，使用者不需設定
-```
+> **實作時的調整**（2026-10-08，PR #4 review）：原設計以 `spring.flyway.locations` 指向 `db/migration/jacky917-as/{vendor}`，但這會取代 Spring Boot 的預設位置，應用程式放在 `db/migration` 的 migration 會**靜默不執行**；兩邊共用歷史表時版本號也會衝突（`V1` 與 `V1_0_0` 視為相同版本）。改為獨立的 Flyway 與歷史表，位置移到 `db/jacky917-as/{vendor}`（不在 `db/migration` 之下，避免被應用程式的 Flyway 遞迴掃到）。
 
 兩個資料夾的**檔名與版本號完全相同**，內容是同一份設計的兩種方言：
 
 ```
 jacky917-security-authorization-server-autoconfigure/src/main/resources/
-└── db/migration/jacky917-as/
+└── db/jacky917-as/
     ├── postgresql/   （以下檔案）
     └── sqlite/       （同名檔案，SQLite 方言，§17）
 
@@ -1121,13 +1117,18 @@ jacky917-security-authorization-server-autoconfigure/src/main/resources/
 
 之後的版本（`V2_…` 起）只用於**結構變更**（新增欄位、索引等），不再用於「該階段才建立的表」。
 
+> **實作時的調整**（2026-10-08）：
+> - `ix_login_audit_time_brin` 改名為 `ix_login_audit_time`（PostgreSQL 仍為 BRIN），讓兩種資料庫的索引名稱相同。
+> - SQLite 版的 CHECK、UNIQUE 與外鍵約束加上與 PostgreSQL 相同的名稱（`CONSTRAINT ck_…`），一致性測試因此能比對約束名稱。§17.4 的 DDL 為驗證時的版本，實際內容以 migration 檔為準。
+> - 新增 `V1_0_6__seed.sql`：§12.1～§12.3 的內建角色、權限、scope、API resource，ID 為固定值。§12.4 的第一方 client 不寫入 migration（範例網址不應出現在每個安裝中），改為在設定中宣告（`jacky917.security.authorization-server.clients.*`），啟動時同步到資料庫。
+
 > CI 必須對兩種資料庫都執行 migration 與整合測試（[詳細設計 §10](auth-server-detailed-design.md#10-測試案例)），避免兩份 DDL 不一致。
 
 | 規則 | 說明 |
 |---|---|
 | 版本號 | `V<主版>_<次版>_<修訂>`：`V1_0_x` 為初始結構；之後的結構變更依序遞增 |
-| 位置 | 預設 `classpath:db/migration/jacky917-as`，以 `spring.flyway.locations` 引用；業務專案若在同一個 AS 應用中有自己的表，放在不同路徑 |
-| 歷史表 | 預設 `flyway_schema_history`（AS 為專屬資料庫，P1） |
+| 位置 | `classpath:db/jacky917-as/{vendor}`，由 Starter 自己的 Flyway 執行；業務專案的表照常放在 `db/migration`，由 Spring Boot 的 Flyway 執行 |
+| 歷史表 | `jacky917_as_schema_history`（與應用程式的 `flyway_schema_history` 分開）；兩者遇到對方的表時以版本 0 建立 baseline |
 | 已發佈的 migration 不可修改 | 任何調整都以新版本的 migration 進行；CI 以 `flyway validate` 檢查 checksum |
 | 官方表升級 | Spring Security 升級若改變官方 schema，以新的 migration 補上（Release Notes 會說明） |
 
@@ -1325,7 +1326,7 @@ Starter 在使用者沒有設定 `spring.datasource.url` 時，自動使用上�
 
 ### 17.4 DDL
 
-以下即 `db/migration/jacky917-as/sqlite/` 中 V1 migration 的完整內容，涵蓋全部 23 張表，與 §13.1 一致（已於 §16.2 以 Flyway 實際執行驗證）。結尾的 `SPRING_SESSION*` 取自 `spring-session-jdbc` 4.1.1 隨附的 `schema-sqlite.sql`。
+以下即 `db/jacky917-as/sqlite/` 中 V1 migration 的完整內容，涵蓋全部 23 張表，與 §13.1 一致（已於 §16.2 以 Flyway 實際執行驗證）。結尾的 `SPRING_SESSION*` 取自 `spring-session-jdbc` 4.1.1 隨附的 `schema-sqlite.sql`。
 
 ```sql
 -- ============ 身分 ============

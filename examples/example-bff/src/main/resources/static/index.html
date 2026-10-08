@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>jacky917 BFF 範例</title>
+</head>
+<body>
+<h1>jacky917 BFF 範例</h1>
+<p id="user">尚未登入</p>
+<p>
+    <a href="/oauth2/authorization/jacky917">登入</a>
+    <button id="logout" type="button">登出</button>
+</p>
+<p>
+    <button type="button" data-api="/api/secure/me">GET /secure/me</button>
+    <button type="button" data-api="/api/secure/role-a">GET /secure/role-a（需要角色 A）</button>
+    <button type="button" data-api="/api/secure/perm-bb">GET /secure/perm-bb（需要權限 bb）</button>
+</p>
+<pre id="result"></pre>
+<script src="/bff.js"></script>
+</body>
+</html>

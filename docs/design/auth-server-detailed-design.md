@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 📝 詳細設計草案 |
+| 狀態 | ✅ 第 1 階段已實作（2.1.0 preview），見 [§13 實施紀錄](#13-實施紀錄)；第 2 階段（工作 11～17）尚未開始 |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -153,7 +153,7 @@
 
 | 層次 | 是否依資料庫而不同 | 做法 |
 |---|---|---|
-| DDL（Flyway migration） | **是** | `db/migration/jacky917-as/{vendor}`，Spring Boot 依 JDBC URL 自動選擇資料夾 |
+| DDL（Flyway migration） | **是** | `db/jacky917-as/{vendor}`，由 Starter 自己的 Flyway（歷史表 `jacky917_as_schema_history`）依方言選擇資料夾 |
 | Repository 與查詢 | **否** | 只用可攜的 SQL（[資料模型 P8～P11](auth-server-data-model.md#11-原則)）：ID 與 IP 為字串、時間由應用程式以參數傳入、`IN (:list)` 取代陣列、子查詢取代 `DELETE ... USING` |
 | 少數無法共用的行為 | **是**，集中在 `AuthorizationServerDialect` | 見下表 |
 | Spring Security 官方表 | 否 | 官方 JDBC 類別本來就與資料庫無關 |
@@ -973,3 +973,82 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 6 | 稽核紀錄保留期（`login_audit` 180 天、`admin_audit_log` 2 年）是否符合法規？ | 清理排程 | 符合 |
 | 7 | 是否需要多語系登入頁？ | §7.2 | 繁體中文 + 英文 |
 | 8 | AS 預計的網域與 BFF、前端是否同一主網域？ | Cookie `SameSite`、CORS | 同一主網域（例如 `auth.example.com`、`app.example.com`） |
+
+---
+
+## 13. 實施紀錄
+
+### 13.1 進度
+
+| # | 工作 | 狀態 |
+|---|---|---|
+| 1 | 模組骨架、`AuthorizationServerProperties`（啟動時自我驗證） | ✅ |
+| 2 | 資料庫：dialect、預設 SQLite、啟動檢查、Flyway V1（PostgreSQL 與 SQLite 各 7 個檔案） | ✅ |
+| 3 | 簽章金鑰：`SigningKeyStore`、`KeyEncryptor`（AES-256-GCM）、`RotatingJwkSource`、首次啟動產生金鑰 | ✅ |
+| 4 | Client：官方 JDBC repository + 停權過濾、`client_profile`、設定中宣告的第一方 client | ✅ |
+| 5 | 使用者：`UserAccountService`、`Jacky917UserDetailsService`、密碼政策、第一位管理員 | ✅ |
+| 6 | 登入：兩條 filter chain、登入頁（Thymeleaf，繁中／英文）、`LoginSuccessHandler`、`auth_session`；授權碼 + PKCE 完整流程 | ✅ |
+| 7 | `SessionLinkingAuthorizationService`：授權與登入 Session 的連結 | ✅ |
+| 8 | Token：`Jacky917TokenCustomizer`、`AuthorityResolver`（第一方與第三方）、`AudienceResolver`、`TokenClaimsContributor` | ✅ |
+| 9 | 第三方登入（Google）：通用 OIDC mapper、`FederatedIdentityService`、自動建立使用者、`PrincipalNormalizer` | ✅ |
+| 10 | `example-authorization-server`（改用 AS starter）、`example-bff`、`e2e-tests` | ✅ |
+| 11～17 | 第 2 階段 | ⏳ |
+
+### 13.2 與設計不同的地方
+
+| 項目 | 設計 | 實際 | 原因 |
+|---|---|---|---|
+| 設定屬性的驗證 | `@Validated` + 自訂驗證器 | 屬性類別實作 Spring 的 `Validator`，由 Spring Boot 在綁定時呼叫 | 不需要額外引入 Bean Validation；錯誤同樣在啟動時出現 |
+| 設定屬性範圍 | §6 的全部屬性 | 只加入已實作功能使用的屬性（`enabled`、`issuer`、`database.*`、`token.*`） | 未實作的屬性會出現在 IDE 提示中，卻沒有任何作用；其餘屬性隨各工作加入 |
+| SQLite 的錯誤轉換 | — | **新增** `SqliteExceptionTranslator`：依延伸結果碼轉成 `DuplicateKeyException`、`DataIntegrityViolationException`、`CannotAcquireLockException`，並套用到所有 `JdbcTemplate` | 實測發現：Spring 沒有 SQLite 的錯誤碼，SQLite 的約束違反只會變成 `UncategorizedSQLException`，攔截 `DuplicateKeyException` 的程式在兩種資料庫上的行為會不同 |
+| PostgreSQL 測試 | Testcontainers | embedded-postgres（真正的 PostgreSQL 16.15 執行檔） | 不需要 Docker，本機與 CI 都能執行；仍是實際的 PostgreSQL |
+| SQLite 驅動版本 | xerial 3.53.4.0（驗證時使用） | Spring Boot 管理的 3.53.2.1 | 與 Spring Boot 的版本管理一致；所需的連線參數兩版皆支援，已以測試確認 |
+| 預設 SQLite 的連線池 | — | 只在使用預設 URL 時把 `maximum-pool-size` 設為 4 | 寫入依序執行，連線再多也只是排隊 |
+| 簽章與 JWKS 分開 | `RotatingJwkSource` 同時供 JWKS 與簽章使用 | `JWKSource` Bean 只回傳公鑰（`NEXT`、`ACTIVE`、`RETIRING`），另以只看得到 `ACTIVE` 私鑰的 `JwtEncoder` 簽章 | 已查證：Spring Security 7.1.1 的 `NimbusJwtEncoder` 在多把 RSA 金鑰符合時拒絕簽章（輪換期間必然如此）；分開後私鑰也不會經由 `JWKSource` 外流。`NimbusJwtEncoder` 會自動在 header 加上 `kid` |
+| 金鑰快取 | — | 讀取後快取 1 分鐘 | 金鑰很少變動；其他實例輪換後最晚 1 分鐘生效，期間仍以已公開為 `RETIRING` 的舊金鑰簽章，token 依然可驗證 |
+| `SigningKeyStore#transition` | 回傳 `void` | 回傳 `boolean`（狀態不是預期值時為 `false`） | 多實例同時輪換時，由呼叫端判斷是否已被其他實例處理 |
+| 私鑰加密格式 | AES-256-GCM | 另以 `kid` 作為附加驗證資料 | 密文被複製到其他列時無法解密 |
+| 時鐘 | — | 新增 `Clock` Bean（使用者已有時沿用） | 測試可控制時間 |
+| 第一方 client 的來源 | Migration 建立 client，`ClientSecretInitializer` 從環境變數 `JACKY917_CLIENT_<ID>_SECRET` 寫入 secret | 在設定中宣告（`clients.<client-id>.*`），由 `ClientRegistrationSynchronizer` 於每次啟動建立或更新；secret 以 `${…}` 佔位符引用環境變數 | Migration 中的範例網址不應出現在每個安裝中；redirect URI 等設定改了之後也要能生效。第 3 階段的 Admin API 管理其他 client |
+| Secret 更新 | 只在 `client_secret` 為 `NULL` 時寫入 | 設定的 secret 與已儲存的雜湊不符時更換；相符時沿用（不重新雜湊） | 讓 secret 可以輪換；以 `PasswordEncoder#matches` 判斷，避免每次啟動產生新雜湊 |
+| 第三方 client | 第 3 階段 | 設定中宣告 `third-party` 時啟動失敗 | 同意畫面尚未完成，接受設定卻無法正確運作比直接拒絕更危險 |
+| Redirect URI 規則 | 完全比對 | 另檢查：`https`（`localhost` 可用 `http`）、無 fragment；原生 App 可用反向網域名稱的 scheme（RFC 8252 §7.1） | 設定錯誤在啟動時就發現 |
+| 帳號密碼登入的 principal（D16） | 登入成功後由 `PrincipalNormalizer` 轉換 | `UserDetails` 的 username 直接使用 `app_user.id`，登入當下 `Authentication#getName()` 就是使用者 ID | 帳號密碼登入不需要額外轉換；`PrincipalNormalizer` 只用於第三方登入（工作 9） |
+| 登入帳號 | 帳號或已驗證的 Email | 帳號不可含 `@`；輸入含 `@` 時只以 Email 查詢 | 兩種查詢不會互相混淆（A 的帳號不可能等於 B 的 Email） |
+| `UserAccountService` 的方法 | §2.3 全部 | 第 1 階段：查詢、`createUser`、`recordLoginSuccess`、`updatePasswordHash`、`loadAuthorities`；`createFederatedUser` 於工作 9、`recordLoginFailure` 於工作 13 加入 | 只實作目前會用到的方法 |
+| AS 頁面用的 authority | — | `ROLE_<角色>` 與 `PERM_<權限>`（前綴取自 core） | 與 Resource Server 的預設前綴一致。Spring Security 7 另外會加入 `FACTOR_PASSWORD` |
+| 第一位管理員 | 第 4 階段強制首次登入後變更密碼 | 第 1 階段即建立（`bootstrap-admin.*`），只在沒有任何 `AS_ADMIN` 時建立一次 | 不開放註冊時，沒有它就無法登入；強制變更密碼仍留待第 4 階段 |
+| 登入失敗處理 | `LoginFailureHandler`：失敗計數、鎖定、稽核 | 第 1 階段一律導向 `/login?error`；計數、鎖定、IP 限流與 `login_audit` 於工作 13 加入 | 依工作分解；暫時鎖定（`locked_until`）在第 1 階段已會擋下登入 |
+| 登入頁的文字 | 應用程式的 `MessageSource`（`messages_zh_TW.properties` 等） | Starter 自己的訊息檔 `jacky917/authorization-server-messages`（英文預設、繁體中文），依請求語言顯示 | 不覆蓋、也不依賴應用程式的 `MessageSource` |
+| 內容安全政策 | `default-src 'self'; frame-ancestors 'none'` | 另加 `img-src 'self' https: data:`（外部 logo）與 `form-action 'self'` | 主色無法以內嵌樣式設定，改由 `/jacky917/theme.css` 提供（只接受色碼，避免注入 CSS） |
+| 直接登入後的頁面 | — | `GET /` 顯示「已登入」 | 直接開啟登入頁並登入時，Spring Security 會導向 `/` |
+| 授權連結的判斷（§5.2） | 依「儲存時是否有 HTTP 請求」判斷 | 依「連結是否已存在」判斷：已存在則沿用；不存在時才從瀏覽器 Session 取得 `asid` | 換 Token 也有 HTTP 請求（來自 client），只是沒有瀏覽器 Session；原本的判斷會誤擋 |
+| 連結的檢查 | — | 只連結到**同一位使用者**的 `ACTIVE` Session；授權與連結在同一個交易中儲存，連結失敗時授權一併回滾 | 避免留下沒有 Session 的授權（之後的 Token 無法帶 `asid`） |
+| ID Token 的 `auth_time` | 由 customizer 設為 `auth_session.created_at` | 沿用 Spring Security 產生的值，不覆寫 | 已查證：Spring Security 7.1.1 的 `JwtGenerator` 以驗證時間設定 `auth_time`，刷新時從前一個 ID Token 沿用；與登入時間相同，覆寫只會增加不一致的風險 |
+| 簽發時的狀態檢查 | 第 2 階段的 `ReuseDetectingRefreshTokenProvider`（§5.4） | 第 1 階段的 customizer 已先檢查：使用者可以登入、登入 Session 為 `ACTIVE` 且未到期，否則 `invalid_grant` | 停權與撤銷在下一次刷新就生效；§5.4 的重用偵測與撤銷仍於工作 11 加入 |
+| 沒有 `client_profile` 的 client | — | 視為第三方（不給角色，權限受 scope 限制） | 最小權限：不是由本 starter 註冊的 client 不應自動取得第一方權限 |
+| 第三方 client 的權限 | 第 3 階段 | `DefaultAuthorityResolver` 已實作資料模型 §11.3 的查詢 | 查詢簡單，先實作並以測試確認，第 3 階段只需加上同意畫面 |
+| Claim 的集合型別 | — | customizer 最後把所有集合轉為 `ArrayList`／`LinkedHashMap`（包含 `TokenClaimsContributor` 加入的） | 實測發現：claim 會隨授權存入資料庫，刷新時以型別允許清單讀回；`List.of()` 等不可變集合不在清單中，刷新會失敗 |
+| `token.audience-strategy`（`PER_SCOPE`） | 設定屬性 | 未提供；以替換 `AudienceResolver` Bean 達成 | 第 1 階段只需要共用 audience（D07-B） |
+| 第三方登入時 Email 已屬於既有帳號 | 第 2 階段：導向 `/link-account` 確認 | 第 1 階段直接拒絕（`/login?error=account_exists`），不建立任何帳號 | 連結確認不在第 1 階段範圍（工作 14）；拒絕比自動連結安全（D06）。只比對已驗證的 Email |
+| 第三方登入的 factor authority | — | `PrincipalNormalizer` 在原登入沒有 factor authority 時加入帶登入時間的 `FACTOR_AUTHORIZATION_CODE` | 實測發現：Spring Security 7.1.1 的 `oauth2Login` 不會加入 factor authority，而 `JwtGenerator` 以它決定 `auth_time`、沒有時拒絕簽發 ID Token |
+| 第三方的 token | 不儲存 | 登入成功處理後立即從 `OAuth2AuthorizedClientRepository` 移除 | Spring 預設把它留在記憶體中 |
+| 第三方登入的設定 | — | 使用 Spring Boot 標準的 `spring.security.oauth2.client.registration.*`；有設定時才啟用 `oauth2Login`，登入頁自動顯示按鈕 | 不另外發明設定格式 |
+| 測試中的 Google | WireMock | 以 JDK 內建 `HttpServer` 實作的假 OIDC 提供者（token、JWKS、userinfo，以自己的金鑰簽 ID Token） | 不需要額外依賴；Spring 的 oauth2Login 仍實際換 code、驗證簽章、nonce 與 aud |
+| E2E 測試 | — | 四個應用程式（登入服務、兩個 Resource Server、BFF）在同一個 JVM 以隨機埠號啟動；以 `spring.config.name` 指定不存在的名稱，所有設定由參數提供 | 三個範例的 `application.yml` 同名，同一個 classpath 上只會載入其中一個；不需要 Docker |
+| T-E2E-02（Google 的端對端） | E2E | 由 AS 模組的整合測試涵蓋（假的 OIDC 提供者，Spring 實際換 code 與驗證 ID Token） | E2E 已涵蓋 BFF → AS → RS 的串接；第三方登入只影響 AS 內部 |
+| 同主機的 Session Cookie | — | 範例登入服務設定 `server.servlet.session.cookie.name: JACKY917_AS_SESSION`，並寫入使用指南 | 瀏覽器的 Cookie 不區分埠號，與同主機的 BFF 都用 `JSESSIONID` 時互相覆蓋（E2E 實作時確認） |
+| Migration 的執行（PR #4 review） | Spring Boot 的 Flyway + `spring.flyway.locations` | Starter 自己的 Flyway 實例與歷史表 `jacky917_as_schema_history`；以 `DatabaseInitializerDetector` 讓 `JdbcTemplate` 等在 migration 之後建立 | 設定 `spring.flyway.locations` 會取代 Boot 的預設位置，應用程式的 migration 靜默不執行；共用歷史表時版本號會衝突 |
+| 資料庫檔案權限 | `EnvironmentPostProcessor` 建立權限 600 的檔案 | 只建立資料夾；在 migration 之前（寫入任何機密資料前）把預設檔案設為 600 | 之後的 property source（例如測試）仍可能取代 URL，提前建立會留下多餘的檔案 |
+| 登入 Session 失效但瀏覽器仍登入（PR #4 review） | 儲存授權時拋出例外 | `LoginSessionValidationFilter` 在授權端點檢查：登入 Session 已撤銷、過期或不屬於該使用者時結束瀏覽器登入，請求回到登入頁；連結時也檢查到期時間 | 原本會以 HTTP 500 結束，使用者只能清除 Cookie |
+| 直接登入後的頁面 | `GET /` | `GET /jacky917/signed-in`（需要登入） | Starter 對應 `/` 會與應用程式自己的首頁衝突而啟動失敗 |
+| 第三方登入的處理錯誤 | — | 任何無法處理的情況（例如沒有對應的 mapper）都登出並回到 `/login?error=federation` | 原本會以 HTTP 500 結束 |
+| 測試方式 | — | 核心類別另有單元測試（Mockito、固定時鐘，每個分支一個案例）；整合測試以可推移的 `Clock` Bean 測試到期（T-REFRESH-06）；假的 OIDC 提供者每個測試類別各自啟動與關閉、每次登入以授權碼區分；E2E 只有登入服務事先決定埠號，其餘以 `server.port=0` 啟動並在埠號衝突時重試 | 隔離、確定性、錯誤路徑都要涵蓋 |
+| 簽章演算法（第二次 review） | Access Token 依 Spring 的預設（RS256） | 以 `ActiveKeyJwtEncoder` 一律改用**目前金鑰**的演算法簽章 | 實測發現：Spring Authorization Server 對 Access Token 一律要求 RS256，設定 ES256 時每次簽發都失敗；改在 encoder 處理，演算法設定改變但舊金鑰仍在使用時也不會失敗。授權流程測試另以 ES256 金鑰完整執行一次 |
+| SQLite 側檔權限（第二次 review） | — | 調整權限時一併處理 `-wal`、`-shm`；Starter 建立的資料夾為 `700` | SQLite 以主檔「建立當下」的權限建立側檔；實測在目前的啟動順序下側檔已是 600，但順序沒有保證 |
+| 發佈範圍（第二次 review） | — | Authorization Server 模組設 `maven.deploy.skip`，並暫不列入 BOM，2.1.0 起發佈（使用者決定） | 2.0.0 只發佈 Resource Server |
+| 登入頁的提供者按鈕（第二次 review） | — | 可設定 `login.providers`；未設定時列出全部並依名稱排序；repository 無法列出時於啟動時警告 | Spring Boot 預設的 repository 以雜湊表保存，順序不固定（測試發現）；自訂 repository 可能無法列出 |
+| 一次換 Token 的查詢次數（第二次 review） | — | 同一次請求內重複使用使用者與登入 Session 的查詢結果（約 8 次降為 5 次） | 只在同一個請求內有效，不影響「每次簽發都從資料庫讀取」（D18） |
+| `/userinfo` | — | SAS 端點的 filter chain 以 `oauth2ResourceServer().jwt()` 驗證 Access Token，`JwtDecoder` 由公開的金鑰建立 | OIDC userinfo 需要 Bearer Token |
+| 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
+

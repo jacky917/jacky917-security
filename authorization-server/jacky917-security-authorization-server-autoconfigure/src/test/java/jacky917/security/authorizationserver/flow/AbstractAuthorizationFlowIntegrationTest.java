@@ -1,0 +1,537 @@
+package jacky917.security.authorizationserver.flow;
+
+import jacky917.security.authorizationserver.session.AuthSessionService;
+import jacky917.security.authorizationserver.support.TestDatabases;
+import jacky917.security.authorizationserver.token.TokenClaimsContributor;
+import jacky917.security.authorizationserver.user.NewUser;
+import jacky917.security.authorizationserver.user.UserAccountService;
+import jacky917.security.authorizationserver.support.MutableClock;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Bean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+
+import java.net.URI;
+import java.time.Duration;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/**
+ * 以 MockMvc 模擬瀏覽器與 BFF 走完授權碼流程：授權請求 → 登入頁（從 HTML 取得 CSRF token）→ 登入
+ * → 授權碼 → 以 PKCE 換 Token。子類別分別以 SQLite 與 PostgreSQL 執行（詳細設計 T-LOGIN-01、
+ * T-CLIENT-01、T-CLIENT-02、T-TOKEN-03 的基本部分）。
+ */
+@SpringBootTest(classes = AbstractAuthorizationFlowIntegrationTest.TestApplication.class, properties = {
+        "jacky917.security.authorization-server.issuer=http://localhost:9000",
+        "jacky917.security.authorization-server.keys.encryption-key=" + TestDatabases.TEST_ENCRYPTION_KEY,
+        "jacky917.security.authorization-server.bootstrap-admin.username=admin",
+        "jacky917.security.authorization-server.bootstrap-admin.password=" + AbstractAuthorizationFlowIntegrationTest.PASSWORD,
+        "jacky917.security.authorization-server.clients.web-bff.secret=bff-secret",
+        "jacky917.security.authorization-server.clients.web-bff.redirect-uris=" + AbstractAuthorizationFlowIntegrationTest.REDIRECT_URI,
+        "jacky917.security.authorization-server.clients.web-bff.scopes=openid,profile",
+        "jacky917.security.authorization-server.clients.report-batch.secret=batch-secret",
+        "jacky917.security.authorization-server.clients.report-batch.grant-types=client_credentials",
+        "jacky917.security.authorization-server.clients.report-batch.scopes=report.generate",
+        "jacky917.security.authorization-server.clients.suspended.secret=suspended-secret",
+        "jacky917.security.authorization-server.clients.suspended.grant-types=client_credentials",
+        "jacky917.security.authorization-server.clients.suspended.scopes=report.generate"
+})
+@AutoConfigureMockMvc
+abstract class AbstractAuthorizationFlowIntegrationTest {
+
+    static final String PASSWORD = "correct horse battery";
+    static final String REDIRECT_URI = "https://app.example.com/login/oauth2/code/jacky917";
+
+    private static final Pattern CSRF = Pattern.compile("name=\"_csrf\" value=\"([^\"]+)\"");
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+
+    @Autowired
+    MockMvc mockMvc;
+
+    @Autowired
+    JdbcClient jdbc;
+
+    @Autowired
+    JwtDecoder jwtDecoder;
+
+    @Autowired
+    RegisteredClientRepository clients;
+
+    @Autowired
+    OAuth2AuthorizationService authorizations;
+
+    @Autowired
+    UserAccountService users;
+
+    @Autowired
+    MutableClock clock;
+
+    @AfterEach
+    void resetClock() {
+        clock.reset();
+    }
+
+    @Test
+    @DisplayName("授權碼 + PKCE 完整流程：登入後建立 auth_session，換到的 Access Token 的 sub 為使用者 ID")
+    void authorizationCodeFlow() throws Exception {
+        LoggedIn result = logInAndExchangeCode("admin");
+        Map<String, Object> authSession = jdbc.sql("SELECT login_method, idp, amr, status FROM auth_session "
+                + "WHERE session_id = :id").param("id", result.asid()).query().singleRow();
+        assertThat(authSession).containsEntry("login_method", "PASSWORD").containsEntry("idp", "local")
+                .containsEntry("amr", "pwd").containsEntry("status", "ACTIVE");
+
+        assertThat(result.tokens().has("refresh_token")).isTrue();
+        assertThat(result.tokens().has("id_token")).isTrue();
+        Jwt accessToken = jwtDecoder.decode(result.tokens().get("access_token").asString());
+        assertThat(accessToken.getSubject()).isEqualTo(result.userId());
+        assertThat(accessToken.getIssuer().toString()).isEqualTo("http://localhost:9000");
+        assertThat(accessToken.getHeaders()).containsKey("kid");
+
+        // 詳細設計 §5.2：授權在發出授權碼時與登入 Session 連結；換 Token 不會重複建立
+        assertThat(jdbc.sql("SELECT a.principal_name FROM session_authorization sa JOIN oauth2_authorization a "
+                        + "ON a.id = sa.authorization_id WHERE sa.session_id = :asid")
+                .param("asid", result.asid()).query(String.class).list()).containsExactly(result.userId());
+    }
+
+    @Test
+    @DisplayName("刷新：換發新的 Refresh Token（輪換），授權與登入 Session 的連結維持不變")
+    void refreshKeepsTheSessionLink() throws Exception {
+        LoggedIn result = logInAndExchangeCode("admin");
+        String firstRefreshToken = result.tokens().get("refresh_token").asString();
+        JsonNode refreshed = tokenRequest(mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                .param("grant_type", "refresh_token").param("refresh_token", firstRefreshToken)));
+        assertThat(refreshed.get("refresh_token").asString()).isNotEqualTo(firstRefreshToken);
+        assertThat(jwtDecoder.decode(refreshed.get("access_token").asString()).getSubject()).isEqualTo(result.userId());
+
+        // 舊的 Refresh Token 已失效
+        mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                        .param("grant_type", "refresh_token").param("refresh_token", firstRefreshToken))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbc.sql("SELECT session_id FROM session_authorization sa JOIN oauth2_authorization a "
+                        + "ON a.id = sa.authorization_id WHERE a.principal_name = :user AND sa.session_id = :asid")
+                .param("user", result.userId()).param("asid", result.asid()).query(String.class).list()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("沒有 asid 或 asid 不屬於同一位使用者的新授權被拒絕，且不會留下授權資料")
+    void authorizationWithoutLoginSessionIsRejected() throws Exception {
+        LoggedIn other = logInAndExchangeCode("admin");
+        RegisteredClient client = clients.findByClientId("web-bff");
+        for (String asid : new String[]{null, other.asid()}) {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            if (asid != null) {
+                request.getSession(true).setAttribute(AuthSessionService.SESSION_ATTRIBUTE, asid);
+            }
+            RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+            try {
+                String id = java.util.UUID.randomUUID().toString();
+                OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client).id(id)
+                        .principalName("someone-else").authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                        .build();
+                assertThatThrownBy(() -> authorizations.save(authorization)).isInstanceOf(IllegalStateException.class);
+                assertThat(authorizations.findById(id)).as("交易回滾，不留下沒有連結的授權").isNull();
+            } finally {
+                RequestContextHolder.resetRequestAttributes();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("第一方 Access Token 的 claim（T-TOKEN-01）；ID Token 有 sid、amr、name，沒有角色與權限（T-TOKEN-04）")
+    void tokenClaims() throws Exception {
+        String userId = createUser("token-user", "Token User", "AS_SUPPORT");
+        LoggedIn result = logInAndExchangeCode("token-user");
+
+        Jwt access = jwtDecoder.decode(result.tokens().get("access_token").asString());
+        assertThat(access.getAudience()).containsExactly("jacky917-api");
+        assertThat(access.getClaimAsString("client_id")).isEqualTo("web-bff");
+        assertThat(access.getClaimAsString("asid")).isEqualTo(result.asid());
+        assertThat(access.getClaimAsString("idp")).isEqualTo("local");
+        assertThat(access.getClaimAsStringList("roles")).containsExactlyInAnyOrder("USER", "AS_SUPPORT");
+        assertThat(access.getClaimAsStringList("permissions"))
+                .containsExactlyInAnyOrder("as:user:read", "as:session:revoke", "as:audit:read");
+        assertThat(access.getClaimAsStringList("scope")).containsExactlyInAnyOrder("openid", "profile");
+        assertThat(access.getClaims()).doesNotContainKeys("email", "name");
+
+        Jwt id = jwtDecoder.decode(result.tokens().get("id_token").asString());
+        assertThat(id.getSubject()).isEqualTo(userId);
+        assertThat(id.getAudience()).containsExactly("web-bff");
+        assertThat(id.getClaims()).containsKeys("sid", "auth_time").doesNotContainKeys("roles", "permissions", "asid");
+        assertThat(id.getClaimAsStringList("amr")).containsExactly("pwd");
+        assertThat(id.getClaimAsString("name")).isEqualTo("Token User");
+        assertThat(id.getClaims()).as("沒有要求 email scope").doesNotContainKey("email");
+    }
+
+    @Test
+    @DisplayName("移除角色後刷新：新的 Access Token 已沒有該角色（D18、T-TOKEN-05）")
+    void refreshReflectsRoleChanges() throws Exception {
+        String userId = createUser("role-user", null, "AS_SUPPORT");
+        LoggedIn result = logInAndExchangeCode("role-user");
+        jdbc.sql("DELETE FROM app_user_role WHERE user_id = :user AND role_id = (SELECT id FROM app_role WHERE code = 'AS_SUPPORT')")
+                .param("user", userId).update();
+        Jwt refreshed = jwtDecoder.decode(refresh(result).get("access_token").asString());
+        assertThat(refreshed.getClaimAsStringList("roles")).containsExactly("USER");
+        assertThat(refreshed.getClaimAsStringList("permissions")).isEmpty();
+        assertThat(refreshed.getClaimAsStringList("tenants")).as("TokenClaimsContributor 的 claim")
+                .containsExactly("tenant-a", "tenant-b");
+    }
+
+    @Test
+    @DisplayName("登入 Session 被撤銷、使用者被停用或暫時鎖定後，刷新回 invalid_grant")
+    void refreshIsRefusedWhenSessionOrUserIsNoLongerValid() throws Exception {
+        createUser("revoked-user", null);
+        LoggedIn revoked = logInAndExchangeCode("revoked-user");
+        jdbc.sql("UPDATE auth_session SET status = 'REVOKED', revoked_at = :now, revoke_reason = 'ADMIN' WHERE session_id = :id")
+                .param("now", java.sql.Timestamp.from(java.time.Instant.now())).param("id", revoked.asid()).update();
+        assertRefreshRefused(revoked);
+
+        String disabledId = createUser("disabled-user", null);
+        LoggedIn disabled = logInAndExchangeCode("disabled-user");
+        jdbc.sql("UPDATE app_user SET status = 'DISABLED' WHERE id = :id").param("id", disabledId).update();
+        assertRefreshRefused(disabled);
+
+        String lockedId = createUser("locked-user", null);
+        LoggedIn locked = logInAndExchangeCode("locked-user");
+        jdbc.sql("UPDATE app_user SET locked_until = :until WHERE id = :id")
+                .param("until", java.sql.Timestamp.from(java.time.Instant.now().plusSeconds(600))).param("id", lockedId).update();
+        assertRefreshRefused(locked);
+    }
+
+    @Test
+    @DisplayName("第三方 client：沒有角色，權限只有「使用者擁有」且「scope 涵蓋」的部分（D07、T-TOKEN-02）")
+    void thirdPartyClientsGetScopedPermissionsOnly() throws Exception {
+        createUser("third-user", null, "AS_ADMIN");
+        LoggedIn result = logInAndExchangeCode("third-user");
+        String clientId = clients.findByClientId("web-bff").getId();
+        try {
+            jdbc.sql("UPDATE client_profile SET trust_level = 'THIRD_PARTY', privacy_policy_url = 'https://app.example.com/privacy' "
+                    + "WHERE registered_client_id = :id").param("id", clientId).update();
+            jdbc.sql("INSERT INTO app_scope_permission (scope_code, permission_id) "
+                    + "SELECT 'profile', id FROM app_permission WHERE code IN ('as:user:read', 'as:audit:read')").update();
+            Jwt refreshed = jwtDecoder.decode(refresh(result).get("access_token").asString());
+            assertThat(refreshed.getClaims()).doesNotContainKey("roles");
+            assertThat(refreshed.getClaimAsStringList("permissions")).containsExactlyInAnyOrder("as:user:read", "as:audit:read");
+        } finally {
+            jdbc.sql("DELETE FROM app_scope_permission WHERE scope_code = 'profile'").update();
+            jdbc.sql("UPDATE client_profile SET trust_level = 'FIRST_PARTY' WHERE registered_client_id = :id")
+                    .param("id", clientId).update();
+        }
+    }
+
+    @Test
+    @DisplayName("登入 Session 超過絕對有效期（90 天）後刷新：invalid_grant（T-REFRESH-06）")
+    void refreshIsRefusedAfterSessionMaxAge() throws Exception {
+        createUser("old-session-user", null);
+        LoggedIn result = logInAndExchangeCode("old-session-user");
+        clock.advance(Duration.ofDays(89));
+        JsonNode refreshed = refresh(result);
+        assertThat(jwtDecoder.decode(refreshed.get("access_token").asString()).getSubject())
+                .as("89 天時仍可刷新").isEqualTo(result.userId());
+        clock.advance(Duration.ofDays(2));
+        // 刷新會輪換 Refresh Token，因此以最新的那一個測試
+        assertRefreshRefused(refreshed.get("refresh_token").asString());
+    }
+
+    @Test
+    @DisplayName("瀏覽器仍登入、但登入 Session 已被撤銷：授權請求回到登入頁（不是錯誤頁），重新登入後繼續")
+    void revokedLoginSessionSendsTheBrowserBackToLogin() throws Exception {
+        createUser("revoked-browser-user", null);
+        MockHttpSession browser = new MockHttpSession();
+        LoggedIn first = logInAndExchangeCode("revoked-browser-user", browser);
+        jdbc.sql("UPDATE auth_session SET status = 'REVOKED', revoked_at = :now, revoke_reason = 'ADMIN' WHERE session_id = :id")
+                .param("now", java.sql.Timestamp.from(java.time.Instant.now())).param("id", first.asid()).update();
+
+        LoggedIn second = logInAndExchangeCode("revoked-browser-user", browser);
+        assertThat(second.asid()).as("重新登入建立新的登入 Session").isNotEqualTo(first.asid());
+        assertThat(jwtDecoder.decode(second.tokens().get("access_token").asString()).getClaimAsString("asid"))
+                .isEqualTo(second.asid());
+    }
+
+    @Test
+    @DisplayName("瀏覽器仍登入、但登入 Session 已過期：授權請求回到登入頁")
+    void expiredLoginSessionSendsTheBrowserBackToLogin() throws Exception {
+        createUser("expired-browser-user", null);
+        MockHttpSession browser = new MockHttpSession();
+        logInAndExchangeCode("expired-browser-user", browser);
+        clock.advance(Duration.ofDays(91));
+        mockMvc.perform(get(authorizeUrl(challenge(randomVerifier()))).session(browser).accept(MediaType.TEXT_HTML))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string(HttpHeaders.LOCATION, "/login"));
+    }
+
+    @Test
+    @DisplayName("/userinfo：以 Access Token 取得使用者資料（sub、name）；沒有 token 時 401")
+    void userInfo() throws Exception {
+        createUser("userinfo-user", "User Info");
+        LoggedIn result = logInAndExchangeCode("userinfo-user");
+        JsonNode userInfo = JSON.readTree(mockMvc.perform(get("/userinfo")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + result.tokens().get("access_token").asString()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(userInfo.get("sub").asString()).isEqualTo(result.userId());
+        assertThat(userInfo.get("name").asString()).isEqualTo("User Info");
+        // 不帶 token 的 API 呼叫回 401（瀏覽器的 Accept: text/html 則會導向登入頁）
+        mockMvc.perform(get("/userinfo").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+    }
+
+    private JsonNode refresh(LoggedIn result) throws Exception {
+        return tokenRequest(mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                .param("grant_type", "refresh_token").param("refresh_token", result.tokens().get("refresh_token").asString())));
+    }
+
+    private void assertRefreshRefused(LoggedIn result) throws Exception {
+        assertRefreshRefused(result.tokens().get("refresh_token").asString());
+    }
+
+    private void assertRefreshRefused(String refreshToken) throws Exception {
+        String body = mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                        .param("grant_type", "refresh_token")
+                        .param("refresh_token", refreshToken))
+                .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
+        assertThat(body).contains("invalid_grant");
+    }
+
+    private String createUser(String username, String displayName, String... roles) {
+        return users.createUser(new NewUser(username, null, false, PASSWORD, displayName, java.util.Set.of(roles))).id();
+    }
+
+    /**
+     * 模擬瀏覽器：授權請求 → 登入頁 → 登入 → 授權碼；再模擬 BFF 以授權碼換 Token。
+     */
+    LoggedIn logInAndExchangeCode(String username) throws Exception {
+        return logInAndExchangeCode(username, new MockHttpSession());
+    }
+
+    /**
+     * 以指定的瀏覽器 Session 登入（可模擬同一個瀏覽器再次登入）。
+     */
+    LoggedIn logInAndExchangeCode(String username, MockHttpSession browser) throws Exception {
+        String verifier = randomVerifier();
+        MockHttpSession session = browser;
+
+        // 1. 未登入的瀏覽器發出授權請求 → 導向登入頁
+        MvcResult toLogin = mockMvc.perform(get(authorizeUrl(challenge(verifier))).session(session).accept(MediaType.TEXT_HTML))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string(HttpHeaders.LOCATION, "/login")).andReturn();
+        // 舊的瀏覽器 Session 可能已被結束（登入 Session 失效時）：與瀏覽器一樣改用新的 Session Cookie
+        session = (MockHttpSession) toLogin.getRequest().getSession();
+
+        // 2. 登入頁有表單與 CSRF token；3. 送出帳密 → 回到原本的授權請求
+        String csrf = csrfToken(session);
+        MvcResult login = mockMvc.perform(post("/login").session(session)
+                        .param("username", username).param("password", PASSWORD).param("_csrf", csrf))
+                .andExpect(status().is3xxRedirection()).andReturn();
+        String savedRequest = login.getResponse().getRedirectedUrl();
+        assertThat(savedRequest).startsWith("http://localhost/oauth2/authorize");
+        String asid = (String) session.getAttribute(AuthSessionService.SESSION_ATTRIBUTE);
+        assertThat(asid).isNotNull();
+
+        // 4. 已登入 → 授權碼導回 client（以 URI 傳入：字串會被當成 URI 樣板再編碼一次）
+        MvcResult code = mockMvc.perform(get(URI.create(savedRequest)).session(session))
+                .andExpect(status().is3xxRedirection()).andReturn();
+        Map<String, String> callback = UriComponentsBuilder.fromUriString(code.getResponse().getRedirectedUrl())
+                .build().getQueryParams().toSingleValueMap();
+        assertThat(code.getResponse().getRedirectedUrl()).startsWith(REDIRECT_URI);
+        assertThat(callback).containsEntry("state", "state-123").containsKey("code");
+
+        // 5. BFF 以授權碼與 code_verifier 換 Token
+        JsonNode tokens = tokenRequest(mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                .param("grant_type", "authorization_code")
+                .param("code", callback.get("code"))
+                .param("redirect_uri", REDIRECT_URI)
+                .param("code_verifier", verifier)));
+        String userId = jdbc.sql("SELECT id FROM app_user WHERE username = :username").param("username", username)
+                .query(String.class).single();
+        return new LoggedIn(userId, asid, tokens);
+    }
+
+    record LoggedIn(String userId, String asid, JsonNode tokens) {
+    }
+
+    @Test
+    @DisplayName("密碼錯誤 → /login?error；頁面依語言顯示相同的錯誤訊息")
+    void wrongPassword() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        String csrf = csrfToken(session);
+        mockMvc.perform(post("/login").session(session)
+                        .param("username", "admin").param("password", "wrong password!").param("_csrf", csrf))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string(HttpHeaders.LOCATION, "/login?error"));
+        String page = mockMvc.perform(get("/login?error").header(HttpHeaders.ACCEPT_LANGUAGE, "zh-TW"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(page).contains("帳號或密碼錯誤").contains("lang=\"zh-TW\"");
+        String english = mockMvc.perform(get("/login?error").header(HttpHeaders.ACCEPT_LANGUAGE, "en"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(english).contains("Incorrect username or password.");
+    }
+
+    @Test
+    @DisplayName("登入頁不可被嵌入 iframe，並帶內容安全政策")
+    void loginPageHeaders() throws Exception {
+        mockMvc.perform(get("/login"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Frame-Options", "DENY"))
+                .andExpect(header().string("Content-Security-Policy",
+                        org.hamcrest.Matchers.containsString("frame-ancestors 'none'")));
+    }
+
+    @Test
+    @DisplayName("沒有 PKCE 的授權請求被拒絕（T-CLIENT-02）")
+    void authorizationRequestWithoutPkceIsRejected() throws Exception {
+        String url = UriComponentsBuilder.fromPath("/oauth2/authorize")
+                .queryParam("response_type", "code").queryParam("client_id", "web-bff")
+                .queryParam("redirect_uri", REDIRECT_URI).queryParam("scope", "openid").queryParam("state", "s")
+                .build().toUriString();
+        MvcResult result = mockMvc.perform(get(url).accept(MediaType.TEXT_HTML))
+                .andExpect(status().is3xxRedirection()).andReturn();
+        assertThat(result.getResponse().getRedirectedUrl()).startsWith(REDIRECT_URI).contains("error=invalid_request");
+    }
+
+    @Test
+    @DisplayName("未註冊的 redirect_uri：直接回 400，不重導")
+    void unregisteredRedirectUriIsNotFollowed() throws Exception {
+        String url = UriComponentsBuilder.fromPath("/oauth2/authorize")
+                .queryParam("response_type", "code").queryParam("client_id", "web-bff")
+                .queryParam("redirect_uri", "https://evil.example.com/callback").queryParam("scope", "openid")
+                .queryParam("code_challenge", challenge(randomVerifier())).queryParam("code_challenge_method", "S256")
+                .build().toUriString();
+        mockMvc.perform(get(url).accept(MediaType.TEXT_HTML)).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("client_credentials：Access Token 的 sub 為 client_id（T-TOKEN-03 的基本部分）")
+    void clientCredentials() throws Exception {
+        JsonNode tokens = tokenRequest(mockMvc.perform(post("/oauth2/token").with(httpBasic("report-batch", "batch-secret"))
+                .param("grant_type", "client_credentials").param("scope", "report.generate")));
+        assertThat(tokens.has("refresh_token")).isFalse();
+        Jwt accessToken = jwtDecoder.decode(tokens.get("access_token").asString());
+        assertThat(accessToken.getSubject()).isEqualTo("report-batch");
+        assertThat(accessToken.getClaimAsStringList("scope")).containsExactly("report.generate");
+        assertThat(accessToken.getAudience()).containsExactly("jacky917-api");
+        assertThat(accessToken.getClaimAsString("client_id")).isEqualTo("report-batch");
+        assertThat(accessToken.getClaims()).doesNotContainKeys("asid", "idp", "roles", "permissions");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM session_authorization WHERE registered_client_id = "
+                + "(SELECT id FROM oauth2_registered_client WHERE client_id = 'report-batch')")
+                .query(Integer.class).single()).as("client_credentials 沒有登入 Session").isZero();
+    }
+
+    @Test
+    @DisplayName("停權的 client 換 Token：401 invalid_client（T-CLIENT-01）")
+    void suspendedClientIsRejected() throws Exception {
+        jdbc.sql("UPDATE client_profile SET status = 'SUSPENDED' WHERE registered_client_id = "
+                + "(SELECT id FROM oauth2_registered_client WHERE client_id = 'suspended')").update();
+        String body = mockMvc.perform(post("/oauth2/token").with(httpBasic("suspended", "suspended-secret"))
+                        .param("grant_type", "client_credentials"))
+                .andExpect(status().isUnauthorized()).andReturn().getResponse().getContentAsString();
+        assertThat(body).contains("invalid_client");
+    }
+
+    @Test
+    @DisplayName("OIDC discovery 的 issuer 與設定相同；JWKS 只有公鑰")
+    void discoveryAndJwks() throws Exception {
+        JsonNode discovery = JSON.readTree(mockMvc.perform(get("/.well-known/openid-configuration"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(discovery.get("issuer").asString()).isEqualTo("http://localhost:9000");
+        JsonNode jwks = JSON.readTree(mockMvc.perform(get("/oauth2/jwks"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(jwks.get("keys")).hasSize(1);
+        assertThat(jwks.get("keys").get(0).has("d")).isFalse();
+    }
+
+    private JsonNode tokenRequest(org.springframework.test.web.servlet.ResultActions actions) throws Exception {
+        return JSON.readTree(actions.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+    }
+
+    private String csrfToken(MockHttpSession session) throws Exception {
+        String page = mockMvc.perform(get("/login").session(session))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        Matcher matcher = CSRF.matcher(page);
+        assertThat(matcher.find()).as("登入頁必須有 CSRF 欄位").isTrue();
+        return matcher.group(1);
+    }
+
+    private static URI authorizeUrl(String challenge) {
+        return UriComponentsBuilder.fromPath("/oauth2/authorize")
+                .queryParam("response_type", "code")
+                .queryParam("client_id", "web-bff")
+                .queryParam("redirect_uri", REDIRECT_URI)
+                .queryParam("scope", "openid profile")
+                .queryParam("state", "state-123")
+                .queryParam("code_challenge", challenge)
+                .queryParam("code_challenge_method", "S256")
+                .encode().build().toUri();
+    }
+
+    private static String randomVerifier() {
+        byte[] bytes = new byte[32];
+        new SecureRandom().nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static String challenge(String verifier) throws Exception {
+        byte[] digest = MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII));
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+    }
+
+    @SpringBootConfiguration
+    @EnableAutoConfiguration
+    static class TestApplication {
+
+        /**
+         * 可推移的時鐘：Starter 的 Clock Bean 以 @ConditionalOnMissingBean 讓位給它。
+         */
+        @Bean
+        MutableClock clock() {
+            return new MutableClock();
+        }
+
+        /**
+         * 應用程式自訂的 claim；刻意使用 List.of()，確認刷新時仍能讀回（customizer 會轉換集合）。
+         */
+        @Bean
+        TokenClaimsContributor tenantsContributor() {
+            return (context, user) -> {
+                if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType()) && user.isPresent()) {
+                    context.getClaims().claim("tenants", java.util.List.of("tenant-a", "tenant-b"));
+                }
+            };
+        }
+    }
+}

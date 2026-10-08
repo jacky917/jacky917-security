@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | 🚧 實施中：M0、M1、M2 已完成（待合併），下一步 M3 與 Auth Server |
+| 狀態 | 🚧 實施中：M0、M1、M2 已完成（M2 待合併）；M4（AS 第 1 階段）已實作於分支 `claude/as-phase1`；M3（2.0.0 發佈）等待授權條款 |
 | 日期 | 2026-10-07 |
 | 範圍 | 兩大任務：① 升級到 Spring Boot 4.1；② 實作方案 C（標準 OAuth 2.0／OIDC Authorization Server） |
 
@@ -71,7 +71,7 @@ flowchart LR
 | **M1 升級** ✅ 已實施（待合併） | `main` 升級到 Boot 4.1.1，**不改結構** | [升級設計](boot4-migration-design.md) | 全部測試通過；行為回歸檢查通過 |
 | **M2 重構** ✅ 已實施（分支 `claude/m2-restructure`，待合併） | 自有 parent + flatten、模組搬移與改名、core、BOM、relocation、enforcer、CI、破壞性清理 | [Repo 設計 §9](repo-structure-design.md#9-重構實施步驟) | 外部空專案可透過 BOM 引入 `2.0.0-M2` |
 | **M3 2.0** | 文件重組、升級說明 | [Repo 設計 §6](repo-structure-design.md#6-文件結構) | 發佈 `2.0.0` |
-| **M4 AS MVP** | AS starter、帳號密碼 + Google 登入、BFF 範例、E2E | [AS 設計 §11 第 1 階段](auth-server-design.md#11-分階段實作計畫) | 瀏覽器 → BFF → AS → RS 全流程成功 |
+| **M4 AS MVP** ✅ 已實作（未發佈） | AS starter、帳號密碼 + Google 登入、BFF 範例、E2E | [AS 設計 §11 第 1 階段](auth-server-design.md#11-分階段實作計畫) | 瀏覽器 → BFF → AS → RS 全流程成功 |
 | **M5 AS 強化** | 重用偵測、登出、帳號連結、GitHub／LINE、金鑰輪換 | AS 設計第 2 階段 | AS 由 preview 轉為正式 |
 | **M6 第三方應用** | 同意畫面、scope 權限、Admin API | AS 設計第 3 階段 | 第三方 client 只能取得同意範圍內的權限 |
 

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.jacky917</groupId>
+        <artifactId>jacky917-security-parent</artifactId>
+        <version>${revision}</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>jacky917-security-authorization-server-starter</artifactId>
+    <name>jacky917-security-authorization-server-starter</name>
+    <description>Authorization Server starter for jacky917-security: OAuth 2.0 / OIDC login service backed by SQLite or PostgreSQL</description>
+
+    <!-- 2.1.0 起才發佈（預覽版）：2.0.0 只發佈 Resource Server；屆時移除此設定並把模組加回 BOM -->
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.jacky917</groupId>
+            <artifactId>jacky917-security-authorization-server-autoconfigure</artifactId>
+        </dependency>
+    </dependencies>
+</project>
