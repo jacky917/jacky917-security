@@ -701,7 +701,7 @@ jacky917:
 
 ## 11. 分階段實作計畫
 
-第 1、2 階段的細部工作分解見 [詳細設計 §11](auth-server-detailed-design.md#11-第-12-階段工作分解)。
+第 1、2 階段的細部工作分解見 [詳細設計 §11](auth-server-detailed-design.md#11-第-12-階段工作分解)；第 3、4 階段見 [第 3、4 階段詳細設計](auth-server-phase3-4-design.md)。
 
 | 階段 | 內容 | 完成條件 |
 |---|---|---|

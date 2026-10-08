@@ -958,3 +958,16 @@
   - **DEC-109**: 重用以外的刷新拒絕不寫入稽核（資料庫的事件類型 CHECK 約束不允許新類型），以 metric 與 `auth_session.revoke_reason` 記錄。
 - **Next TODO**:
   - 合併 PR 後，決定第 2 階段的發佈版本，以及 AS 是否轉為正式版。
+
+---
+## Step 43: Authorization Server 第 3、4 階段詳細設計
+- **Status**: 🟢 設計完成（分支 `claude/as-phase-3`）
+- **範圍**（使用者確認的目標）：A 使用者與權限管理（Admin API）、B 帳號自助功能（註冊、Email 驗證、忘記／變更密碼）、C 第三方應用（同意畫面、client 與 scope 管理、`aud` 依 scope 決定）、D 兩步驟驗證（TOTP）、E 發佈準備（不發佈）。Apple 登入、即時撤銷、Redis、KMS、MySQL 不列入。
+- **變更**：新增 `docs/design/auth-server-phase3-4-design.md`（決策 D23～D31、資料表變更、Admin API、帳號頁面、同意畫面、TOTP、設定屬性、工作 18～29、測試案例）。
+- **Decision Log**:
+  - **DEC-110**: Admin API 以本 AS 簽發的 Bearer token 驗證，依 `as:*` 權限在 request 層級授權；不提供管理畫面（D23、D24）。
+  - **DEC-111**: 寄信以 `AccountMailer` SPI 抽象；沒有寄信方式時不提供需要寄信的功能，啟用註冊則啟動失敗（D26）。
+  - **DEC-112**: TOTP 自行實作（RFC 6238），密鑰以既有的主金鑰加密；QR code 使用 ZXing（D31）。
+- **Next TODO**:
+  - 工作 18：Admin API 基礎與 migration V1_1_0。
+
