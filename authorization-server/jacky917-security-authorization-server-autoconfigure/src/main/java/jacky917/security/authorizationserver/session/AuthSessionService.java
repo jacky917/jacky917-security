@@ -50,7 +50,9 @@ public class AuthSessionService {
             rs.getTimestamp("created_at").toInstant(),
             rs.getTimestamp("last_seen_at").toInstant(),
             rs.getTimestamp("expires_at").toInstant(),
-            rs.getTimestamp("revoked_at") == null ? null : rs.getTimestamp("revoked_at").toInstant());
+            rs.getTimestamp("revoked_at") == null ? null : rs.getTimestamp("revoked_at").toInstant(),
+            rs.getString("ip_address"),
+            rs.getString("user_agent"));
 
     private final JdbcClient jdbc;
     private final TransactionOperations transactions;
@@ -131,7 +133,7 @@ public class AuthSessionService {
      */
     public Optional<AuthSession> find(String sessionId) {
         return jdbc.sql("SELECT session_id, user_id, status, login_method, idp, amr, created_at, last_seen_at, "
-                        + "expires_at, revoked_at FROM auth_session WHERE session_id = :id")
+                        + "expires_at, revoked_at, ip_address, user_agent FROM auth_session WHERE session_id = :id")
                 .param("id", sessionId).query(ROW_MAPPER).optional();
     }
 
@@ -222,7 +224,7 @@ public class AuthSessionService {
      */
     public List<AuthSession> findActive(String userId) {
         return jdbc.sql("SELECT session_id, user_id, status, login_method, idp, amr, created_at, last_seen_at, "
-                        + "expires_at, revoked_at FROM auth_session WHERE user_id = :user AND status = 'ACTIVE' "
+                        + "expires_at, revoked_at, ip_address, user_agent FROM auth_session WHERE user_id = :user AND status = 'ACTIVE' "
                         + "AND expires_at > :now ORDER BY last_seen_at DESC")
                 .param("user", userId).param("now", Timestamp.from(clock.instant())).query(ROW_MAPPER).list();
     }

@@ -993,7 +993,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 9 | 第三方登入（Google）：通用 OIDC mapper、`FederatedIdentityService`、自動建立使用者、`PrincipalNormalizer` | ✅ |
 | 10 | `example-authorization-server`（改用 AS starter）、`example-bff`、`e2e-tests` | ✅ |
 | 11 | 重用偵測：`RefreshTokenReuseDetector`（包裝 Spring 的刷新 provider）、`refresh_token_history`、`AuthSessionService#revoke`、稽核事件與 `login_audit` | ✅ |
-| 12～17 | 第 2 階段其餘工作 | ⏳ |
+| 12 | 登出：`Jacky917LogoutHandler`（RP-Initiated Logout 與 `POST /logout`）、帳號頁 `/jacky917/account`（裝置清單、登出單一或所有裝置） | ✅ |
+| 13～17 | 第 2 階段其餘工作 | ⏳ |
 
 ### 13.2 與設計不同的地方
 
@@ -1057,4 +1058,8 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 稽核事件的發布時機（工作 11） | `@TransactionalEventListener(AFTER_COMMIT)` | 元件在交易**結束後**自行發布 `LoginAuditEvent`，`JdbcLoginAuditListener` 以一般 `@EventListener` 立即寫入 | xerial 在 `transaction_mode=IMMEDIATE` 下 commit 後會立刻開始新交易並持有寫入鎖（`SqliteDialect` 已記錄此行為），交易同步回調執行時連線尚未歸還，另一個連線的寫入會等到逾時；在交易外發布則兩種資料庫行為一致 |
 | 刷新時的暫時鎖定（工作 11） | 資料模型 §11.2：`locked_until > NOW()` 即拒絕刷新 | 暫時鎖定只阻擋密碼登入；刷新只檢查 `status = ACTIVE`（管理員鎖定為 `LOCKED`，仍會拒絕並撤銷） | 暫時鎖定由連續登入失敗觸發（工作 13）。若它也阻擋刷新，任何知道帳號的人只要故意輸錯密碼，就能讓帳號持有人所有裝置被登出 |
 | 刷新時 Session 已過期（工作 11） | 撤銷並寫入原因 | 只拒絕，不更改狀態 | 過期不是撤銷；由清理排程改為 `EXPIRED`（工作 15）。使用者停用、變更密碼仍會撤銷（`USER_DISABLED`、`PASSWORD_CHANGED`），並刪除其授權 |
+| 登出處理的接入點（工作 12） | `Jacky917LogoutHandler` | 以 `OidcLogoutAuthenticationSuccessHandler#setLogoutHandler` 取代 Spring 預設的登出處理（原本只清除瀏覽器的登入），同一個處理器也加到登入頁 filter chain 的 `POST /logout` | Spring 的登出 provider 已驗證 `id_token_hint`、client 與 `post_logout_redirect_uri`；我們只需要在它成功後撤銷 Session |
+| 登出時撤銷哪些 Session（工作 12） | ① 瀏覽器 Session 的 `asid`；② 否則以 `id_token_hint` 找 | 兩者都撤銷（去除重複）。瀏覽器的 `asid` 只有在屬於該瀏覽器登入的使用者時才撤銷 | 同一個瀏覽器重新登入後，BFF 手上的 ID Token 可能屬於較早的 Session；使用者要求登出時兩者都應結束 |
+| 帳號頁（工作 12） | `/account` | `/jacky917/account`（DEC-088）；登出其他裝置用 `LOGOUT`，「登出所有裝置」用 `LOGOUT_ALL`；時間以伺服器的預設時區顯示 | 不與應用程式自己的頁面衝突。帳號連結管理於工作 14 加入 |
+| 登入頁 filter chain 的 Session 檢查（工作 12） | — | `LoginSessionValidationFilter` 也加到登入頁的 filter chain | 在其他裝置按「登出所有裝置」後，這個瀏覽器開啟帳號頁時也應回到登入頁 |
 

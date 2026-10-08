@@ -31,6 +31,10 @@ import java.time.Instant;
  *                      <br>Session 的絕對到期時間
  * @param revokedAt     when the session was revoked, or {@code null}
  *                      <br>撤銷時間，或 {@code null}
+ * @param ipAddress     the IP address at login, or {@code null}
+ *                      <br>登入時的 IP，或 {@code null}
+ * @param userAgent     the browser user agent at login, or {@code null}
+ *                      <br>登入時瀏覽器的 User-Agent，或 {@code null}
  * @author Jacky
  * @since 2.1.0
  */
@@ -44,7 +48,9 @@ public record AuthSession(
         Instant createdAt,
         Instant lastSeenAt,
         Instant expiresAt,
-        @Nullable Instant revokedAt) {
+        @Nullable Instant revokedAt,
+        @Nullable String ipAddress,
+        @Nullable String userAgent) {
 
     /**
      * Returns whether the session can still be used at the given time.

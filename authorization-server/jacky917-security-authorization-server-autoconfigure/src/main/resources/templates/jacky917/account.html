@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${text['account.title'] + ' · ' + productName}">Your account</title>
+    <link rel="stylesheet" th:href="@{/jacky917/authorization-server.css}">
+    <link rel="stylesheet" th:href="@{/jacky917/theme.css}">
+</head>
+<body>
+<main class="card wide">
+    <header>
+        <img th:if="${logoUrl}" th:src="${logoUrl}" alt="" class="logo">
+        <p class="product" th:text="${productName}">jacky917</p>
+        <h1 th:text="${text['account.title']}">Your account</h1>
+    </header>
+    <p th:text="${userName}">alice</p>
+
+    <h2 th:text="${text['account.devices']}">Signed-in devices</h2>
+    <ul class="devices">
+        <li th:each="device : ${devices}" class="device">
+            <div class="device-info">
+                <p>
+                    <strong th:text="${device.method}">Password</strong>
+                    <span th:if="${device.current}" class="badge" th:text="${text['account.current']}">This device</span>
+                </p>
+                <p class="meta" th:if="${device.userAgent}" th:text="${device.userAgent}">Mozilla/5.0</p>
+                <p class="meta">
+                    <span th:text="${text['account.signed-in-at'] + ' ' + device.signedInAt}">Signed in</span> ·
+                    <span th:text="${text['account.last-active'] + ' ' + device.lastActive}">Last active</span>
+                    <span th:if="${device.ip}" th:text="${'· ' + text['account.ip'] + ' ' + device.ip}">IP</span>
+                </p>
+            </div>
+            <!-- th:action 讓 Spring Security 自動加入 CSRF 欄位 -->
+            <form method="post" th:action="@{/jacky917/account/sessions/{id}/logout(id=${device.id})}">
+                <button type="submit" class="secondary" th:text="${text['account.logout']}">Sign out</button>
+            </form>
+        </li>
+    </ul>
+
+    <form method="post" th:action="@{/jacky917/account/logout-all}">
+        <button type="submit" th:text="${text['account.logout-all']}">Sign out of all devices</button>
+    </form>
+    <p class="hint" th:text="${text['account.logout-all.hint']}">Every device has to sign in again.</p>
+</main>
+</body>
+</html>

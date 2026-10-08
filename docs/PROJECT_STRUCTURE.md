@@ -80,6 +80,7 @@
 |   |       |   |               |   |-- AuthSession.java
 |   |       |   |               |   |-- AuthSessionService.java
 |   |       |   |               |   |-- AuthSessionStatus.java
+|   |       |   |               |   |-- Jacky917LogoutHandler.java
 |   |       |   |               |   |-- LoginMethod.java
 |   |       |   |               |   |-- LoginSessionValidationFilter.java
 |   |       |   |               |   |-- RevokeReason.java
@@ -107,7 +108,9 @@
 |   |       |   |               |   |-- UserAuthorities.java
 |   |       |   |               |   `-- UserStatus.java
 |   |       |   |               `-- web
-|   |       |   |                   `-- LoginController.java
+|   |       |   |                   |-- AccountController.java
+|   |       |   |                   |-- LoginController.java
+|   |       |   |                   `-- PageSupport.java
 |   |       |   `-- resources
 |   |       |       |-- META-INF
 |   |       |       |   |-- spring
@@ -139,6 +142,7 @@
 |   |       |       |       `-- authorization-server.css
 |   |       |       `-- templates
 |   |       |           `-- jacky917
+|   |       |               |-- account.html
 |   |       |               |-- login.html
 |   |       |               `-- signed-in.html
 |   |       `-- test
@@ -165,12 +169,16 @@
 |   |           |               |   `-- OidcFederatedUserInfoMapperTest.java
 |   |           |               |-- flow
 |   |           |               |   |-- AbstractAuthorizationFlowIntegrationTest.java
+|   |           |               |   |-- AbstractFlowIntegrationTest.java
 |   |           |               |   |-- AbstractGoogleLoginIntegrationTest.java
+|   |           |               |   |-- AbstractLogoutIntegrationTest.java
 |   |           |               |   |-- PostgresqlAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- PostgresqlGoogleLoginIntegrationTest.java
+|   |           |               |   |-- PostgresqlLogoutIntegrationTest.java
 |   |           |               |   |-- SqliteAuthorizationFlowIntegrationTest.java
 |   |           |               |   |-- SqliteEs256AuthorizationFlowIntegrationTest.java
-|   |           |               |   `-- SqliteGoogleLoginIntegrationTest.java
+|   |           |               |   |-- SqliteGoogleLoginIntegrationTest.java
+|   |           |               |   `-- SqliteLogoutIntegrationTest.java
 |   |           |               |-- keys
 |   |           |               |   |-- ActiveKeyJwtEncoderTest.java
 |   |           |               |   |-- KeyEncryptorTest.java
@@ -180,6 +188,7 @@
 |   |           |               |-- refresh
 |   |           |               |   `-- RefreshTokenReuseDetectorTest.java
 |   |           |               |-- session
+|   |           |               |   |-- Jacky917LogoutHandlerTest.java
 |   |           |               |   |-- LoginSessionValidationFilterTest.java
 |   |           |               |   `-- SessionLinkingAuthorizationServiceTest.java
 |   |           |               |-- support
@@ -462,11 +471,17 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../refresh/RefreshTokenReuseDetector.java`、`ReuseDetectingRefreshTokenProvider.java` | `as-autoconfigure` | 重用偵測（§5.4、D19） | 包裝 Spring 的刷新 provider：列鎖、刷新前檢查 Session 與使用者、記錄舊 token；寬限期後重用即撤銷 Session。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../refresh/RefreshTokenHistoryRepository.java`、`RotatedRefreshToken.java` | `as-autoconfigure` | 已輪換的 token | `refresh_token_history`：只存 SHA-256，保留至 `min(token 到期, 輪換 + 保留期)`。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/RevokeReason.java` | `as-autoconfigure` | 撤銷原因 | `AuthSessionService#revoke`／`revokeAll` 撤銷 Session 並在同一個交易中刪除其授權（資料模型 §11.4、§11.5）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../session/Jacky917LogoutHandler.java` | `as-autoconfigure` | 登出（§5.5） | RP-Initiated Logout 與 `POST /logout`：從瀏覽器與 `id_token_hint` 找出登入 Session 並撤銷、發布 `LOGOUT`。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/AccountController.java`、`templates/jacky917/account.html` | `as-autoconfigure` | 帳號頁 | `/jacky917/account`：登入中的裝置、登出單一或所有裝置。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../web/PageSupport.java` | `as-autoconfigure` | 頁面共用 | Starter 自己的訊息檔與品牌設定。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../audit/LoginAuditEvent.java`、`LoginAuditEventType.java`、`JdbcLoginAuditListener.java` | `as-autoconfigure` | 稽核（§8.1） | 元件在交易提交後發布事件；listener 寫入 `login_audit`，失敗只記錄日誌。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/TestDatabases.java` | `as-test` | 測試資料庫 | SQLite 暫存檔；embedded PostgreSQL 16（不需 Docker）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../database/*IntegrationTest.java` | `as-test` | 整合測試 | migration、官方 JDBC 類別相容性、約束、schema 一致性、SQLite 設定檢查、預設 SQLite。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../properties/AuthorizationServerPropertiesTest.java` | `as-test` | 單元測試 | 預設值、issuer、有效期、寬限期與保留期、主金鑰驗證。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../refresh/RefreshTokenReuseDetectorTest.java` | `as-test` | 單元測試 | 重用偵測的每個分支（未知、寬限期內外、Session 與使用者狀態、記錄與保留期）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/AbstractFlowIntegrationTest.java` | `as-test` | 測試共用 | `@SpringBootTest` 設定與模擬瀏覽器、BFF 的工具（登入、換 Token、刷新、Session 斷言）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/*LogoutIntegrationTest.java` | `as-test` | 整合測試 | T-LOGOUT-01～04、`POST /logout`、帳號頁（裝置清單、登出其他／目前／所有裝置、不能登出他人的 Session、CSRF）；SQLite 與 PostgreSQL 各一次。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../session/Jacky917LogoutHandlerTest.java` | `as-test` | 單元測試 | 從瀏覽器與 `id_token_hint` 找 Session 的每個分支。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/KeyEncryptorTest.java` | `as-test` | 單元測試 | 加解密、錯誤主金鑰、竄改、`kid` 綁定。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../client/ClientRegistrationIntegrationTest.java` | `as-test` | 整合測試 | 註冊、重新啟動時更新、secret 輪換、缺少 secret、停權。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../user/UserAccountIntegrationTest.java` | `as-test` | 整合測試 | 帳號或 Email 登入、失敗訊息一致、停用與鎖定、角色過期、唯一性、密碼政策、重新雜湊、第一位管理員。 |

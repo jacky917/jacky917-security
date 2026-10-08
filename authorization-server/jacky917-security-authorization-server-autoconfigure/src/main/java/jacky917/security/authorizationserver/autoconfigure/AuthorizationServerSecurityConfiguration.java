@@ -21,10 +21,12 @@ import jacky917.security.authorizationserver.token.Jacky917TokenCustomizer;
 import jacky917.security.authorizationserver.token.TokenClaimsContributor;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.session.AuthSessionService;
+import jacky917.security.authorizationserver.session.Jacky917LogoutHandler;
 import jacky917.security.authorizationserver.session.LoginSessionValidationFilter;
 import jacky917.security.authorizationserver.session.SessionAuthorizationRepository;
 import jacky917.security.authorizationserver.session.SessionLinkingAuthorizationService;
 import jacky917.security.authorizationserver.user.UserAccountService;
+import jacky917.security.authorizationserver.web.AccountController;
 import jacky917.security.authorizationserver.web.LoginController;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
@@ -51,6 +53,7 @@ import org.springframework.security.oauth2.server.authorization.JdbcOAuth2Author
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.oidc.web.authentication.OidcLogoutAuthenticationSuccessHandler;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
@@ -62,6 +65,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import java.time.ZoneId;
 
 /**
  * Web security of the authorization server (detailed design §3): the
@@ -102,13 +106,17 @@ class AuthorizationServerSecurityConfiguration {
     @Order(1)
     @ConditionalOnMissingBean(name = "authorizationServerSecurityFilterChain")
     SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http, AuthSessionService sessions,
-                                                              RefreshTokenReuseDetector reuseDetector, Clock clock)
+                                                              RefreshTokenReuseDetector reuseDetector,
+                                                              Jacky917LogoutHandler logoutHandler, Clock clock)
             throws Exception {
+        // RP-Initiated Logout 撤銷整個登入 Session，而不只是結束瀏覽器的登入（詳細設計 §5.5）
+        OidcLogoutAuthenticationSuccessHandler logoutResponse = new OidcLogoutAuthenticationSuccessHandler();
+        logoutResponse.setLogoutHandler(logoutHandler);
         // 已查證：Spring Security 7.1.1 的 OAuth2AuthorizationServerConfigurer 只有公開建構子
         OAuth2AuthorizationServerConfigurer authorizationServer = new OAuth2AuthorizationServerConfigurer();
         http.securityMatcher(authorizationServer.getEndpointsMatcher())
                 .with(authorizationServer, server -> server
-                        .oidc(Customizer.withDefaults())
+                        .oidc(oidc -> oidc.logoutEndpoint(logout -> logout.logoutResponseHandler(logoutResponse)))
                         // 刷新改經過重用偵測（詳細設計 §5.4）
                         .tokenEndpoint(token -> token.authenticationProviders(reuseDetector::install)))
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
@@ -126,7 +134,9 @@ class AuthorizationServerSecurityConfiguration {
     @ConditionalOnMissingBean(name = "loginSecurityFilterChain")
     SecurityFilterChain loginSecurityFilterChain(HttpSecurity http, LoginSuccessHandler loginSuccessHandler,
                                                  ObjectProvider<ClientRegistrationRepository> clientRegistrations,
-                                                 ObjectProvider<FederatedLoginSuccessHandler> federatedLoginSuccessHandler)
+                                                 ObjectProvider<FederatedLoginSuccessHandler> federatedLoginSuccessHandler,
+                                                 Jacky917LogoutHandler logoutHandler, AuthSessionService sessions,
+                                                 Clock clock)
             throws Exception {
         // 有設定第三方登入（spring.security.oauth2.client.registration.*）時才啟用
         if (clientRegistrations.getIfAvailable() != null) {
@@ -136,7 +146,8 @@ class AuthorizationServerSecurityConfiguration {
                     .failureUrl("/login?error=federation"));
         }
         http.authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(LoginController.SIGNED_IN_PATH).authenticated()
+                        .requestMatchers(LoginController.SIGNED_IN_PATH, AccountController.ACCOUNT_PATH,
+                                AccountController.ACCOUNT_PATH + "/**").authenticated()
                         .requestMatchers("/login", "/error", "/jacky917/**").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(form -> form
@@ -144,7 +155,11 @@ class AuthorizationServerSecurityConfiguration {
                         .successHandler(loginSuccessHandler)
                         // 所有失敗原因導向同一個網址，頁面顯示相同的訊息（詳細設計 §7.2）
                         .failureUrl("/login?error"))
+                // POST /logout 也撤銷登入 Session
+                .logout(logout -> logout.addLogoutHandler(logoutHandler).logoutSuccessUrl("/login?logout"))
                 .sessionManagement(session -> session.sessionFixation(fixation -> fixation.changeSessionId()))
+                // 在其他裝置被登出（例如「登出所有裝置」）的瀏覽器回到登入頁
+                .addFilterBefore(new LoginSessionValidationFilter(sessions, clock), AuthorizationFilter.class)
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
                         .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY)));
@@ -297,6 +312,38 @@ class AuthorizationServerSecurityConfiguration {
     @ConditionalOnMissingBean
     LoginSuccessHandler loginSuccessHandler(AuthSessionService sessions, UserAccountService users, Clock clock) {
         return new LoginSuccessHandler(sessions, users, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    Jacky917LogoutHandler jacky917LogoutHandler(AuthSessionService sessions, OAuth2AuthorizationService authorizations,
+                                                SessionAuthorizationRepository links, ApplicationEventPublisher events,
+                                                Clock clock) {
+        return new Jacky917LogoutHandler(sessions, authorizations, links, events, clock);
+    }
+
+    /**
+     * The account page, which shows times in the server's default time
+     * zone.
+     * <p>
+     * 帳號頁，以伺服器的預設時區顯示時間。
+     *
+     * @param properties     the authorization server properties
+     *                       <br>Authorization Server 設定屬性
+     * @param sessions       the login sessions
+     *                       <br>登入 Session
+     * @param users          the user accounts
+     *                       <br>使用者帳號
+     * @param logoutHandler  ends login sessions
+     *                       <br>結束登入 Session
+     * @return the controller
+     *         <br>controller
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    AccountController jacky917AccountController(AuthorizationServerProperties properties, AuthSessionService sessions,
+                                                UserAccountService users, Jacky917LogoutHandler logoutHandler) {
+        return new AccountController(properties, sessions, users, logoutHandler, ZoneId.systemDefault());
     }
 
     @Bean

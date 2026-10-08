@@ -817,3 +817,21 @@
   - **DEC-093**: 稽核事件由元件在交易結束後發布，不使用 `@TransactionalEventListener`。
   - **DEC-094**: 列鎖以授權 ID 進行，鎖定後重新讀取授權。
 
+---
+## Step 35: Authorization Server 第 2 階段——工作 12（登出、帳號頁）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `Jacky917LogoutHandler`：RP-Initiated Logout（`/connect/logout`）與登入服務的 `POST /logout` 撤銷整個登入 Session（`LOGOUT`，授權一併刪除），並寫入 `login_audit`。登入 Session 從瀏覽器 Session 與 `id_token_hint` 兩處尋找，瀏覽器 Session 過期、ID Token 過期時仍可登出。
+  - 帳號頁 `/jacky917/account`：登入中的裝置（登入方式、時間、IP、瀏覽器、目前的裝置），登出單一裝置或所有裝置（`LOGOUT_ALL`）；不能登出他人的 Session（404）。
+  - `LoginSessionValidationFilter` 也套用到登入頁的 filter chain：在其他裝置被登出的瀏覽器回到登入頁。
+  - `AuthSession` 加入 `ipAddress`、`userAgent`；登入頁新增「已登出」訊息；已登入頁連到帳號頁；`PageSupport` 抽出頁面共用的文字與品牌設定。
+  - 測試重構：`AbstractFlowIntegrationTest` 抽出共用的 `@SpringBootTest` 設定與模擬瀏覽器、BFF 的工具。
+- **Commands Run & Results**:
+  - 新增 `*LogoutIntegrationTest`（SQLite、PostgreSQL 各 11 個）、`Jacky917LogoutHandlerTest`（5 個）。
+  - 第一次執行時 RP-Initiated Logout 測試都回 400：登出端點的 GET 只讀 query string，而 MockMvc 的 `param()` 不會放進 query string；「未註冊的 redirect URI」測試因此是以錯誤的原因通過。改以 query string 傳送，並在該測試中確認拒絕的原因是 `post_logout_redirect_uri`。
+  - 破壞實驗：不設定登出處理器時，3 個 RP-Initiated Logout 測試失敗；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，305 個測試（Resource Server 47、Authorization Server 240、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-095**: 登出時，瀏覽器 Session 與 `id_token_hint` 所屬的登入 Session 都撤銷。
+  - **DEC-096**: 帳號頁放在 `/jacky917/account`，時間以伺服器的預設時區顯示。
+

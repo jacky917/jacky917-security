@@ -296,7 +296,7 @@ class RefreshTokenReuseDetectorTest {
 
     private static AuthSession session(AuthSessionStatus status, Instant expiresAt) {
         return new AuthSession(ASID, USER, status, LoginMethod.PASSWORD, "local", "pwd", NOW.minus(Duration.ofHours(1)),
-                NOW, expiresAt, status == AuthSessionStatus.REVOKED ? NOW : null);
+                NOW, expiresAt, status == AuthSessionStatus.REVOKED ? NOW : null, null, null);
     }
 
     private static UserAccount user(UserStatus status, Instant lockedUntil, Instant passwordChangedAt) {

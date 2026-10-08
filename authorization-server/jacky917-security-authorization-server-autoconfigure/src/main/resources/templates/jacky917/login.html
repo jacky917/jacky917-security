@@ -15,6 +15,7 @@
         <h1 th:text="${text['login.title']}">Sign in</h1>
     </header>
     <p th:if="${error}" class="error" role="alert" th:text="${error}">Incorrect username or password.</p>
+    <p th:if="${notice}" class="notice" role="status" th:text="${notice}">You have signed out.</p>
     <!-- th:action 讓 Spring Security 自動加入 CSRF 欄位 -->
     <form method="post" th:action="@{/login}">
         <label for="username" th:text="${text['login.username']}">Username or email</label>

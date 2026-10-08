@@ -59,7 +59,7 @@ class LoginControllerTest {
     @SuppressWarnings("unchecked")
     private static List<String> buttons(AuthorizationServerProperties properties, ClientRegistrationRepository repository) {
         ExtendedModelMap model = new ExtendedModelMap();
-        new LoginController(properties, repository).login(null, new MockHttpServletRequest(), model);
+        new LoginController(properties, repository).login(null, null, new MockHttpServletRequest(), model);
         return ((List<Map<String, String>>) model.get("providers")).stream().map(button -> button.get("url")).toList();
     }
 
