@@ -388,7 +388,7 @@ M2 於分支 `claude/m2-restructure` 依 §9 的步驟實施，每一步都以 `
 |---|---|---|---|
 | Parent 策略（R-D7） | 自有 parent，不繼承 `spring-boot-starter-parent` | **仍繼承 `spring-boot-starter-parent`**，發佈時以 `flatten-maven-plugin`（`ossrh` 模式）移除 parent | 達到相同目標（使用者不需要 parent 鏈），又能沿用 Spring Boot 管理的外掛版本、`-parameters` 等設定 |
 | 繼承來的 POM 資訊 | — | 覆寫 `url`、`developers`、`scm` | `spring-boot-starter-parent` 會把 Spring 專案的開發者與 SCM 資訊帶進發佈的 POM |
-| 授權條款 | — | **尚未決定**（TODO） | flatten 無法移除繼承來的 `licenses`；在專案宣告自己的授權條款前，發佈的 POM 會帶有 Apache License 2.0。**正式發佈 2.0.0 前必須決定** |
+| 授權條款 | — | **MIT License**（2026-10-08 使用者決定：最寬鬆、主流的條款） | 根目錄的 `LICENSE` 與根 POM 的 `<licenses>`；flatten 後發佈的 POM 只帶 MIT，不再有繼承自 Spring Boot parent 的 Apache License 2.0 |
 | `core` 的常數與設定預設值 | 設定類別直接引用 core 常數 | 設定類別保留字串常值，另以測試確認與 core 一致 | configuration processor 無法解析其他模組的常數，引用常數會讓 IDE 看不到預設值 |
 | BOM | `${project.version}` 由 flatten 代換 | bom 模式保留原文；使用者 import 時由 Maven 以 BOM 自己的版本代換 | flatten 的 bom 模式不代換 `dependencyManagement`；已用外部專案實測可正確解析 |
 | `@Secured` | 2.0 移除 | **保留** | 移除會讓既有的 `@Secured` 被靜默忽略（fail-open），見 [2.0 總設計 §4.2](v2-overview.md#42-建議一併處理已決定) |

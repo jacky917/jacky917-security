@@ -318,3 +318,9 @@ Starter 會提供自己的 `JwtAuthenticationConverter`，使 Spring Boot 依該
 **Q：如何實作「只有資源擁有者能存取」這類規則？**
 
 用 `@PreAuthorize` 呼叫自訂 Bean，例如 `@PreAuthorize("hasAuthority('PERM_clip:read') and @authzService.canAccessClip(authentication, #clipId)")`。見 [授權模型 — ABAC](docs/resource-server/authorization-model.md#abac資源屬性授權)。
+
+---
+
+## 授權條款
+
+[MIT License](LICENSE)：可自由使用（包含商業用途）、修改、再發佈，只需保留著作權聲明與授權文字。
