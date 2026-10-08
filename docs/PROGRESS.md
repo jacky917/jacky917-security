@@ -999,3 +999,13 @@
 - **Decision Log**:
   - **DEC-113**: 管理 API 直接操作預設的使用者資料表；以其他使用者來源取代 `UserAccountService` 的應用程式應關閉管理 API 或自行提供。
 
+---
+## Step 46: Authorization Server——工作 20（管理 API：角色與權限），群組 A 完成
+- **Status**: 🟢 Completed
+- **變更**:
+  - `RoleAdminService`、`RoleAdminController`：`GET/POST /admin/api/roles`、`GET/PUT/DELETE /admin/api/roles/{code}`、`GET/POST /admin/api/permissions`、`GET/PUT/DELETE /admin/api/permissions/{code}`。
+  - 代碼格式依資料模型 §5.1；`as:` 開頭的權限保留給登入服務。內建角色與權限不能刪除、不能改代碼；`AS_ADMIN` 的權限不能變更；仍有使用者的角色、仍被角色或 scope 使用的權限不能刪除。
+  - 使用指南新增 §9 管理 API（驗證、權限、端點、規則）；「目前的限制」與「上線檢查清單」改為 §10、§11。
+- **Commands Run & Results**:
+  - `AdminApiIntegrationTest` 新增 5 個（兩種資料庫）：業務角色與權限出現在使用者的 token 中、代碼驗證、內建保護、刪除規則、更新權限清單與 403。
+

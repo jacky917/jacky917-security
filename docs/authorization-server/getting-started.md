@@ -3,7 +3,7 @@
 `jacky917-security-authorization-server-starter` 把 Spring Authorization Server 組裝成一個可以直接使用的登入服務：帳號密碼與 Google、GitHub、LINE 登入、OAuth 2.0／OpenID Connect、Refresh Token 重用偵測、登出與帳號頁、登入保護與稽核、簽章金鑰的自動輪換，資料預設存在 SQLite，只改設定就能切換到 PostgreSQL（可多實例）。
 
 > [!IMPORTANT]
-> **預覽版（第 1、2 階段已實作，尚未發佈）**：不隨 2.0.0 發佈（2.1.0 起發佈到 GitHub Packages）。目前請 clone 本 repo 後執行 `mvn -DskipTests install` 在本機使用。上線前請先讀 [§9 目前的限制](#9-目前的限制)。
+> **預覽版（第 1、2 階段已實作，尚未發佈）**：不隨 2.0.0 發佈（2.1.0 起發佈到 GitHub Packages）。目前請 clone 本 repo 後執行 `mvn -DskipTests install` 在本機使用。上線前請先讀 [§10 目前的限制](#10-目前的限制)。
 
 ## 目錄
 
@@ -15,8 +15,9 @@
 6. [第三方登入（Google、GitHub、LINE）](#6-第三方登入googlegithubline)
 7. [Token 內容](#7-token-內容)
 8. [業務 API 與 BFF 的設定](#8-業務-api-與-bff-的設定)
-9. [目前的限制](#9-目前的限制)
-10. [上線檢查清單](#10-上線檢查清單)
+9. [管理 API](#9-管理-api)
+10. [目前的限制](#10-目前的限制)
+11. [上線檢查清單](#11-上線檢查清單)
 
 ---
 
@@ -150,6 +151,8 @@ public class AuthServerApplication {
 | `branding.primary-color` | `#2563eb` | `#rgb` 或 `#rrggbb` |
 | `login.providers` | — | 登入頁顯示的第三方登入按鈕（registration id，依此順序）。未設定時顯示全部（依名稱排序）；使用無法列出所有 registration 的自訂 repository（例如存在資料庫中）時必須設定 |
 | `clients.<client-id>.*` | — | 見 [§5](#5-clientbff批次程式app) |
+| `admin-api.enabled` | `true` | 管理 API（見 [§9](#9-管理-api)） |
+| `admin-api.audience` | `token.audience` 的第一個值 | 呼叫管理 API 的 token 必須包含的 `aud` |
 
 ---
 
@@ -455,17 +458,81 @@ spring:
 
 ---
 
-## 9. 目前的限制
+## 9. 管理 API
+
+`/admin/api/**` 是 JSON REST API，用來管理使用者、角色、權限與查詢稽核紀錄。Starter 不提供管理畫面，請以自己的管理後台（例如透過 BFF）或腳本呼叫。
+
+### 9.1 驗證與權限
+
+呼叫時帶上本登入服務簽發的 Access Token（`Authorization: Bearer …`），`aud` 必須包含 `admin-api.audience`。
+
+| 呼叫者 | 取得 token 的方式 | 權限來源 |
+|---|---|---|
+| 管理員 | 以第一方 client（例如管理後台的 BFF）登入 | 使用者的角色：內建 `AS_ADMIN` 擁有全部權限，`AS_SUPPORT` 擁有 `as:user:read`、`as:session:revoke`、`as:audit:read` |
+| 機器帳號（例如從其他系統同步使用者） | `client_credentials` | client 的 scope 中以 `as:` 開頭的值，例如 `scopes: as:user:read,as:user:write` |
+
+| 路徑 | 讀取（GET） | 寫入 |
+|---|---|---|
+| `/admin/api/users/**` | `as:user:read` | `as:user:write` |
+| `/admin/api/users/{id}/sessions`、`/admin/api/sessions/**` | `as:user:read` | `as:session:revoke` |
+| `/admin/api/roles/**`、`/admin/api/permissions/**` | `as:role:read` | `as:role:write` |
+| `/admin/api/audit/**` | `as:audit:read` | — |
+
+沒有 token 或 token 不符時回 `401`，權限不足時回 `403`。
+
+### 9.2 端點
+
+| 方法與路徑 | 說明 |
+|---|---|
+| `GET /admin/api/users?query=&status=&page=&size=` | 搜尋使用者（帳號、Email、顯示名稱，不分大小寫） |
+| `POST /admin/api/users` | 建立使用者：`username`、`email`、`emailVerified`、`password`、`passwordChangeRequired`（預設 `true`）、`displayName`、`roles` |
+| `GET /admin/api/users/{id}` | 使用者、角色（含到期時間）、已連結的外部帳號 |
+| `PATCH /admin/api/users/{id}` | 只修改有出現的欄位：`username`、`email`、`emailVerified`、`displayName`、`status`（`ACTIVE`、`LOCKED`、`DISABLED`） |
+| `DELETE /admin/api/users/{id}` | 刪除（狀態改為 `DELETED`，資料保留供稽核） |
+| `POST /admin/api/users/{id}/unlock` | 解除登入失敗造成的暫時鎖定 |
+| `PUT /admin/api/users/{id}/password` | 設定密碼：`password`、`changeRequired`（預設 `true`） |
+| `PUT /admin/api/users/{id}/roles/{role}` | 指派角色；本文可帶 `expiresAt` 設定到期時間 |
+| `DELETE /admin/api/users/{id}/roles/{role}` | 移除角色 |
+| `GET`／`DELETE /admin/api/users/{id}/sessions` | 登入中的裝置；撤銷全部 |
+| `DELETE /admin/api/sessions/{asid}` | 撤銷一個登入 Session |
+| `GET`／`POST /admin/api/roles`、`GET`／`PUT`／`DELETE /admin/api/roles/{code}` | 角色；`PUT` 取代名稱、說明與權限清單 |
+| `GET`／`POST /admin/api/permissions`、`GET`／`PUT`／`DELETE /admin/api/permissions/{code}` | 權限 |
+| `GET /admin/api/audit/logins?userId=&type=&from=&to=` | 登入稽核（`login_audit`），新的在前 |
+| `GET /admin/api/audit/admin?targetType=&targetId=&operatorUserId=&from=&to=` | 管理操作稽核（`admin_audit_log`），新的在前 |
+
+清單分頁：`?page=0&size=50`（`size` 最多 200），回傳 `{"items": [...], "page": 0, "size": 50, "total": 123}`。
+
+```bash
+curl -X POST https://auth.example.com/admin/api/users \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"username": "alice", "email": "alice@example.com", "emailVerified": true,
+       "password": "an initial password", "roles": ["ORDER_VIEWER"]}'
+```
+
+### 9.3 規則
+
+- 代碼格式：角色為大寫（`ORDER_VIEWER`），權限為小寫的 `資源:動作`（`order:read`）。以 `as:` 開頭的權限屬於登入服務本身，不能新增。
+- 內建的角色與權限（`AS_ADMIN`、`AS_SUPPORT`、`USER`、`as:*`）不能刪除、不能改代碼；`AS_ADMIN` 一律擁有全部 `as:` 權限。仍有使用者的角色、仍被角色使用的權限不能刪除（`409`）。
+- 讓使用者無法登入（`LOCKED`、`DISABLED`、刪除）或設定其密碼時，會撤銷其所有登入 Session，Refresh Token 立即失效。角色變更在使用者下一次取得 token（最長 `token.access-token-ttl`）時生效。
+- 管理員不能停用或刪除自己，也不能移除自己最後一個擁有 `as:user:write` 的角色。
+- 每個寫入操作都寫入 `admin_audit_log`（操作者、client、IP、變更前後的快照，不含密碼雜湊）。
+- 錯誤以 [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 回傳；欄位錯誤在 `errors` 中。
+- 管理 API 直接操作預設的使用者資料表；以其他使用者來源取代 `UserAccountService` 時，請設定 `admin-api.enabled=false` 或自行提供。
+
+---
+
+## 10. 目前的限制
 
 | 項目 | 現況 | 預計 |
 |---|---|---|
-| 第三方 client、同意畫面、Admin API | 不支援（設定第三方 client 會啟動失敗） | 第 3 階段 |
+| 第三方 client、同意畫面 | 不支援（設定第三方 client 會啟動失敗） | 第 3 階段 |
+| 管理畫面 | 不提供；以[管理 API](#9-管理-api) 自行整合 | — |
 | 註冊、忘記密碼 | 不支援 | 依需求 |
 | MySQL | 不支援 | 第 5 階段 |
 
 ---
 
-## 10. 上線檢查清單
+## 11. 上線檢查清單
 
 - [ ] `issuer` 為正式的 `https` 網址，所有業務 API 的 `issuer-uri` 與它完全相同
 - [ ] `keys.encryption-key`、client secret、管理員密碼都從環境變數或密鑰管理服務注入，沒有寫在設定檔或版本控制中
@@ -474,4 +541,4 @@ spring:
 - [ ] PostgreSQL：專屬資料庫、應用程式帳號只有必要權限（[資料模型 §13.3](../design/auth-server-data-model.md#133-資料庫帳號與權限)）
 - [ ] 全程 HTTPS；反向代理有正確傳遞 `X-Forwarded-*`（`server.forward-headers-strategy`）
 - [ ] 第一位管理員登入後已變更密碼
-- [ ] 已了解 [§9 目前的限制](#9-目前的限制)
+- [ ] 已了解 [§10 目前的限制](#10-目前的限制)

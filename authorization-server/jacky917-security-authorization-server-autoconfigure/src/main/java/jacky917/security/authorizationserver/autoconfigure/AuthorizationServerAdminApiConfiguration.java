@@ -6,6 +6,8 @@ import jacky917.security.authorizationserver.admin.AdminApiExceptionHandler;
 import jacky917.security.authorizationserver.admin.AdminAuditService;
 import jacky917.security.authorizationserver.admin.AdminJwtAuthenticationConverter;
 import jacky917.security.authorizationserver.admin.AuditAdminController;
+import jacky917.security.authorizationserver.admin.RoleAdminController;
+import jacky917.security.authorizationserver.admin.RoleAdminService;
 import jacky917.security.authorizationserver.admin.UserAdminController;
 import jacky917.security.authorizationserver.admin.UserAdminService;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
@@ -148,5 +150,18 @@ class AuthorizationServerAdminApiConfiguration {
     UserAdminController jacky917UserAdminController(UserAdminService users, AuthSessionService sessions,
                                                     Jacky917LogoutHandler logoutHandler, AdminAuditService audit) {
         return new UserAdminController(users, sessions, logoutHandler, audit);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    RoleAdminService roleAdminService(JdbcClient jdbcClient, AdminAuditService audit,
+                                      PlatformTransactionManager transactionManager, Clock clock) {
+        return new RoleAdminService(jdbcClient, audit, new TransactionTemplate(transactionManager), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    RoleAdminController jacky917RoleAdminController(RoleAdminService roles) {
+        return new RoleAdminController(roles);
     }
 }

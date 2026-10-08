@@ -287,6 +287,96 @@ abstract class AbstractAdminApiIntegrationTest extends AbstractFlowIntegrationTe
                 .isEqualTo("DELETED");
     }
 
+    // ---- 工作 20：角色與權限 ----
+
+    @Test
+    @DisplayName("業務權限與角色：建立權限與角色、指派給使用者；使用者的 token 帶有它們；稽核記錄建立")
+    void createsBusinessRolesAndPermissions() throws Exception {
+        String admin = adminToken("role-creator");
+        send(postJson("/admin/api/permissions"), admin, Map.of("code", "order:read", "name", "Read orders"))
+                .andExpect(status().isCreated());
+        JsonNode role = json(send(postJson("/admin/api/roles"), admin, Map.of("code", "ORDER_VIEWER",
+                "name", "Order viewer", "permissions", List.of("order:read"))).andExpect(status().isCreated()));
+        assertThat(role.get("permissions")).extracting(JsonNode::asString).containsExactly("order:read");
+        assertThat(role.get("builtIn").asBoolean()).isFalse();
+        String userId = createUser("order-viewer", null, "ORDER_VIEWER");
+        JsonNode access = JSON.readTree(java.util.Base64.getUrlDecoder().decode(
+                userToken("order-viewer").split("\\.")[1]));
+        assertThat(access.get("roles")).extracting(JsonNode::asString).contains("ORDER_VIEWER");
+        assertThat(access.get("permissions")).extracting(JsonNode::asString).containsExactly("order:read");
+        assertThat(json(call(getJson("/admin/api/roles/ORDER_VIEWER"), admin)).get("users").asLong()).isEqualTo(1);
+        assertThat(json(call(getJson("/admin/api/permissions/order:read"), admin)).get("roles"))
+                .extracting(JsonNode::asString).containsExactly("ORDER_VIEWER");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM admin_audit_log WHERE action IN ('ROLE_CREATED', "
+                + "'PERMISSION_CREATED')").query(Integer.class).single()).isGreaterThanOrEqualTo(2);
+        assertThat(userId).isNotNull();
+    }
+
+    @Test
+    @DisplayName("代碼：格式錯誤、as: 開頭、重複；不存在的權限 400／409")
+    void validatesCodes() throws Exception {
+        String admin = adminToken("code-admin");
+        send(postJson("/admin/api/roles"), admin, Map.of("code", "lower", "name", "x")).andExpect(status().isBadRequest());
+        send(postJson("/admin/api/roles"), admin, Map.of("code", "GHOST_ROLE", "name", "x",
+                "permissions", List.of("no:such"))).andExpect(status().isBadRequest());
+        send(postJson("/admin/api/roles"), admin, Map.of("code", "AS_ADMIN", "name", "x")).andExpect(status().isConflict());
+        send(postJson("/admin/api/permissions"), admin, Map.of("code", "Order:Read", "name", "x"))
+                .andExpect(status().isBadRequest());
+        JsonNode reserved = json(send(postJson("/admin/api/permissions"), admin, Map.of("code", "as:user:delete",
+                "name", "x")).andExpect(status().isBadRequest()));
+        assertThat(reserved.get("errors").get("code").asString()).contains("reserved");
+        send(postJson("/admin/api/permissions"), admin, Map.of("code", "report:export", "name", "Export"))
+                .andExpect(status().isCreated());
+        send(postJson("/admin/api/permissions"), admin, Map.of("code", "report:export", "name", "Export"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("內建角色與權限：AS_ADMIN 的權限不能變更（名稱可以），內建角色與權限不能刪除（T-ADMIN-07）")
+    void protectsBuiltIns() throws Exception {
+        String admin = adminToken("builtin-admin");
+        send(putJson("/admin/api/roles/AS_ADMIN"), admin, Map.of("name", "Admins", "permissions", List.of("as:user:read")))
+                .andExpect(status().isConflict());
+        JsonNode renamed = json(send(putJson("/admin/api/roles/AS_ADMIN"), admin, Map.of("name", "Administrators"))
+                .andExpect(status().isOk()));
+        assertThat(renamed.get("name").asString()).isEqualTo("Administrators");
+        assertThat(renamed.get("permissions")).hasSize(8);
+        call(deleteJson("/admin/api/roles/AS_SUPPORT"), admin).andExpect(status().isConflict());
+        call(deleteJson("/admin/api/permissions/as:audit:read"), admin).andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("刪除：仍有使用者的角色、仍被角色使用的權限 409；沒有使用的可以刪除")
+    void deletesOnlyUnused() throws Exception {
+        String admin = adminToken("delete-admin");
+        send(postJson("/admin/api/permissions"), admin, Map.of("code", "invoice:read", "name", "Read invoices"));
+        send(postJson("/admin/api/roles"), admin, Map.of("code", "BILLING", "name", "Billing",
+                "permissions", List.of("invoice:read")));
+        String userId = createUser("billing-user", null, "BILLING");
+        call(deleteJson("/admin/api/roles/BILLING"), admin).andExpect(status().isConflict());
+        call(deleteJson("/admin/api/permissions/invoice:read"), admin).andExpect(status().isConflict());
+        call(deleteJson("/admin/api/users/" + userId + "/roles/BILLING"), admin).andExpect(status().isOk());
+        call(deleteJson("/admin/api/roles/BILLING"), admin).andExpect(status().isNoContent());
+        call(deleteJson("/admin/api/permissions/invoice:read"), admin).andExpect(status().isNoContent());
+        call(getJson("/admin/api/roles/BILLING"), admin).andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("更新角色的權限清單；沒有 as:role:read 的使用者不能讀取角色")
+    void updatesRolePermissions() throws Exception {
+        String admin = adminToken("update-role-admin");
+        send(postJson("/admin/api/permissions"), admin, Map.of("code", "stock:read", "name", "Read stock"));
+        send(postJson("/admin/api/permissions"), admin, Map.of("code", "stock:write", "name", "Write stock"));
+        send(postJson("/admin/api/roles"), admin, Map.of("code", "STOCK", "name", "Stock",
+                "permissions", List.of("stock:read")));
+        JsonNode updated = json(send(putJson("/admin/api/roles/STOCK"), admin, Map.of("name", "Stock keeper",
+                "permissions", List.of("stock:read", "stock:write"))).andExpect(status().isOk()));
+        assertThat(updated.get("permissions")).extracting(JsonNode::asString)
+                .containsExactly("stock:read", "stock:write");
+        createUser("no-role-reader", null, "AS_SUPPORT");
+        call(getJson("/admin/api/roles"), userToken("no-role-reader")).andExpect(status().isForbidden());
+    }
+
     // ---- 共用工具 ----
 
     /**
