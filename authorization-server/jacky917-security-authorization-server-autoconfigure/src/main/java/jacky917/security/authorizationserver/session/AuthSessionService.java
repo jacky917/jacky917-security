@@ -5,17 +5,26 @@ import jacky917.security.authorizationserver.support.UuidV7;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
- * Creates and reads login sessions ({@code auth_session}).
+ * Creates, reads and revokes login sessions ({@code auth_session}).
  * <p>
- * 建立與讀取登入 Session（{@code auth_session}）。
+ * 建立、讀取與撤銷登入 Session（{@code auth_session}）。
+ * <p>
+ * Revoking a session also deletes every authorization issued from it in the
+ * same transaction, so its refresh tokens stop working at once (data model
+ * §10.2). Access tokens already issued stay valid until they expire.
+ * <p>
+ * 撤銷 Session 時，在同一個交易中刪除由它簽發的所有授權，Refresh Token 因此
+ * 立即失效（資料模型 §10.2）。已簽發的 Access Token 仍有效至到期。
  *
  * @author Jacky
  * @since 2.1.0
@@ -41,9 +50,12 @@ public class AuthSessionService {
             rs.getTimestamp("created_at").toInstant(),
             rs.getTimestamp("last_seen_at").toInstant(),
             rs.getTimestamp("expires_at").toInstant(),
-            rs.getTimestamp("revoked_at") == null ? null : rs.getTimestamp("revoked_at").toInstant());
+            rs.getTimestamp("revoked_at") == null ? null : rs.getTimestamp("revoked_at").toInstant(),
+            rs.getString("ip_address"),
+            rs.getString("user_agent"));
 
     private final JdbcClient jdbc;
+    private final TransactionOperations transactions;
     private final Duration maxAge;
     private final Clock clock;
 
@@ -52,15 +64,19 @@ public class AuthSessionService {
      * <p>
      * 建立服務。
      *
-     * @param jdbc    the JDBC client of the authorization server database
-     *                <br>Authorization Server 資料庫的 JDBC client
-     * @param maxAge  the absolute lifetime of a session
-     *                <br>Session 的絕對有效期
-     * @param clock   the clock for timestamps
-     *                <br>用於時間戳記的時鐘
+     * @param jdbc          the JDBC client of the authorization server database
+     *                      <br>Authorization Server 資料庫的 JDBC client
+     * @param transactions  revokes a session and deletes its authorizations
+     *                      together
+     *                      <br>在同一個交易中撤銷 Session 並刪除其授權
+     * @param maxAge        the absolute lifetime of a session
+     *                      <br>Session 的絕對有效期
+     * @param clock         the clock for timestamps
+     *                      <br>用於時間戳記的時鐘
      */
-    public AuthSessionService(JdbcClient jdbc, Duration maxAge, Clock clock) {
+    public AuthSessionService(JdbcClient jdbc, TransactionOperations transactions, Duration maxAge, Clock clock) {
         this.jdbc = jdbc;
+        this.transactions = transactions;
         this.maxAge = maxAge;
         this.clock = clock;
     }
@@ -117,8 +133,102 @@ public class AuthSessionService {
      */
     public Optional<AuthSession> find(String sessionId) {
         return jdbc.sql("SELECT session_id, user_id, status, login_method, idp, amr, created_at, last_seen_at, "
-                        + "expires_at, revoked_at FROM auth_session WHERE session_id = :id")
+                        + "expires_at, revoked_at, ip_address, user_agent FROM auth_session WHERE session_id = :id")
                 .param("id", sessionId).query(ROW_MAPPER).optional();
     }
 
+    /**
+     * Records that the session was just used, for the device list.
+     * <p>
+     * 記錄 Session 剛被使用，供裝置清單顯示。
+     *
+     * @param sessionId  the session id
+     *                   <br>Session ID
+     */
+    public void touch(String sessionId) {
+        jdbc.sql("UPDATE auth_session SET last_seen_at = :now WHERE session_id = :id AND status = 'ACTIVE'")
+                .param("now", Timestamp.from(clock.instant())).param("id", sessionId).update();
+    }
+
+    /**
+     * Marks the session {@code REVOKED} if it is still active, and always
+     * deletes every authorization issued from it (data model §11.4), so a
+     * session that was already revoked or expired keeps no usable token.
+     * <p>
+     * Session 仍為 {@code ACTIVE} 時標記為 {@code REVOKED}，並一律刪除由它簽發的
+     * 所有授權（資料模型 §11.4），因此已撤銷或已過期的 Session 不會留下可用的
+     * token。
+     *
+     * @param sessionId  the session id
+     *                   <br>Session ID
+     * @param reason     why it is revoked
+     *                   <br>撤銷原因
+     * @return {@code true} only if the session was active and is now
+     *         revoked
+     *         <br>只有 Session 原本有效且已被撤銷時為 {@code true}
+     */
+    public boolean revoke(String sessionId, RevokeReason reason) {
+        Boolean revoked = transactions.execute(status -> {
+            int updated = jdbc.sql("UPDATE auth_session SET status = 'REVOKED', revoked_at = :now, revoke_reason = :reason "
+                            + "WHERE session_id = :id AND status = 'ACTIVE'")
+                    .param("now", Timestamp.from(clock.instant()))
+                    .param("reason", reason.name())
+                    .param("id", sessionId)
+                    .update();
+            // session_authorization 由外鍵 ON DELETE CASCADE 一併刪除
+            jdbc.sql("DELETE FROM oauth2_authorization WHERE id IN "
+                            + "(SELECT authorization_id FROM session_authorization WHERE session_id = :id)")
+                    .param("id", sessionId).update();
+            return updated > 0;
+        });
+        return Boolean.TRUE.equals(revoked);
+    }
+
+    /**
+     * Revokes every active session of a user, optionally keeping one, and
+     * deletes their authorizations (data model §11.5).
+     * <p>
+     * 撤銷使用者所有有效的 Session（可保留其中一個），並刪除它們的授權（資料模型
+     * §11.5）。
+     *
+     * @param userId           the user id
+     *                         <br>使用者 ID
+     * @param reason           why they are revoked
+     *                         <br>撤銷原因
+     * @param keepSessionId    the session to keep, for example the one that
+     *                         changed the password, or {@code null} to revoke
+     *                         all
+     *                         <br>要保留的 Session（例如變更密碼的那一個）；
+     *                         {@code null} 表示全部撤銷
+     * @return the ids of the sessions that this call revoked
+     *         <br>此次呼叫撤銷的 Session ID
+     */
+    public List<String> revokeAll(String userId, RevokeReason reason, @Nullable String keepSessionId) {
+        List<String> revoked = transactions.execute(status -> {
+            List<String> ids = jdbc.sql("SELECT session_id FROM auth_session WHERE user_id = :user AND status = 'ACTIVE'")
+                    .param("user", userId).query(String.class).list().stream()
+                    .filter(id -> !id.equals(keepSessionId)).toList();
+            // 只回傳此次實際撤銷的：同時被其他請求撤銷的不算
+            return ids.stream().filter(id -> revoke(id, reason)).toList();
+        });
+        return revoked == null ? List.of() : revoked;
+    }
+
+    /**
+     * Lists the active sessions of a user, most recently used first (data
+     * model §11.6).
+     * <p>
+     * 列出使用者有效的 Session，最近使用的在前（資料模型 §11.6）。
+     *
+     * @param userId  the user id
+     *                <br>使用者 ID
+     * @return the active, unexpired sessions; empty if there is none
+     *         <br>有效且未到期的 Session；沒有時為空
+     */
+    public List<AuthSession> findActive(String userId) {
+        return jdbc.sql("SELECT session_id, user_id, status, login_method, idp, amr, created_at, last_seen_at, "
+                        + "expires_at, revoked_at, ip_address, user_agent FROM auth_session WHERE user_id = :user AND status = 'ACTIVE' "
+                        + "AND expires_at > :now ORDER BY last_seen_at DESC")
+                .param("user", userId).param("now", Timestamp.from(clock.instant())).query(ROW_MAPPER).list();
+    }
 }

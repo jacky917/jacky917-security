@@ -3,6 +3,7 @@ package jacky917.security.authorizationserver.support;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -29,6 +30,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 測試用的 OpenID Connect 提供者（取代 Google）：以 JDK 內建的 HttpServer 提供 token、JWKS、userinfo
  * 端點，以自己的 RSA 金鑰簽 ID Token。Spring 的 oauth2Login 會實際呼叫這些端點並驗證簽章、nonce 與 aud。
+ * 以 {@link #startLine} 啟動時改為模擬 LINE：ID Token 以 channel secret 簽 HS256，且不帶 email_verified；
+ * {@link #signNextLoginWith} 可讓下一次登入的 ID Token 以錯誤的 secret 簽章，模擬偽造的 ID Token。
  * <p>
  * 每一次登入以 {@link #prepare} 回傳的授權碼區分（token 端點依 code、userinfo 端點依 access token 找到
  * 對應的使用者），測試之間不共用狀態；使用完畢以 {@link #close()} 關閉。
@@ -44,11 +47,19 @@ public final class FakeOidcProvider implements AutoCloseable {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
+    private final String issuer;
+    private final String clientId;
+    private final byte[] macSecret;
     private final HttpServer server;
     private final RSAKey key;
     private final Map<String, Login> logins = new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicReference<byte[]> nextSecret =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
-    private FakeOidcProvider() {
+    private FakeOidcProvider(String issuer, String clientId, byte[] macSecret) {
+        this.issuer = issuer;
+        this.clientId = clientId;
+        this.macSecret = macSecret;
         try {
             key = new RSAKeyGenerator(2048).keyID("fake-key").generate();
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -76,11 +87,25 @@ public final class FakeOidcProvider implements AutoCloseable {
      * 啟動提供者（埠號隨機）。
      */
     public static FakeOidcProvider start() {
-        return new FakeOidcProvider();
+        return new FakeOidcProvider(ISSUER, CLIENT_ID, null);
+    }
+
+    /**
+     * 模擬 LINE：ID Token 以 channel secret 簽 HS256，且不帶 email_verified。
+     */
+    public static FakeOidcProvider startLine(String clientId, String channelSecret) {
+        return new FakeOidcProvider("https://access.line.me", clientId, channelSecret.getBytes(StandardCharsets.UTF_8));
     }
 
     public String baseUrl() {
         return "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
+    /**
+     * 下一次 {@link #prepare} 登記的登入，ID Token 改以指定的 secret 簽 HS256（只用一次）。
+     */
+    public void signNextLoginWith(String secret) {
+        nextSecret.set(secret.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
@@ -91,13 +116,15 @@ public final class FakeOidcProvider implements AutoCloseable {
         claims.put("sub", subject);
         if (email != null) {
             claims.put("email", email);
-            claims.put("email_verified", emailVerified);
+            if (macSecret == null) {
+                claims.put("email_verified", emailVerified);
+            }
         }
         claims.put("name", name);
         claims.put("picture", "https://example.com/" + subject + ".png");
         claims.put("locale", "zh-TW");
         String code = UUID.randomUUID().toString();
-        logins.put(code, new Login(Map.copyOf(claims), nonce));
+        logins.put(code, new Login(Map.copyOf(claims), nonce, nextSecret.getAndSet(null)));
         return code;
     }
 
@@ -122,15 +149,22 @@ public final class FakeOidcProvider implements AutoCloseable {
         try {
             Instant now = Instant.now();
             JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
-                    .issuer(ISSUER)
-                    .audience(CLIENT_ID)
+                    .issuer(issuer)
+                    .audience(clientId)
                     .issueTime(Date.from(now))
                     .expirationTime(Date.from(now.plusSeconds(300)))
                     .claim("nonce", login.nonce());
             login.claims().forEach(claims::claim);
-            SignedJWT idToken = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(),
-                    claims.build());
-            idToken.sign(new RSASSASigner(key));
+            SignedJWT idToken;
+            byte[] secret = login.forgedSecret() != null ? login.forgedSecret() : macSecret;
+            if (secret != null) {
+                idToken = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims.build());
+                idToken.sign(new MACSigner(secret));
+            } else {
+                idToken = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(),
+                        claims.build());
+                idToken.sign(new RSASSASigner(key));
+            }
             respond(exchange, JSON.writeValueAsString(Map.of(
                     "access_token", "at-" + code,
                     "token_type", "Bearer",
@@ -142,7 +176,7 @@ public final class FakeOidcProvider implements AutoCloseable {
         }
     }
 
-    private record Login(Map<String, Object> claims, String nonce) {
+    private record Login(Map<String, Object> claims, String nonce, byte[] forgedSecret) {
     }
 
     private static void respond(HttpExchange exchange, String body) throws IOException {

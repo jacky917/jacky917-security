@@ -116,6 +116,6 @@ class LoginSessionValidationFilterTest {
 
     private static AuthSession session(String userId, AuthSessionStatus status, Instant expiresAt) {
         return new AuthSession("session-1", userId, status, LoginMethod.PASSWORD, "local", "pwd",
-                NOW.minus(Duration.ofHours(1)), NOW, expiresAt, status == AuthSessionStatus.REVOKED ? NOW : null);
+                NOW.minus(Duration.ofHours(1)), NOW, expiresAt, status == AuthSessionStatus.REVOKED ? NOW : null, null, null);
     }
 }

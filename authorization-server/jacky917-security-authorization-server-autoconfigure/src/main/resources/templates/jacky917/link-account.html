@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${text['link.title'] + ' · ' + productName}">Link your account</title>
+    <link rel="stylesheet" th:href="@{/jacky917/authorization-server.css}">
+    <link rel="stylesheet" th:href="@{/jacky917/theme.css}">
+</head>
+<body>
+<main class="card">
+    <header>
+        <img th:if="${logoUrl}" th:src="${logoUrl}" alt="" class="logo">
+        <p class="product" th:text="${productName}">jacky917</p>
+        <h1 th:text="${heading}">Link your Google account</h1>
+    </header>
+    <p th:if="${error}" class="error" role="alert" th:text="${text['link.error']}">The password is incorrect.</p>
+    <p th:text="${text['link.message']}">An account with this email already exists.</p>
+    <p th:if="${email}" class="meta" th:text="${email}">alice@example.com</p>
+    <!-- th:action 讓 Spring Security 自動加入 CSRF 欄位 -->
+    <form th:if="${hasPassword}" method="post" th:action="@{/jacky917/link-account}">
+        <label for="password" th:text="${text['link.password']}">Password of your existing account</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+        <button type="submit" th:text="${text['link.submit']}">Confirm and link</button>
+    </form>
+    <div th:unless="${#lists.isEmpty(providers)}" class="providers">
+        <p class="divider" th:text="${text['link.or-provider']}">Or confirm by signing in with a linked account</p>
+        <a th:each="provider : ${providers}" class="provider" th:href="@{${provider.url}}"
+           th:text="${provider.label}">Continue with Google</a>
+    </div>
+    <form method="post" th:action="@{/jacky917/link-account/cancel}">
+        <button type="submit" class="secondary" th:text="${text['link.cancel']}">Cancel</button>
+    </form>
+</main>
+</body>
+</html>

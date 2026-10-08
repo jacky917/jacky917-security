@@ -2,13 +2,24 @@ package jacky917.security.authorizationserver.autoconfigure;
 
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import jacky917.security.authorizationserver.audit.JdbcLoginAuditListener;
+import jacky917.security.authorizationserver.audit.LoginAuditRepository;
+import jacky917.security.authorizationserver.authentication.AccountLockout;
+import jacky917.security.authorizationserver.authentication.LoginAttemptGuard;
+import jacky917.security.authorizationserver.authentication.LoginFailureHandler;
 import jacky917.security.authorizationserver.authentication.LoginSuccessHandler;
 import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
 import jacky917.security.authorizationserver.federation.FederatedIdentityService;
+import jacky917.security.authorizationserver.federation.FederatedLoginFailureHandler;
 import jacky917.security.authorizationserver.federation.FederatedLoginSuccessHandler;
 import jacky917.security.authorizationserver.federation.FederatedUserInfoMapper;
+import jacky917.security.authorizationserver.federation.GitHubFederatedUserInfoMapper;
+import jacky917.security.authorizationserver.federation.LineIdTokens;
 import jacky917.security.authorizationserver.federation.OidcFederatedUserInfoMapper;
 import jacky917.security.authorizationserver.client.ClientProfileRepository;
+import jacky917.security.authorizationserver.database.AuthorizationServerDialect;
+import jacky917.security.authorizationserver.refresh.RefreshTokenHistoryRepository;
+import jacky917.security.authorizationserver.refresh.RefreshTokenReuseDetector;
 import jacky917.security.authorizationserver.token.AudienceResolver;
 import jacky917.security.authorizationserver.token.AuthorityResolver;
 import jacky917.security.authorizationserver.token.ConfiguredAudienceResolver;
@@ -17,12 +28,19 @@ import jacky917.security.authorizationserver.token.Jacky917TokenCustomizer;
 import jacky917.security.authorizationserver.token.TokenClaimsContributor;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.session.AuthSessionService;
+import jacky917.security.authorizationserver.session.Jacky917LogoutHandler;
 import jacky917.security.authorizationserver.session.LoginSessionValidationFilter;
 import jacky917.security.authorizationserver.session.SessionAuthorizationRepository;
 import jacky917.security.authorizationserver.session.SessionLinkingAuthorizationService;
 import jacky917.security.authorizationserver.user.UserAccountService;
+import jacky917.security.authorizationserver.authentication.LoginCompletion;
+import jacky917.security.authorizationserver.federation.PendingLinkService;
+import jacky917.security.authorizationserver.web.AccountController;
+import jacky917.security.authorizationserver.web.AccountLinkController;
+import jacky917.security.authorizationserver.web.IdentityProviders;
 import jacky917.security.authorizationserver.web.LoginController;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
@@ -38,25 +56,31 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoderFactory;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import org.springframework.security.oauth2.server.authorization.oidc.web.authentication.OidcLogoutAuthenticationSuccessHandler;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import java.time.ZoneId;
 
 /**
  * Web security of the authorization server (detailed design §3): the
@@ -96,12 +120,20 @@ class AuthorizationServerSecurityConfiguration {
     @Bean
     @Order(1)
     @ConditionalOnMissingBean(name = "authorizationServerSecurityFilterChain")
-    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http, AuthSessionService sessions, Clock clock)
+    SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http, AuthSessionService sessions,
+                                                              RefreshTokenReuseDetector reuseDetector,
+                                                              Jacky917LogoutHandler logoutHandler, Clock clock)
             throws Exception {
+        // RP-Initiated Logout 撤銷整個登入 Session，而不只是結束瀏覽器的登入（詳細設計 §5.5）
+        OidcLogoutAuthenticationSuccessHandler logoutResponse = new OidcLogoutAuthenticationSuccessHandler();
+        logoutResponse.setLogoutHandler(logoutHandler);
         // 已查證：Spring Security 7.1.1 的 OAuth2AuthorizationServerConfigurer 只有公開建構子
         OAuth2AuthorizationServerConfigurer authorizationServer = new OAuth2AuthorizationServerConfigurer();
         http.securityMatcher(authorizationServer.getEndpointsMatcher())
-                .with(authorizationServer, server -> server.oidc(Customizer.withDefaults()))
+                .with(authorizationServer, server -> server
+                        .oidc(oidc -> oidc.logoutEndpoint(logout -> logout.logoutResponseHandler(logoutResponse)))
+                        // 刷新改經過重用偵測（詳細設計 §5.4）
+                        .tokenEndpoint(token -> token.authenticationProviders(reuseDetector::install)))
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
                 // /userinfo 以 Access Token 存取
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(Customizer.withDefaults()))
@@ -117,25 +149,42 @@ class AuthorizationServerSecurityConfiguration {
     @ConditionalOnMissingBean(name = "loginSecurityFilterChain")
     SecurityFilterChain loginSecurityFilterChain(HttpSecurity http, LoginSuccessHandler loginSuccessHandler,
                                                  ObjectProvider<ClientRegistrationRepository> clientRegistrations,
-                                                 ObjectProvider<FederatedLoginSuccessHandler> federatedLoginSuccessHandler)
+                                                 ObjectProvider<FederatedLoginSuccessHandler> federatedLoginSuccessHandler,
+                                                 ObjectProvider<FederatedLoginFailureHandler> federatedLoginFailureHandler,
+                                                 LoginFailureHandler loginFailureHandler,
+                                                 LoginAuditRepository loginAudits, ApplicationEventPublisher events,
+                                                 AuthorizationServerProperties properties,
+                                                 Jacky917LogoutHandler logoutHandler, AuthSessionService sessions,
+                                                 Clock clock)
             throws Exception {
         // 有設定第三方登入（spring.security.oauth2.client.registration.*）時才啟用
         if (clientRegistrations.getIfAvailable() != null) {
             http.oauth2Login(oauth2 -> oauth2
                     .loginPage("/login")
                     .successHandler(federatedLoginSuccessHandler.getObject())
-                    .failureUrl("/login?error=federation"));
+                    // 記錄 OAuth 2.0 錯誤代碼並稽核；從帳號頁發起連結時回到帳號頁
+                    .failureHandler(federatedLoginFailureHandler.getObject()));
         }
         http.authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(LoginController.SIGNED_IN_PATH).authenticated()
+                        .requestMatchers(LoginController.SIGNED_IN_PATH, AccountController.ACCOUNT_PATH,
+                                AccountController.ACCOUNT_PATH + "/**").authenticated()
                         .requestMatchers("/login", "/error", "/jacky917/**").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(form -> form
                         .loginPage("/login")
                         .successHandler(loginSuccessHandler)
-                        // 所有失敗原因導向同一個網址，頁面顯示相同的訊息（詳細設計 §7.2）
-                        .failureUrl("/login?error"))
+                        // 失敗計數、鎖定與稽核；所有密碼登入失敗導向同一個網址，頁面顯示相同的訊息（詳細設計 §7.2）
+                        .failureHandler(loginFailureHandler))
+                // 同一個 IP 最近一分鐘失敗過多時，在檢查密碼之前就拒絕。不是 Bean：Spring Boot 會把 Filter Bean
+                // 註冊到所有請求
+                .addFilterBefore(new LoginAttemptGuard(loginAudits, events,
+                        properties.getLoginProtection().getMaxFailuresPerIpPerMinute(), clock),
+                        UsernamePasswordAuthenticationFilter.class)
+                // POST /logout 也撤銷登入 Session
+                .logout(logout -> logout.addLogoutHandler(logoutHandler).logoutSuccessUrl("/login?logout"))
                 .sessionManagement(session -> session.sessionFixation(fixation -> fixation.changeSessionId()))
+                // 在其他裝置被登出（例如「登出所有裝置」）的瀏覽器回到登入頁
+                .addFilterBefore(new LoginSessionValidationFilter(sessions, clock), AuthorizationFilter.class)
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
                         .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY)));
@@ -211,8 +260,48 @@ class AuthorizationServerSecurityConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @DependsOnDatabaseInitialization
-    AuthSessionService authSessionService(JdbcClient jdbcClient, AuthorizationServerProperties properties, Clock clock) {
-        return new AuthSessionService(jdbcClient, properties.getToken().getSessionMaxAge(), clock);
+    AuthSessionService authSessionService(JdbcClient jdbcClient, PlatformTransactionManager transactionManager,
+                                          AuthorizationServerProperties properties, Clock clock) {
+        return new AuthSessionService(jdbcClient, new TransactionTemplate(transactionManager),
+                properties.getToken().getSessionMaxAge(), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    RefreshTokenHistoryRepository refreshTokenHistoryRepository(JdbcClient jdbcClient) {
+        return new RefreshTokenHistoryRepository(jdbcClient);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    RefreshTokenReuseDetector refreshTokenReuseDetector(
+            OAuth2AuthorizationService authorizations, JdbcClient jdbcClient, AuthorizationServerDialect dialect,
+            SessionAuthorizationRepository links, AuthSessionService sessions, UserAccountService users,
+            RefreshTokenHistoryRepository history, PlatformTransactionManager transactionManager,
+            ApplicationEventPublisher events, AuthorizationServerProperties properties, Clock clock) {
+        return new RefreshTokenReuseDetector(authorizations, jdbcClient, dialect, links, sessions, users, history,
+                new TransactionTemplate(transactionManager), events, properties.getRefresh().getReuseGracePeriod(),
+                properties.getRefresh().getHistoryRetention(), clock);
+    }
+
+    /**
+     * Writes the security events to {@code login_audit}.
+     * <p>
+     * 把安全事件寫入 {@code login_audit}。
+     *
+     * @param jdbcClient  the JDBC client of the authorization server database
+     *                    <br>Authorization Server 資料庫的 JDBC client
+     * @param events      publishes the write failures
+     *                    <br>發布寫入失敗
+     * @return the listener
+     *         <br>listener
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    JdbcLoginAuditListener jdbcLoginAuditListener(JdbcClient jdbcClient, ApplicationEventPublisher events) {
+        return new JdbcLoginAuditListener(jdbcClient, events);
     }
 
     @Bean
@@ -241,22 +330,120 @@ class AuthorizationServerSecurityConfiguration {
     OAuth2TokenCustomizer<JwtEncodingContext> jacky917TokenCustomizer(
             AudienceResolver audienceResolver, AuthorityResolver authorityResolver,
             ClientProfileRepository clientProfiles, SessionAuthorizationRepository links, AuthSessionService sessions,
-            UserAccountService users, ObjectProvider<TokenClaimsContributor> contributors, Clock clock) {
+            UserAccountService users, ObjectProvider<TokenClaimsContributor> contributors, ApplicationEventPublisher events,
+            Clock clock) {
         return new Jacky917TokenCustomizer(audienceResolver, authorityResolver, clientProfiles, links, sessions, users,
-                contributors.orderedStream().toList(), clock);
+                contributors.orderedStream().toList(), events, clock);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    LoginSuccessHandler loginSuccessHandler(AuthSessionService sessions, UserAccountService users, Clock clock) {
-        return new LoginSuccessHandler(sessions, users, clock);
+    LoginSuccessHandler loginSuccessHandler(AuthSessionService sessions, UserAccountService users,
+                                            ApplicationEventPublisher events, Clock clock) {
+        return new LoginSuccessHandler(sessions, users, events, clock);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    LoginController jacky917LoginController(AuthorizationServerProperties properties,
-                                            ObjectProvider<ClientRegistrationRepository> clientRegistrations) {
-        return new LoginController(properties, clientRegistrations.getIfAvailable());
+    AccountLockout accountLockout(UserAccountService users, ApplicationEventPublisher events,
+                                  AuthorizationServerProperties properties) {
+        return new AccountLockout(users, events, properties.getLoginProtection().toLockoutPolicy());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    LoginFailureHandler loginFailureHandler(UserAccountService users, AccountLockout lockout,
+                                            ApplicationEventPublisher events, Clock clock) {
+        return new LoginFailureHandler(users, lockout, events, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    LoginAuditRepository loginAuditRepository(JdbcClient jdbcClient) {
+        return new LoginAuditRepository(jdbcClient);
+    }
+
+
+    @Bean
+    @ConditionalOnMissingBean
+    Jacky917LogoutHandler jacky917LogoutHandler(AuthSessionService sessions, OAuth2AuthorizationService authorizations,
+                                                SessionAuthorizationRepository links, ApplicationEventPublisher events,
+                                                Clock clock) {
+        return new Jacky917LogoutHandler(sessions, authorizations, links, events, clock);
+    }
+
+    /**
+     * The account page, which shows times in the server's default time
+     * zone.
+     * <p>
+     * 帳號頁，以伺服器的預設時區顯示時間。
+     *
+     * @param properties     the authorization server properties
+     *                       <br>Authorization Server 設定屬性
+     * @param sessions       the login sessions
+     *                       <br>登入 Session
+     * @param users          the user accounts
+     *                       <br>使用者帳號
+     * @param logoutHandler  ends login sessions
+     *                       <br>結束登入 Session
+     * @param identities     the linked external accounts
+     *                       <br>已連結的外部帳號
+     * @param providers      the identity providers that can be linked
+     *                       <br>可以連結的身分提供者
+     * @param events         publishes the audit events
+     *                       <br>發布稽核事件
+     * @param clock          the clock
+     *                       <br>時鐘
+     * @return the controller
+     *         <br>controller
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    AccountController jacky917AccountController(AuthorizationServerProperties properties, AuthSessionService sessions,
+                                                UserAccountService users, Jacky917LogoutHandler logoutHandler,
+                                                FederatedIdentityService identities, IdentityProviders providers,
+                                                ApplicationEventPublisher events, Clock clock) {
+        return new AccountController(properties, sessions, users, logoutHandler, identities, providers, events, clock,
+                ZoneId.systemDefault());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    LoginController jacky917LoginController(AuthorizationServerProperties properties, IdentityProviders providers) {
+        return new LoginController(properties, providers);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    IdentityProviders jacky917IdentityProviders(AuthorizationServerProperties properties,
+                                                ObjectProvider<ClientRegistrationRepository> clientRegistrations) {
+        return new IdentityProviders(properties.getLogin().getProviders(), clientRegistrations.getIfAvailable());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    PendingLinkService pendingLinkService(JdbcClient jdbcClient, PlatformTransactionManager transactionManager,
+                                          Clock clock) {
+        return new PendingLinkService(jdbcClient, new TransactionTemplate(transactionManager), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    LoginCompletion loginCompletion(UserAccountService users, AuthSessionService sessions, PrincipalNormalizer normalizer,
+                                    ApplicationEventPublisher events, Clock clock) {
+        return new LoginCompletion(users, sessions, normalizer, events, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    AccountLinkController jacky917AccountLinkController(
+            AuthorizationServerProperties properties, PendingLinkService pendingLinks, UserAccountService users,
+            FederatedIdentityService identities, PasswordEncoder passwordEncoder, LoginCompletion completion,
+            IdentityProviders providers, ApplicationEventPublisher events, AccountLockout lockout, Clock clock) {
+        return new AccountLinkController(properties, pendingLinks, users, identities, passwordEncoder, completion,
+                providers, events, lockout, clock);
     }
 
     @Bean
@@ -269,8 +456,10 @@ class AuthorizationServerSecurityConfiguration {
     @ConditionalOnMissingBean
     @DependsOnDatabaseInitialization
     FederatedIdentityService federatedIdentityService(JdbcClient jdbcClient, UserAccountService users,
-                                                      PlatformTransactionManager transactionManager, Clock clock) {
-        return new FederatedIdentityService(jdbcClient, users, new TransactionTemplate(transactionManager), clock);
+                                                      PlatformTransactionManager transactionManager,
+                                                      AuthorizationServerProperties properties, Clock clock) {
+        return new FederatedIdentityService(jdbcClient, users, new TransactionTemplate(transactionManager),
+                properties.getAccountLinking().getMode(), clock);
     }
 
     /**
@@ -288,13 +477,54 @@ class AuthorizationServerSecurityConfiguration {
         return new OidcFederatedUserInfoMapper();
     }
 
+    /**
+     * The mapper for GitHub, which is not an OpenID Connect provider. It
+     * comes before the OpenID Connect fallback.
+     * <p>
+     * GitHub 的 mapper（GitHub 不是 OpenID Connect 提供者），排在 OpenID Connect
+     * 預設 mapper 之前。
+     *
+     * @param clientRegistrations  the client registrations
+     *                             <br>client registration
+     * @return the mapper
+     *         <br>mapper
+     */
+    @Bean
+    @Order(Ordered.LOWEST_PRECEDENCE - 10)
+    GitHubFederatedUserInfoMapper gitHubFederatedUserInfoMapper(
+            ObjectProvider<ClientRegistrationRepository> clientRegistrations) {
+        return new GitHubFederatedUserInfoMapper(clientRegistrations.getIfAvailable());
+    }
+
+    /**
+     * Verifies the ID tokens of external logins: HS256 with the channel
+     * secret for LINE, RS256 for the others.
+     * <p>
+     * 驗證第三方登入的 ID Token：LINE 以 channel secret 驗證 HS256，其餘為 RS256。
+     *
+     * @return the decoder factory
+     *         <br>decoder factory
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    JwtDecoderFactory<ClientRegistration> jacky917IdTokenDecoderFactory() {
+        return LineIdTokens.decoderFactory();
+    }
+
     @Bean
     @ConditionalOnMissingBean
     FederatedLoginSuccessHandler federatedLoginSuccessHandler(
-            ObjectProvider<FederatedUserInfoMapper> mappers, FederatedIdentityService identities, UserAccountService users,
-            AuthSessionService sessions, PrincipalNormalizer normalizer,
-            ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClients, Clock clock) {
-        return new FederatedLoginSuccessHandler(mappers.orderedStream().toList(), identities, users, sessions, normalizer,
-                authorizedClients.getIfAvailable(), clock);
+            ObjectProvider<FederatedUserInfoMapper> mappers, FederatedIdentityService identities,
+            PendingLinkService pendingLinks, LoginCompletion completion,
+            ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClients, ApplicationEventPublisher events,
+            Clock clock) {
+        return new FederatedLoginSuccessHandler(mappers.orderedStream().toList(), identities, pendingLinks, completion,
+                authorizedClients.getIfAvailable(), events, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    FederatedLoginFailureHandler federatedLoginFailureHandler(ApplicationEventPublisher events, Clock clock) {
+        return new FederatedLoginFailureHandler(events, clock);
     }
 }

@@ -1,5 +1,6 @@
 package jacky917.security.authorizationserver.properties;
 
+import jacky917.security.authorizationserver.user.LockoutPolicy;
 import jacky917.security.core.TrustLevel;
 import lombok.Getter;
 import lombok.Setter;
@@ -83,6 +84,13 @@ public class AuthorizationServerProperties implements Validator {
     private Token token = new Token();
 
     /**
+     * Refresh token reuse detection.
+     * <p>
+     * Refresh Token 的重用偵測。
+     */
+    private Refresh refresh = new Refresh();
+
+    /**
      * Signing key settings.
      * <p>
      * 簽章金鑰設定。
@@ -128,6 +136,27 @@ public class AuthorizationServerProperties implements Validator {
      */
     private Login login = new Login();
 
+    /**
+     * Protection against password guessing.
+     * <p>
+     * 防止密碼猜測的保護。
+     */
+    private LoginProtection loginProtection = new LoginProtection();
+
+    /**
+     * Linking external accounts to existing users.
+     * <p>
+     * 外部帳號與既有使用者的連結。
+     */
+    private AccountLinking accountLinking = new AccountLinking();
+
+    /**
+     * Deleting expired data.
+     * <p>
+     * 刪除過期的資料。
+     */
+    private Cleanup cleanup = new Cleanup();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -141,8 +170,11 @@ public class AuthorizationServerProperties implements Validator {
         }
         validateIssuer(properties.getIssuer(), errors);
         properties.getToken().validate(errors);
+        properties.getRefresh().validate(properties.getToken(), errors);
         properties.getKeys().validate(errors);
         properties.getPassword().validate(errors);
+        properties.getLoginProtection().validate(errors);
+        properties.getCleanup().validate(errors);
         properties.getBootstrapAdmin().validate(errors);
         properties.getBranding().validate(errors);
         properties.getClients().forEach((clientId, client) -> client.validate(clientId, errors));
@@ -237,6 +269,42 @@ public class AuthorizationServerProperties implements Validator {
     }
 
     /**
+     * Refresh token reuse detection, bound from {@code .refresh.*} (D19).
+     * <p>
+     * Refresh Token 的重用偵測，綁定自 {@code .refresh.*}（D19）。
+     */
+    @Getter
+    @Setter
+    public static class Refresh {
+
+        /**
+         * How long a rotated refresh token is treated as a concurrent
+         * request rather than reuse, between 0 and 2 minutes. Within it the
+         * request is refused but the login session stays active.
+         * <p>
+         * 已輪換的 Refresh Token 再次出現時，視為併發請求而不是重用的時間，
+         * 0～2 分鐘。期間內的請求會被拒絕，但登入 Session 不會被撤銷。
+         */
+        private Duration reuseGracePeriod = Duration.ofSeconds(30);
+
+        /**
+         * How long a rotated refresh token is remembered, between 1 hour and
+         * the refresh token lifetime. Reuse after this is still refused but
+         * no longer revokes the login session.
+         * <p>
+         * 已輪換的 Refresh Token 保留多久，1 小時～Refresh Token 有效期。超過後
+         * 再次出現仍會被拒絕，只是不再撤銷登入 Session。
+         */
+        private Duration historyRetention = Duration.ofHours(24);
+
+        void validate(Token token, Errors errors) {
+            rejectOutOfRange(errors, "refresh.reuseGracePeriod", reuseGracePeriod, Duration.ZERO, Duration.ofMinutes(2));
+            Duration max = token.getRefreshTokenTtl() == null ? Duration.ofDays(90) : token.getRefreshTokenTtl();
+            rejectOutOfRange(errors, "refresh.historyRetention", historyRetention, Duration.ofHours(1), max);
+        }
+    }
+
+    /**
      * Signing key settings, bound from {@code .keys.*}.
      * <p>
      * 簽章金鑰設定，綁定自 {@code .keys.*}。
@@ -274,6 +342,31 @@ public class AuthorizationServerProperties implements Validator {
         private String encryptionKeyId = "v1";
 
         /**
+         * Whether the signing key is rotated automatically.
+         * <p>
+         * 是否自動輪換簽章金鑰。
+         */
+        private boolean rotationEnabled = true;
+
+        /**
+         * How long a key signs tokens before it is replaced; at least 7
+         * days.
+         * <p>
+         * 一把金鑰簽章多久後被取代，至少 7 天。
+         */
+        private Duration rotationPeriod = Duration.ofDays(90);
+
+        /**
+         * How long a new public key is published before it starts signing,
+         * so resource servers already know it; at least 5 minutes and
+         * shorter than the rotation period.
+         * <p>
+         * 新公鑰在開始簽章前先公開的時間，讓 Resource Server 事先取得；至少 5
+         * 分鐘，且短於輪換週期。
+         */
+        private Duration announcePeriod = Duration.ofDays(1);
+
+        /**
          * Returns the decoded master key.
          * <p>
          * 回傳解碼後的主金鑰。
@@ -302,6 +395,14 @@ public class AuthorizationServerProperties implements Validator {
             }
             if (encryptionKeyId == null || encryptionKeyId.isBlank()) {
                 errors.rejectValue("keys.encryptionKeyId", "required", "keys.encryption-key-id must not be blank");
+            }
+            if (rotationPeriod == null || rotationPeriod.compareTo(Duration.ofDays(7)) < 0) {
+                errors.rejectValue("keys.rotationPeriod", "range", "keys.rotation-period must be at least 7 days");
+            }
+            if (announcePeriod == null || announcePeriod.compareTo(Duration.ofMinutes(5)) < 0
+                    || (rotationPeriod != null && announcePeriod.compareTo(rotationPeriod) >= 0)) {
+                errors.rejectValue("keys.announcePeriod", "range",
+                        "keys.announce-period must be at least 5 minutes and shorter than keys.rotation-period");
             }
         }
     }
@@ -362,6 +463,167 @@ public class AuthorizationServerProperties implements Validator {
          * 資料庫中的）時請設定此屬性。
          */
         private List<String> providers = new ArrayList<>();
+    }
+
+    /**
+     * Protection against password guessing, bound from
+     * {@code .login-protection.*} (detailed design §5.1).
+     * <p>
+     * 防止密碼猜測的保護，綁定自 {@code .login-protection.*}（詳細設計 §5.1）。
+     */
+    @Getter
+    @Setter
+    public static class LoginProtection {
+
+        /**
+         * Consecutive failed password logins that lock the account,
+         * between 1 and 20.
+         * <p>
+         * 鎖定帳號的連續密碼登入失敗次數，1～20。
+         */
+        private int maxFailures = 5;
+
+        /**
+         * How long a locked account cannot log in with its password,
+         * between 1 minute and 24 hours. Devices already logged in are not
+         * affected.
+         * <p>
+         * 帳號鎖定後無法以密碼登入的時間，1 分鐘～24 小時。已登入的裝置不受
+         * 影響。
+         */
+        private Duration lockDuration = Duration.ofMinutes(15);
+
+        /**
+         * Failed logins allowed from one IP address per minute, between 1
+         * and 10000; further attempts from it are refused until the
+         * failures of the last minute fall below the limit.
+         * <p>
+         * 每個 IP 每分鐘允許的登入失敗次數，1～10000；超過後，該 IP 的登入嘗試
+         * 一律拒絕，直到最近一分鐘內的失敗次數低於上限。
+         */
+        private int maxFailuresPerIpPerMinute = 20;
+
+        /**
+         * Returns the account lockout of these properties.
+         * <p>
+         * 回傳這些屬性對應的帳號鎖定政策。
+         *
+         * @return the policy
+         *         <br>帳號鎖定政策
+         * @throws IllegalArgumentException if the properties were not
+         *         validated and are out of range
+         *         <br>若屬性未經驗證且超出範圍
+         */
+        public LockoutPolicy toLockoutPolicy() {
+            return new LockoutPolicy(maxFailures, lockDuration);
+        }
+
+        void validate(Errors errors) {
+            if (maxFailures < 1 || maxFailures > 20) {
+                errors.rejectValue("loginProtection.maxFailures", "range",
+                        "login-protection.max-failures must be between 1 and 20");
+            }
+            rejectOutOfRange(errors, "loginProtection.lockDuration", lockDuration, Duration.ofMinutes(1), Duration.ofHours(24));
+            if (maxFailuresPerIpPerMinute < 1 || maxFailuresPerIpPerMinute > 10000) {
+                errors.rejectValue("loginProtection.maxFailuresPerIpPerMinute", "range",
+                        "login-protection.max-failures-per-ip-per-minute must be between 1 and 10000");
+            }
+        }
+    }
+
+    /**
+     * Deleting expired data, bound from {@code .cleanup.*} (data model
+     * §14.1).
+     * <p>
+     * 刪除過期的資料，綁定自 {@code .cleanup.*}（資料模型 §14.1）。
+     */
+    @Getter
+    @Setter
+    public static class Cleanup {
+
+        /**
+         * Whether expired data is deleted on a schedule.
+         * <p>
+         * 是否定期刪除過期的資料。
+         */
+        private boolean enabled = true;
+
+        /**
+         * Rows deleted per statement, between 10 and 10000, so no
+         * transaction stays open long.
+         * <p>
+         * 每個陳述式刪除的筆數，10～10000，避免長時間的交易。
+         */
+        private int batchSize = 1000;
+
+        /**
+         * How long {@code login_audit} rows are kept; at least 1 day.
+         * <p>
+         * {@code login_audit} 的保留期間，至少 1 天。
+         */
+        private Duration loginAuditRetention = Duration.ofDays(180);
+
+        /**
+         * How long {@code admin_audit_log} rows are kept; at least 1 day.
+         * <p>
+         * {@code admin_audit_log} 的保留期間，至少 1 天。
+         */
+        private Duration adminAuditRetention = Duration.ofDays(730);
+
+        void validate(Errors errors) {
+            if (batchSize < 10 || batchSize > 10000) {
+                errors.rejectValue("cleanup.batchSize", "range", "cleanup.batch-size must be between 10 and 10000");
+            }
+            for (String field : new String[]{"loginAuditRetention", "adminAuditRetention"}) {
+                Duration value = "loginAuditRetention".equals(field) ? loginAuditRetention : adminAuditRetention;
+                if (value == null || value.compareTo(Duration.ofDays(1)) < 0) {
+                    errors.rejectValue("cleanup." + field, "range", "cleanup." + field + " must be at least 1 day");
+                }
+            }
+        }
+    }
+
+    /**
+     * Linking external accounts, bound from {@code .account-linking.*}
+     * (D06).
+     * <p>
+     * 外部帳號的連結，綁定自 {@code .account-linking.*}（D06）。
+     */
+    @Getter
+    @Setter
+    public static class AccountLinking {
+
+        /**
+         * What happens when the verified email of a new external login
+         * belongs to an existing user.
+         * <p>
+         * 新的第三方登入的已驗證 Email 屬於既有使用者時的處理方式。
+         */
+        private AccountLinkingMode mode = AccountLinkingMode.CONFIRM_WITH_EXISTING_LOGIN;
+    }
+
+    /**
+     * How an external login whose verified email belongs to an existing user
+     * is handled (D06). Emails are never linked automatically.
+     * <p>
+     * 第三方登入的已驗證 Email 屬於既有使用者時的處理方式（D06）。Email 一律不會
+     * 自動連結。
+     */
+    public enum AccountLinkingMode {
+        /**
+         * Ask the user to log in to the existing account, with its password
+         * or another linked provider, to confirm the link.
+         * <p>
+         * 要求使用者以既有帳號的密碼或另一個已連結的提供者登入，以確認連結。
+         */
+        CONFIRM_WITH_EXISTING_LOGIN,
+        /**
+         * Refuse the login; external accounts can be linked only from the
+         * account page.
+         * <p>
+         * 拒絕登入；外部帳號只能從帳號頁連結。
+         */
+        MANUAL_ONLY
     }
 
     /**

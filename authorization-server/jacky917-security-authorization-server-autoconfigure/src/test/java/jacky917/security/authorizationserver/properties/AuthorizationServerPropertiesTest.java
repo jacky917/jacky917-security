@@ -30,6 +30,16 @@ class AuthorizationServerPropertiesTest {
         assertThat(properties.getToken().getAudience()).containsExactly("jacky917-api");
         assertThat(properties.getKeys().getAlgorithm()).isEqualTo(AuthorizationServerProperties.SigningAlgorithm.RS256);
         assertThat(properties.getKeys().getEncryptionKeyId()).isEqualTo("v1");
+        assertThat(properties.getRefresh().getReuseGracePeriod()).isEqualTo(Duration.ofSeconds(30));
+        assertThat(properties.getRefresh().getHistoryRetention()).isEqualTo(Duration.ofHours(24));
+        assertThat(properties.getLoginProtection().getMaxFailures()).isEqualTo(5);
+        assertThat(properties.getLoginProtection().getLockDuration()).isEqualTo(Duration.ofMinutes(15));
+        assertThat(properties.getLoginProtection().getMaxFailuresPerIpPerMinute()).isEqualTo(20);
+        assertThat(properties.getKeys().getRotationPeriod()).isEqualTo(Duration.ofDays(90));
+        assertThat(properties.getKeys().getAnnouncePeriod()).isEqualTo(Duration.ofDays(1));
+        assertThat(properties.getCleanup().isEnabled()).isTrue();
+        assertThat(properties.getCleanup().getBatchSize()).isEqualTo(1000);
+        assertThat(properties.getCleanup().getLoginAuditRetention()).isEqualTo(Duration.ofDays(180));
     }
 
     @Test
@@ -63,6 +73,44 @@ class AuthorizationServerPropertiesTest {
         Errors errors = validate(properties);
         assertThat(errors.getFieldErrors()).extracting(error -> error.getField()).containsExactlyInAnyOrder(
                 "token.accessTokenTtl", "token.authorizationCodeTtl", "token.sessionMaxAge", "token.audience");
+    }
+
+    @Test
+    @DisplayName("寬限期超過 2 分鐘、保留期短於 1 小時或長於 Refresh Token 有效期時被拒絕")
+    void refreshRanges() {
+        AuthorizationServerProperties properties = withIssuer("https://auth.example.com");
+        properties.getRefresh().setReuseGracePeriod(Duration.ofMinutes(3));
+        properties.getRefresh().setHistoryRetention(Duration.ofMinutes(30));
+        assertThat(validate(properties).getFieldErrors()).extracting(error -> error.getField())
+                .containsExactlyInAnyOrder("refresh.reuseGracePeriod", "refresh.historyRetention");
+
+        properties.getRefresh().setReuseGracePeriod(Duration.ZERO);
+        properties.getRefresh().setHistoryRetention(Duration.ofDays(15));
+        assertThat(validate(properties).getFieldErrors()).extracting(error -> error.getField())
+                .containsExactly("refresh.historyRetention");
+    }
+
+    @Test
+    @DisplayName("登入保護：失敗次數 1～20、鎖定 1 分鐘～24 小時、IP 上限 1～10000")
+    void loginProtectionRanges() {
+        AuthorizationServerProperties properties = withIssuer("https://auth.example.com");
+        properties.getLoginProtection().setMaxFailures(0);
+        properties.getLoginProtection().setLockDuration(Duration.ofSeconds(30));
+        properties.getLoginProtection().setMaxFailuresPerIpPerMinute(0);
+        assertThat(validate(properties).getFieldErrors()).extracting(error -> error.getField()).containsExactlyInAnyOrder(
+                "loginProtection.maxFailures", "loginProtection.lockDuration", "loginProtection.maxFailuresPerIpPerMinute");
+    }
+
+    @Test
+    @DisplayName("金鑰輪換：週期至少 7 天、公開期間至少 5 分鐘且短於週期；清理：批次 10～10000、保留期至少 1 天")
+    void rotationAndCleanupRanges() {
+        AuthorizationServerProperties properties = withIssuer("https://auth.example.com");
+        properties.getKeys().setRotationPeriod(Duration.ofDays(6));
+        properties.getKeys().setAnnouncePeriod(Duration.ofDays(6));
+        properties.getCleanup().setBatchSize(5);
+        properties.getCleanup().setLoginAuditRetention(Duration.ofHours(1));
+        assertThat(validate(properties).getFieldErrors()).extracting(error -> error.getField()).containsExactlyInAnyOrder(
+                "keys.rotationPeriod", "keys.announcePeriod", "cleanup.batchSize", "cleanup.loginAuditRetention");
     }
 
     @Test

@@ -52,14 +52,16 @@ class LoginControllerTest {
     void unknownProviderFails() {
         AuthorizationServerProperties properties = new AuthorizationServerProperties();
         properties.getLogin().setProviders(List.of("github"));
-        assertThatThrownBy(() -> new LoginController(properties, new InMemoryClientRegistrationRepository(GOOGLE)))
+        assertThatThrownBy(() -> new IdentityProviders(properties.getLogin().getProviders(),
+                new InMemoryClientRegistrationRepository(GOOGLE)))
                 .hasMessageContaining("github");
     }
 
     @SuppressWarnings("unchecked")
     private static List<String> buttons(AuthorizationServerProperties properties, ClientRegistrationRepository repository) {
         ExtendedModelMap model = new ExtendedModelMap();
-        new LoginController(properties, repository).login(null, new MockHttpServletRequest(), model);
+        IdentityProviders providers = new IdentityProviders(properties.getLogin().getProviders(), repository);
+        new LoginController(properties, providers).login(null, null, new MockHttpServletRequest(), model);
         return ((List<Map<String, String>>) model.get("providers")).stream().map(button -> button.get("url")).toList();
     }
 

@@ -2,7 +2,7 @@
 
 | 項目 | 內容 |
 |---|---|
-| 狀態 | ✅ 第 1 階段已實作（2.1.0 preview），見 [§13 實施紀錄](#13-實施紀錄)；第 2 階段（工作 11～17）尚未開始 |
+| 狀態 | ✅ 第 1 階段已實作（2.1.0 preview），見 [§13 實施紀錄](#13-實施紀錄)；第 2 階段（工作 11～17）已實作 |
 | 日期 | 2026-10-07 |
 | 平台 | Spring Boot 4.1.1、Spring Security 7.1.1（Authorization Server 已內建於 Spring Security） |
 | 上層文件 | [Authorization Server 設計](auth-server-design.md)（架構、D01～D14） |
@@ -302,7 +302,7 @@ jacky917.security.authorizationserver
 | `JWKSource<SecurityContext>` | `RotatingJwkSource` | 從 `signing_key` 讀取 `NEXT`、`ACTIVE`、`RETIRING` |
 | `AuthenticationProvider`（token 端點） | `ReuseDetectingRefreshTokenProvider` 包裝 `OAuth2RefreshTokenAuthenticationProvider` | 透過 `tokenEndpoint(...).authenticationProviders(...)` 替換 |
 | `AuthorizationServerSettings` | 由 `issuer` 等屬性建立 | 端點路徑使用預設值 |
-| `SessionRegistry` | `SessionRegistryImpl`（第 2 階段改用 Spring Session 的實作） | OIDC 登出驗證需要 |
+| `SessionRegistry` | 有 Spring Session 時為 `SpringSessionBackedSessionRegistry`，否則 Spring 預設的 `SessionRegistryImpl` | OIDC 登出驗證與 ID Token 的 `sid` 需要 |
 | OIDC 登出回應（`logoutResponseHandler`） | 官方 `OidcLogoutAuthenticationSuccessHandler`，以 `setLogoutHandler` 加入 `Jacky917LogoutHandler`（已查證此方法存在） | 不改變 Spring 的登出回應，只在登出時撤銷 `auth_session` |
 | `UserDetailsService` | `Jacky917UserDetailsService` | 帳號密碼登入；`username` 可為帳號或已驗證的 Email |
 | `OAuth2UserService`、`OidcUserService` | 官方預設 | 第三方使用者資訊由 `FederatedUserInfoMapper` 轉換 |
@@ -677,7 +677,7 @@ authenticate(refreshRequest):
 | 交易範圍 | 列鎖、官方 provider 的儲存、`refresh_token_history` 寫入在**同一個交易**。官方 `JdbcOAuth2AuthorizationService` 使用 `JdbcTemplate`，會加入 Spring 管理的交易 |
 | `FOR UPDATE` 的效能 | 只鎖單一列；刷新請求本身就是低頻操作（每個 Session 約 10 分鐘一次） |
 | 狀態檢查失敗時撤銷 | 例如使用者已停權：順便撤銷 Session，下次不必再檢查 |
-| 回應 | 所有失敗一律回 `invalid_grant`，不揭露原因（原因寫入稽核） |
+| 回應 | 所有失敗一律回 `invalid_grant`，不揭露原因（重用寫入稽核；其他原因計入 `refresh.rejected{reason}` metric，因使用者無法登入而撤銷的 Session 另在 `auth_session.revoke_reason` 記錄原因） |
 
 ### 5.5 登出（RP-Initiated Logout）
 
@@ -815,6 +815,9 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | `error` | `login.error.bad-credentials` | 帳號或密碼錯誤 |
 | `error=rate_limited` | `login.error.rate-limited` | 嘗試次數過多，請稍後再試 |
 | `error=federation` | `login.error.federation` | 第三方登入失敗，請再試一次 |
+| `error=link_expired` | `login.error.link-expired` | 帳號連結未在期限內確認，請重新以第三方登入 |
+| `error=linked_elsewhere` | `login.error.linked-elsewhere` | 此外部帳號已連結到其他使用者 |
+| `error=provider_already_linked` | `login.error.provider-already-linked` | 您的帳號已連結此提供者的另一個帳號，請先到帳號頁解除連結 |
 | `error=disabled` | `login.error.bad-credentials` | （與密碼錯誤相同，不揭露帳號狀態） |
 
 ---
@@ -845,7 +848,9 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | `jacky917.as.refresh.grace_rejected` | Counter | `client_id` | 併發刷新的頻率；過高代表 BFF 未序列化 |
 | `jacky917.as.session.active` | Gauge | — | 活躍登入 Session 數 |
 | `jacky917.as.signing_key.age` | Gauge | — | 目前金鑰使用天數；超過輪換週期 + 2 天即告警（代表輪換排程失效） |
-| `jacky917.as.cleanup.deleted` | Counter | `table` | 清理是否正常 |
+| `jacky917.as.cleanup.deleted` | Counter | `target` | 清理是否正常 |
+| `jacky917.as.audit.write_failures` | Counter | `type` | **告警**：稽核寫入失敗（IP 限流因此看不到這些失敗） |
+| `jacky917.as.maintenance.failures` | Counter | `task` | **告警**：排程工作或清理步驟失敗 |
 
 ### 8.3 日誌
 
@@ -966,7 +971,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | # | 問題 | 影響 | 目前假設 |
 |---|---|---|---|
 | ~~1~~ | ~~網頁前端是否採用 BFF？~~ ✅ **已決定**：採用 BFF（D03） | — | — |
-| 2 | 第一版第三方登入提供者？（D05） | 工作 9、14 | 第 1 階段 Google；第 2 階段 GitHub、LINE |
+| ~~2~~ | ~~第一版第三方登入提供者？（D05）~~ ✅ 第 1 階段 Google；第 2 階段 GitHub、LINE（工作 14 已實作） | — | — |
 | ~~3~~ | ~~資料庫？~~ ✅ **已決定**：預設 SQLite，可在 YAML 切換為 PostgreSQL（D22） | — | — |
 | ~~4~~ | ~~是否需要 `client_credentials`？~~ ✅ **已決定**：第 1 階段即包含（D15） | — | — |
 | ~~5~~ | ~~是否允許以 Email 作為登入帳號？~~ ✅ **已決定**：允許（只限已驗證的 Email） | — | — |
@@ -992,7 +997,14 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 8 | Token：`Jacky917TokenCustomizer`、`AuthorityResolver`（第一方與第三方）、`AudienceResolver`、`TokenClaimsContributor` | ✅ |
 | 9 | 第三方登入（Google）：通用 OIDC mapper、`FederatedIdentityService`、自動建立使用者、`PrincipalNormalizer` | ✅ |
 | 10 | `example-authorization-server`（改用 AS starter）、`example-bff`、`e2e-tests` | ✅ |
-| 11～17 | 第 2 階段 | ⏳ |
+| 11 | 重用偵測：`RefreshTokenReuseDetector`（包裝 Spring 的刷新 provider）、`refresh_token_history`、`AuthSessionService#revoke`、稽核事件與 `login_audit` | ✅ |
+| 12 | 登出：`Jacky917LogoutHandler`（RP-Initiated Logout 與 `POST /logout`）、帳號頁 `/jacky917/account`（裝置清單、登出單一或所有裝置） | ✅ |
+| 13 | 登入保護：`LoginFailureHandler`（失敗計數、鎖定）、`LoginAttemptGuard`（IP 限流）、登入成功與失敗的稽核（密碼與第三方） | ✅ |
+| 14 | 帳號連結：確認頁 `/jacky917/link-account`（原帳號密碼或已連結的提供者）、`account-linking.mode`、帳號頁的連結與解除連結；GitHub（`GitHubFederatedUserInfoMapper`）、LINE（HS256 ID Token） | ✅ |
+| 15 | 排程：`SigningKeyRotation`、`DataCleanup`、`ScheduledJobLock`（`shedlock` 表）、`MaintenanceScheduler` | ✅ |
+| 16 | 多實例：Spring Session JDBC（應用程式加入依賴即啟用）、`SpringSessionBackedSessionRegistry`、多實例 E2E 測試 | ✅ |
+| 17 | Metrics（`AuthorizationServerMetrics`）、健康檢查（`SigningKeyHealthIndicator`）、事件（`AccessTokenIssuedEvent`、`RefreshTokenRejectedEvent`、`DataCleanupEvent`） | ✅ |
+| — | **第 2 階段完成**（尚未發佈；原規劃為 2.2.0，見 §13.2 最後一列） | |
 
 ### 13.2 與設計不同的地方
 
@@ -1030,7 +1042,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 第三方 client 的權限 | 第 3 階段 | `DefaultAuthorityResolver` 已實作資料模型 §11.3 的查詢 | 查詢簡單，先實作並以測試確認，第 3 階段只需加上同意畫面 |
 | Claim 的集合型別 | — | customizer 最後把所有集合轉為 `ArrayList`／`LinkedHashMap`（包含 `TokenClaimsContributor` 加入的） | 實測發現：claim 會隨授權存入資料庫，刷新時以型別允許清單讀回；`List.of()` 等不可變集合不在清單中，刷新會失敗 |
 | `token.audience-strategy`（`PER_SCOPE`） | 設定屬性 | 未提供；以替換 `AudienceResolver` Bean 達成 | 第 1 階段只需要共用 audience（D07-B） |
-| 第三方登入時 Email 已屬於既有帳號 | 第 2 階段：導向 `/link-account` 確認 | 第 1 階段直接拒絕（`/login?error=account_exists`），不建立任何帳號 | 連結確認不在第 1 階段範圍（工作 14）；拒絕比自動連結安全（D06）。只比對已驗證的 Email |
+| 第三方登入時 Email 已屬於既有帳號 | 導向 `/link-account?token=…` 確認 | 第 1 階段直接拒絕；工作 14 起導向 `/jacky917/link-account` 確認（`manual-only` 時仍直接拒絕）。只比對已驗證的 Email | 見下方「連結確認的 token」 |
 | 第三方登入的 factor authority | — | `PrincipalNormalizer` 在原登入沒有 factor authority 時加入帶登入時間的 `FACTOR_AUTHORIZATION_CODE` | 實測發現：Spring Security 7.1.1 的 `oauth2Login` 不會加入 factor authority，而 `JwtGenerator` 以它決定 `auth_time`、沒有時拒絕簽發 ID Token |
 | 第三方的 token | 不儲存 | 登入成功處理後立即從 `OAuth2AuthorizedClientRepository` 移除 | Spring 預設把它留在記憶體中 |
 | 第三方登入的設定 | — | 使用 Spring Boot 標準的 `spring.security.oauth2.client.registration.*`；有設定時才啟用 `oauth2Login`，登入頁自動顯示按鈕 | 不另外發明設定格式 |
@@ -1042,7 +1054,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 資料庫檔案權限 | `EnvironmentPostProcessor` 建立權限 600 的檔案 | 只建立資料夾；在 migration 之前（寫入任何機密資料前）把預設檔案設為 600 | 之後的 property source（例如測試）仍可能取代 URL，提前建立會留下多餘的檔案 |
 | 登入 Session 失效但瀏覽器仍登入（PR #4 review） | 儲存授權時拋出例外 | `LoginSessionValidationFilter` 在授權端點檢查：登入 Session 已撤銷、過期或不屬於該使用者時結束瀏覽器登入，請求回到登入頁；連結時也檢查到期時間 | 原本會以 HTTP 500 結束，使用者只能清除 Cookie |
 | 直接登入後的頁面 | `GET /` | `GET /jacky917/signed-in`（需要登入） | Starter 對應 `/` 會與應用程式自己的首頁衝突而啟動失敗 |
-| 第三方登入的處理錯誤 | — | 任何無法處理的情況（例如沒有對應的 mapper）都登出並回到 `/login?error=federation` | 原本會以 HTTP 500 結束 |
+| 第三方登入的處理錯誤 | — | 任何無法處理的情況（例如沒有對應的 mapper、建立待確認連結或登入時資料庫失敗）都登出並回到 `/login?error=federation`，並寫入失敗稽核；從帳號頁發起的連結則還原原本的登入、回到帳號頁並帶錯誤。在取得提供者使用者之前就失敗的登入（例如 LINE 的 ID Token 驗證失敗、使用者在提供者端取消）由 `FederatedLoginFailureHandler` 以 `WARN` 記錄 OAuth 2.0 錯誤代碼並稽核 | 原本會以 HTTP 500 結束；Spring 預設的 `failureUrl` 只在 DEBUG 記錄原因，設定錯誤無從發現（多面向審查） |
 | 測試方式 | — | 核心類別另有單元測試（Mockito、固定時鐘，每個分支一個案例）；整合測試以可推移的 `Clock` Bean 測試到期（T-REFRESH-06）；假的 OIDC 提供者每個測試類別各自啟動與關閉、每次登入以授權碼區分；E2E 只有登入服務事先決定埠號，其餘以 `server.port=0` 啟動並在埠號衝突時重試 | 隔離、確定性、錯誤路徑都要涵蓋 |
 | 簽章演算法（第二次 review） | Access Token 依 Spring 的預設（RS256） | 以 `ActiveKeyJwtEncoder` 一律改用**目前金鑰**的演算法簽章 | 實測發現：Spring Authorization Server 對 Access Token 一律要求 RS256，設定 ES256 時每次簽發都失敗；改在 encoder 處理，演算法設定改變但舊金鑰仍在使用時也不會失敗。授權流程測試另以 ES256 金鑰完整執行一次 |
 | SQLite 側檔權限（第二次 review） | — | 調整權限時一併處理 `-wal`、`-shm`；Starter 建立的資料夾為 `700` | SQLite 以主檔「建立當下」的權限建立側檔；實測在目前的啟動順序下側檔已是 600，但順序沒有保證 |
@@ -1051,4 +1063,41 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 一次換 Token 的查詢次數（第二次 review） | — | 同一次請求內重複使用使用者與登入 Session 的查詢結果（約 8 次降為 5 次） | 只在同一個請求內有效，不影響「每次簽發都從資料庫讀取」（D18） |
 | `/userinfo` | — | SAS 端點的 filter chain 以 `oauth2ResourceServer().jwt()` 驗證 Access Token，`JwtDecoder` 由公開的金鑰建立 | OIDC userinfo 需要 Bearer Token |
 | 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
+| 列鎖（D19，工作 11） | `SELECT … WHERE refresh_token_value = ? FOR UPDATE` | 先以官方服務找到授權，再以**授權 ID** 鎖定該列（`lockAuthorizationSql`），鎖定後重新讀取一次 | 官方 `JdbcOAuth2AuthorizationService` 依欄位型別決定 token 值的繫結方式（PostgreSQL 為 TEXT、SQLite 為 BLOB），自行以 token 值查詢容易不一致；以 ID 鎖定兩種資料庫都簡單。重新讀取是為了發現等待期間已被輪換的 token |
+| 重用偵測的實作位置（工作 11） | `ReuseDetectingRefreshTokenProvider` 包含全部邏輯 | 邏輯在 `RefreshTokenReuseDetector` Bean；provider 只是轉接，於 token 端點的 `authenticationProviders` 中取代 Spring 的刷新 provider | Spring 的刷新 provider 由 configurer 建立、不是 Bean；偵測器需要的依賴則都是 Bean，可以整個替換 |
+| 稽核事件的發布時機（工作 11） | `@TransactionalEventListener(AFTER_COMMIT)` | 元件在交易**結束後**自行發布 `LoginAuditEvent`，`JdbcLoginAuditListener` 以一般 `@EventListener` 立即寫入 | xerial 在 `transaction_mode=IMMEDIATE` 下 commit 後會立刻開始新交易並持有寫入鎖（`SqliteDialect` 已記錄此行為），交易同步回調執行時連線尚未歸還，另一個連線的寫入會等到逾時；在交易外發布則兩種資料庫行為一致 |
+| 刷新時的暫時鎖定（工作 11） | 資料模型 §11.2：`locked_until > NOW()` 即拒絕刷新 | 暫時鎖定只阻擋密碼登入；刷新只檢查 `status = ACTIVE`（管理員鎖定為 `LOCKED`，仍會拒絕並撤銷） | 暫時鎖定由連續登入失敗觸發（工作 13）。若它也阻擋刷新，任何知道帳號的人只要故意輸錯密碼，就能讓帳號持有人所有裝置被登出 |
+| 刷新時 Session 已過期（工作 11） | 撤銷並寫入原因 | 只拒絕，不更改狀態 | 過期不是撤銷；由清理排程改為 `EXPIRED`（工作 15）。使用者停用、變更密碼仍會撤銷（`USER_DISABLED`、`PASSWORD_CHANGED`），並刪除其授權 |
+| 登出處理的接入點（工作 12） | `Jacky917LogoutHandler` | 以 `OidcLogoutAuthenticationSuccessHandler#setLogoutHandler` 取代 Spring 預設的登出處理（原本只清除瀏覽器的登入），同一個處理器也加到登入頁 filter chain 的 `POST /logout` | Spring 的登出 provider 已驗證 `id_token_hint`、client 與 `post_logout_redirect_uri`；我們只需要在它成功後撤銷 Session |
+| 登出時撤銷哪些 Session（工作 12） | ① 瀏覽器 Session 的 `asid`；② 否則以 `id_token_hint` 找 | 兩者都撤銷（去除重複）。瀏覽器的 `asid` 只有在屬於該瀏覽器登入的使用者時才撤銷 | 同一個瀏覽器重新登入後，BFF 手上的 ID Token 可能屬於較早的 Session；使用者要求登出時兩者都應結束 |
+| 帳號頁（工作 12） | `/account` | `/jacky917/account`（DEC-088）；登出其他裝置用 `LOGOUT`，「登出所有裝置」用 `LOGOUT_ALL`；時間以伺服器的預設時區顯示 | 不與應用程式自己的頁面衝突。帳號連結管理於工作 14 加入 |
+| 登入頁 filter chain 的 Session 檢查（工作 12） | — | `LoginSessionValidationFilter` 也加到登入頁的 filter chain | 在其他裝置按「登出所有裝置」後，這個瀏覽器開啟帳號頁時也應回到登入頁 |
+| 失敗計數與鎖定（工作 13） | `LoginFailureHandler`：失敗次數 + 1；達上限設定 `locked_until` | 以兩個條件互斥的 `UPDATE`（未達上限時加一；達到上限時鎖定並歸零）完成，兩者都沒有命中時重試：併發的失敗不互相覆蓋，且只有實際鎖定的那一次發布 `ACCOUNT_LOCKED`。**鎖定時計數歸零**；只有 `BadCredentialsException` 且帳號存在、有密碼時才計數（`LoginFailureReason#countsTowardsLock`），對已鎖定帳號的嘗試不延長鎖定，非預期的錯誤記錄為 `ERROR` 不計數。登入頁與連結確認頁共用 `AccountLockout` | 解鎖後重新給予相同的次數；若已鎖定的嘗試也延長鎖定，攻擊者可以讓帳號永久無法以密碼登入；若資料庫錯誤也計數，資料庫短暫故障會鎖住輸入正確密碼的使用者（多面向審查） |
+| IP 限流的實作（工作 13） | `LoginAttemptGuard` | 每次 `POST /login` 與 `POST /jacky917/link-account` 依資料模型 §11.7 查詢最近一分鐘的失敗；被拒絕的嘗試也寫入 `LOGIN`（`RATE_LIMITED`）並計入失敗。路徑以 `PathPatternRequestMatcher`（解碼後的路徑）比對，與表單登入、Spring MVC 一致。Filter 直接在登入頁的 filter chain 中建立，不是 Bean | 持續嘗試的 IP 會一直被拒絕；以原始 URI 比對時 `/%6Cogin` 會略過限流（多面向審查）；Spring Boot 會把 Filter Bean 自動註冊到所有請求 |
+| 稽核的失敗原因（工作 13） | — | `LoginFailureReason`：`BAD_CREDENTIALS`、`UNKNOWN_USER`、`LOCKED`、`DISABLED`、`NO_PASSWORD`、`RATE_LIMITED`、`ERROR`、`FEDERATION`、`USER_CANNOT_LOG_IN`、`ACCOUNT_EXISTS`、`LINK_REQUIRED`、`LINK_EXPIRED`、`LINKED_TO_ANOTHER_USER`、`PROVIDER_ALREADY_LINKED`、`REUSE_DETECTED`；`LoginAuditEvent` 的失敗原因與登入方式以 enum 表示；失敗時記錄輸入的帳號（`username_attempted`），日誌中則不記錄 | 密碼登入失敗的頁面訊息一律相同（§7.2），原因只寫入稽核。日誌依 §8.3 不記錄 username |
+| 稽核寫入失敗（多面向審查） | 只記錄錯誤日誌 | 只捕捉 `DataAccessException`；日誌包含整個事件（不含輸入的帳號）以便補回，並發布 `LoginAuditWriteFailedEvent`（`audit.write_failures` metric） | IP 限流依賴稽核紀錄，寫入持續失敗時限流等於關閉，必須能告警 |
+| 連結失敗的回饋（多面向審查） | — | 用掉待確認的連結與建立連結在同一個交易中（`PendingLinkService#confirm`，連結以 savepoint 加入）；每個失敗都記錄日誌、寫入 `ACCOUNT_LINKED` 失敗稽核，並以具體原因的訊息回報（`link_expired`、`linked_elsewhere`、`provider_already_linked`）；以已連結的提供者確認但連結無法完成時，登入照常完成，原因顯示在帳號頁或已登入頁 | 原本多數失敗沒有日誌，且一律顯示「請再試一次」，重試也必定失敗 |
+| 連結確認的 token（工作 14） | 放在網址 `?token=…` | 明文 token 只存在 AS 的瀏覽器 Session；`user_action_token` 存其 SHA-256、10 分鐘、只能使用一次 | 網址中的 token 可能出現在瀏覽器紀錄、代理伺服器日誌，或被轉寄給其他人；綁定在發起登入的瀏覽器上較安全 |
+| 以已連結的提供者確認（工作 14） | 連結頁上的另一種驗證方式 | 連結頁列出原帳號已連結的提供者按鈕；以它登入後，第三方登入的成功處理器發現瀏覽器 Session 中有屬於同一位使用者的待確認連結，即完成連結 | 重用一般的第三方登入流程，不需要另一套回呼 |
+| 連結頁的密碼（工作 14） | — | 與登入頁相同：錯誤計入帳號鎖定（`recordLoginFailure`）、寫入 `LOGIN` 失敗稽核，並受 IP 限流保護；確認後的登入 Session 為 `FEDERATED`、`amr=fed,pwd` | 連結頁不能成為繞過登入保護的密碼猜測入口 |
+| 帳號頁的連結（工作 14，D06-D） | 已登入狀態下按「連結」 | 以 `LinkIntent`（使用者、提供者、原本的登入、時間）存在瀏覽器 Session 後走一般的第三方登入；成功處理器連結並**還原原本的登入**（不建立新的登入 Session），10 分鐘後失效 | 第三方登入會取代瀏覽器的 SecurityContext，連結完成後必須回到原使用者 |
+| 解除連結（工作 14） | — | 只有在使用者仍有密碼或其他已連結的提供者時才允許 | 避免使用者把自己鎖在帳號外 |
+| 第三方登入與暫時鎖定（工作 14） | `canLogIn` | 已連結帳號的第三方登入只要求 `status = ACTIVE` | 與 DEC-092 一致：暫時鎖定只阻擋密碼登入 |
+| 頁面共用元件（工作 14） | — | `IdentityProviders`（登入頁與帳號頁共用的提供者清單）、`LoginCompletion`（第三方登入與連結確認共用的「完成登入」：建立登入 Session、標準 principal、`LOGIN` 稽核） | 避免兩處各自實作 |
+| GitHub 的 Email（工作 14） | `/user/emails` 的 `primary && verified` | 同設計；Email 端點由 registration 的使用者資訊端點加上 `/emails` 推得；GitHub 回 403／404（沒有 `user:email` scope）時沒有 Email，仍可登入；其他錯誤（逾時、5xx、速率限制）讓登入失敗；公開個人資料的 `email` 不採信。支援 registration id 為 `github`、使用者資訊端點在 `api.github.com` 或以 `/api/v3/user` 結尾（GitHub Enterprise Server）的 registration | 沒有 Email 就無法判斷是否屬於既有帳號，GitHub 暫時故障時會建立重複的帳號（多面向審查）；公開 Email 未必經過驗證 |
+| LINE（工作 14） | 通用 OIDC mapper | 通用 mapper 即可，但另外提供 `JwtDecoderFactory<ClientRegistration>`：LINE 的 ID Token 以 channel secret 驗證 HS256 | 已查證（LINE Developers 文件）：網頁登入的 ID Token 為 HS256、以 channel secret 簽署；Spring 預設以 RS256 驗證，LINE 登入會一律失敗。LINE 沒有 `email_verified`，Email 一律視為未驗證 |
+| 排程鎖（工作 15） | ShedLock 函式庫 | 自行實作 `ScheduledJobLock`，使用 V1 已建立的 `shedlock` 表（相同欄位）；取得後持有到週期的 9 成，成功時不提早釋放，失敗時釋放 | 約 40 行即可，不必為所有使用者引入額外依賴；ShedLock 的 JDBC provider 未正式支援 SQLite。成功時不提早釋放：各實例的排程時間不一致時，每個週期仍只執行一次；失敗時釋放：任何實例的下一次排程即可重試，不必等到持有時間結束（多面向審查） |
+| 排程名稱（工作 15） | 資料模型 §8.4：`as-cleanup-authorizations` 等 | `jacky917-as.signing-key-rotation`（每小時）、`jacky917-as.cleanup-authorizations`（15 分鐘）、`jacky917-as.cleanup-sessions`（每小時，含 Refresh Token 歷史、過期與舊的登入 Session）、`jacky917-as.cleanup-daily`（每天，含操作 token、稽核、退役金鑰） | 以 starter 名稱為前綴，避免與應用程式自己的 ShedLock 工作衝突；相關的清理合併為同一個工作，但每一步各自執行，失敗時發布 `MaintenanceFailedEvent` |
+| 排程的執行方式（工作 15） | `@Scheduled` | `MaintenanceScheduler`（`SmartLifecycle`）以自己的單一 daemon 執行緒排程；不是 `TaskScheduler` Bean | `@EnableScheduling` 會啟用應用程式所有的 `@Scheduled`；`TaskScheduler` Bean 會讓 Spring Boot 的預設 scheduler 讓位 |
+| 輪換頻率（工作 15） | 每天一次 | 每小時檢查；每一步都先檢查狀態，重複執行不會多做事 | 公開期間可以設定為數分鐘；每天檢查會讓實際時間最多晚一天 |
+| 退役時間（工作 15） | `max-token-lifetime + jwks-cache-ttl` | `max(Access Token 有效期, 30 分鐘) + 5 分鐘`，不提供設定 | 已查證：Spring Authorization Server 的 `JwtGenerator` 以固定 30 分鐘簽發 ID Token。5 分鐘是緩衝：替換後其他實例最多 1 分鐘內（`SigningKeyService` 的快取）仍以舊金鑰簽章；Resource Server 的 JWKS 快取只影響公開期，與退役無關（多面向審查修正說明）。日後若有個別 client 的 Access Token 有效期，必須改以最長者計算 |
+| 清理頻率（工作 15） | 管理稽核、退役金鑰每月 | 與每日清理一起執行 | 刪除條件以時間判斷，頻率較高只是每次刪得少 |
+| 過期 Session（工作 15） | 改為 `EXPIRED` | 同時刪除其授權 | Refresh Token 已無法使用（Session 過期即拒絕刷新），提早釋放空間 |
+| Spring Session JDBC（工作 16，D10） | Starter 一律使用 | **選用**：應用程式加入 `spring-boot-starter-session-jdbc` 時由 Spring Boot 啟用；`SPRING_SESSION` 表由 starter 的 migration 建立 | 單一實例（預設 SQLite）不需要，記憶體中的 Session 較快；Spring Boot 的自動配置在依賴存在時就會啟用，不必另外設定 |
+| OIDC 的 Session registry（工作 16） | 第 2 階段改用 Spring Session 的實作 | 有 `FindByIndexNameSessionRepository` 時註冊 `SpringSessionBackedSessionRegistry` | 已查證：Spring Authorization Server 7.1.1 預設的 registry 在記憶體中，token 端點以它產生 ID Token 的 `sid`；token 請求落在另一個實例時會找不到 Session |
+| 多實例測試（工作 16） | Testcontainers 啟動多個實例 | E2E 模組在同一個 JVM 啟動兩個登入服務（embedded PostgreSQL），前面放一個輪流轉送、沒有黏性的代理（`X-Forwarded-*`） | 經過代理的每個請求依序輪流分配（瀏覽器、BFF、Resource Server 共用計數器），比隨機分配更嚴格；以記憶體 Session 執行時兩個測試都失敗（已實測） |
+| Metrics 的來源（工作 17） | 各元件直接呼叫 Micrometer | 元件發布 application event（`LoginAuditEvent`、`AccessTokenIssuedEvent`、`RefreshTokenRejectedEvent`、`DataCleanupEvent`、`LoginAuditWriteFailedEvent`、`MaintenanceFailedEvent`），`AuthorizationServerMetrics` 監聽並計數；gauge 在讀取時查詢資料庫。Listener 的失敗只記錄日誌，不會讓發布事件的請求失敗；`cleanup.deleted` 的標籤為 `target`（`CleanupTarget`） | 元件不依賴 Micrometer（選用依賴）；應用程式也能監聽同樣的事件。`refresh.rejected{reason}`、`audit.write_failures`、`maintenance.failures` 為新增的 metric；listener 同步執行，查詢 client 失敗時原本會讓 token 端點回 500（多面向審查） |
+| `client_id` 標籤（工作 17） | — | 重用與併發的事件只帶 registered client 的內部 ID，metrics 以 `RegisteredClientRepository` 換成 `client_id` 並快取 | 標籤值與 Token 的 `client_id` 一致，便於查詢 |
+| 健康檢查（工作 17，§8.4） | 資料庫連線、`ACTIVE` 金鑰 | 只新增 `signingKey`（啟用輪換時另有 `rotationOverdue` 詳細資料；輪換逾期仍為 `UP`）；資料庫由 Spring Boot 的 `db` 檢查負責 | 不重複實作 Spring Boot 已有的檢查；停用輪換時不回報逾期，避免永遠為真的誤報 |
+| 第 2 階段的發佈版本 | 2.2.0（AS 轉為正式） | 第 2 階段在 2.1.0 發佈前就已合併到 `main`，目前隨 2.1.0 一起發佈；是否在 2.1.0 即轉為正式（不再標示預覽）**待使用者決定** | 2.1.0 尚未發佈 |
 

@@ -46,6 +46,11 @@ public final class Columns {
      */
     public static final int USER_AGENT = 512;
 
+    /**
+     * {@code login_audit.username_attempted}.
+     */
+    public static final int USERNAME_ATTEMPTED = 255;
+
     private Columns() {
     }
 

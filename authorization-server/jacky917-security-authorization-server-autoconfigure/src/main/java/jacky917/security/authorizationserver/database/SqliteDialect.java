@@ -68,9 +68,9 @@ public class SqliteDialect implements AuthorizationServerDialect {
     }
 
     @Override
-    public String lockAuthorizationByRefreshTokenSql() {
+    public String lockAuthorizationSql() {
         // SQLite 沒有 FOR UPDATE：transaction_mode=IMMEDIATE 讓交易開始時就取得資料庫寫入鎖，效果相同
-        return "SELECT id FROM oauth2_authorization WHERE refresh_token_value = ?";
+        return "SELECT id FROM oauth2_authorization WHERE id = ?";
     }
 
     @Override

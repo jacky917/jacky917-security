@@ -1,50 +1,28 @@
 package jacky917.security.authorizationserver.flow;
 
+import jacky917.security.authorizationserver.refresh.RefreshTokenHistoryRepository;
 import jacky917.security.authorizationserver.session.AuthSessionService;
-import jacky917.security.authorizationserver.support.TestDatabases;
 import jacky917.security.authorizationserver.token.TokenClaimsContributor;
-import jacky917.security.authorizationserver.user.NewUser;
-import jacky917.security.authorizationserver.user.UserAccountService;
-import jacky917.security.authorizationserver.support.MutableClock;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.SpringBootConfiguration;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Bean;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
-import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
-import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.util.UriComponentsBuilder;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 
-import java.net.URI;
 import java.time.Duration;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -53,61 +31,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 /**
  * 以 MockMvc 模擬瀏覽器與 BFF 走完授權碼流程：授權請求 → 登入頁（從 HTML 取得 CSRF token）→ 登入
  * → 授權碼 → 以 PKCE 換 Token。子類別分別以 SQLite 與 PostgreSQL 執行（詳細設計 T-LOGIN-01、
  * T-CLIENT-01、T-CLIENT-02、T-TOKEN-03 的基本部分）。
  */
-@SpringBootTest(classes = AbstractAuthorizationFlowIntegrationTest.TestApplication.class, properties = {
-        "jacky917.security.authorization-server.issuer=http://localhost:9000",
-        "jacky917.security.authorization-server.keys.encryption-key=" + TestDatabases.TEST_ENCRYPTION_KEY,
-        "jacky917.security.authorization-server.bootstrap-admin.username=admin",
-        "jacky917.security.authorization-server.bootstrap-admin.password=" + AbstractAuthorizationFlowIntegrationTest.PASSWORD,
-        "jacky917.security.authorization-server.clients.web-bff.secret=bff-secret",
-        "jacky917.security.authorization-server.clients.web-bff.redirect-uris=" + AbstractAuthorizationFlowIntegrationTest.REDIRECT_URI,
-        "jacky917.security.authorization-server.clients.web-bff.scopes=openid,profile",
-        "jacky917.security.authorization-server.clients.report-batch.secret=batch-secret",
-        "jacky917.security.authorization-server.clients.report-batch.grant-types=client_credentials",
-        "jacky917.security.authorization-server.clients.report-batch.scopes=report.generate",
-        "jacky917.security.authorization-server.clients.suspended.secret=suspended-secret",
-        "jacky917.security.authorization-server.clients.suspended.grant-types=client_credentials",
-        "jacky917.security.authorization-server.clients.suspended.scopes=report.generate"
-})
-@AutoConfigureMockMvc
-abstract class AbstractAuthorizationFlowIntegrationTest {
-
-    static final String PASSWORD = "correct horse battery";
-    static final String REDIRECT_URI = "https://app.example.com/login/oauth2/code/jacky917";
-
-    private static final Pattern CSRF = Pattern.compile("name=\"_csrf\" value=\"([^\"]+)\"");
-    private static final JsonMapper JSON = JsonMapper.builder().build();
-
-    @Autowired
-    MockMvc mockMvc;
-
-    @Autowired
-    JdbcClient jdbc;
-
-    @Autowired
-    JwtDecoder jwtDecoder;
-
-    @Autowired
-    RegisteredClientRepository clients;
-
-    @Autowired
-    OAuth2AuthorizationService authorizations;
-
-    @Autowired
-    UserAccountService users;
-
-    @Autowired
-    MutableClock clock;
-
-    @AfterEach
-    void resetClock() {
-        clock.reset();
-    }
+abstract class AbstractAuthorizationFlowIntegrationTest extends AbstractFlowIntegrationTest {
 
     @Test
     @DisplayName("授權碼 + PKCE 完整流程：登入後建立 auth_session，換到的 Access Token 的 sub 為使用者 ID")
@@ -215,24 +144,149 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
     }
 
     @Test
-    @DisplayName("登入 Session 被撤銷、使用者被停用或暫時鎖定後，刷新回 invalid_grant")
-    void refreshIsRefusedWhenSessionOrUserIsNoLongerValid() throws Exception {
+    @DisplayName("登入 Session 被撤銷後刷新：invalid_grant")
+    void refreshIsRefusedWhenSessionIsRevoked() throws Exception {
         createUser("revoked-user", null);
         LoggedIn revoked = logInAndExchangeCode("revoked-user");
         jdbc.sql("UPDATE auth_session SET status = 'REVOKED', revoked_at = :now, revoke_reason = 'ADMIN' WHERE session_id = :id")
                 .param("now", java.sql.Timestamp.from(java.time.Instant.now())).param("id", revoked.asid()).update();
         assertRefreshRefused(revoked);
+    }
 
+    @Test
+    @DisplayName("使用者停用後刷新：invalid_grant，並撤銷登入 Session（T-REFRESH-04）")
+    void refreshIsRefusedAndSessionRevokedWhenUserIsDisabled() throws Exception {
         String disabledId = createUser("disabled-user", null);
         LoggedIn disabled = logInAndExchangeCode("disabled-user");
         jdbc.sql("UPDATE app_user SET status = 'DISABLED' WHERE id = :id").param("id", disabledId).update();
         assertRefreshRefused(disabled);
+        assertSession(disabled.asid(), "REVOKED", "USER_DISABLED");
+        assertThat(authorizationCount(disabled.asid())).as("授權一併刪除").isZero();
+    }
 
+    @Test
+    @DisplayName("變更密碼後，之前登入的 Session 刷新：invalid_grant，並撤銷（T-REFRESH-05）")
+    void refreshIsRefusedAfterPasswordChange() throws Exception {
+        String userId = createUser("password-user", null);
+        LoggedIn before = logInAndExchangeCode("password-user");
+        clock.advance(Duration.ofMinutes(1));
+        jdbc.sql("UPDATE app_user SET password_changed_at = :at WHERE id = :id")
+                .param("at", java.sql.Timestamp.from(clock.instant())).param("id", userId).update();
+        assertRefreshRefused(before);
+        assertSession(before.asid(), "REVOKED", "PASSWORD_CHANGED");
+
+        clock.advance(Duration.ofMinutes(1));
+        LoggedIn after = logInAndExchangeCode("password-user");
+        assertThat(refresh(after).has("access_token")).as("變更密碼之後的登入可以刷新").isTrue();
+    }
+
+    @Test
+    @DisplayName("暫時鎖定（連續登入失敗）只阻擋密碼登入，已登入的 Session 仍可刷新")
+    void temporaryLockDoesNotBlockRefresh() throws Exception {
         String lockedId = createUser("locked-user", null);
         LoggedIn locked = logInAndExchangeCode("locked-user");
         jdbc.sql("UPDATE app_user SET locked_until = :until WHERE id = :id")
-                .param("until", java.sql.Timestamp.from(java.time.Instant.now().plusSeconds(600))).param("id", lockedId).update();
-        assertRefreshRefused(locked);
+                .param("until", java.sql.Timestamp.from(clock.instant().plusSeconds(600))).param("id", lockedId).update();
+        assertThat(refresh(locked).has("access_token")).isTrue();
+        assertSession(locked.asid(), "ACTIVE", null);
+    }
+
+    @Test
+    @DisplayName("刷新後舊的 Refresh Token 以雜湊記錄在 refresh_token_history（T-REFRESH-01）")
+    void rotatedRefreshTokenIsRemembered() throws Exception {
+        createUser("history-user", null);
+        LoggedIn result = logInAndExchangeCode("history-user");
+        String old = result.tokens().get("refresh_token").asString();
+        clock.advance(Duration.ofMinutes(5));
+        refresh(result);
+        Map<String, Object> row = jdbc.sql("SELECT session_id, user_id, rotated_at, expires_at FROM refresh_token_history "
+                        + "WHERE token_hash = :hash")
+                .param("hash", RefreshTokenHistoryRepository.hash(old)).query().singleRow();
+        assertThat(row).containsEntry("session_id", result.asid()).containsEntry("user_id", result.userId());
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM refresh_token_history WHERE token_hash = :token")
+                .param("token", old).query(Integer.class).single()).as("不儲存 token 本身").isZero();
+        Map<String, Object> session = jdbc.sql("SELECT created_at, last_seen_at FROM auth_session WHERE session_id = :id")
+                .param("id", result.asid()).query((rs, n) -> Map.<String, Object>of(
+                        "created", rs.getTimestamp("created_at").toInstant(), "seen", rs.getTimestamp("last_seen_at").toInstant()))
+                .single();
+        assertThat(Duration.between((java.time.Instant) session.get("created"), (java.time.Instant) session.get("seen")))
+                .as("刷新時更新 last_seen_at").isGreaterThanOrEqualTo(Duration.ofMinutes(5));
+    }
+
+    @Test
+    @DisplayName("寬限期內重用舊的 Refresh Token：invalid_grant，但 Session 不撤銷，新的 Refresh Token 仍可用（D19）")
+    void reuseWithinGracePeriodKeepsTheSession() throws Exception {
+        createUser("grace-user", null);
+        LoggedIn result = logInAndExchangeCode("grace-user");
+        String old = result.tokens().get("refresh_token").asString();
+        JsonNode refreshed = refresh(result);
+        // 寬限期 30 秒。MutableClock 跟著系統時間走，刷新到重用之間的執行時間也會計入，因此推移 29 秒，
+        // 保留約 1 秒給執行時間（超過 1 秒會讓測試不穩定）
+        clock.advance(Duration.ofSeconds(29));
+        assertRefreshRefused(old);
+        assertSession(result.asid(), "ACTIVE", null);
+        assertThat(refresh(refreshed.get("refresh_token").asString()).has("access_token")).isTrue();
+    }
+
+    @Test
+    @DisplayName("超過寬限期重用舊的 Refresh Token：invalid_grant、撤銷 Session、新的 Refresh Token 也失效、寫入稽核（T-REFRESH-03）")
+    void reuseAfterGracePeriodRevokesTheSession() throws Exception {
+        createUser("reuse-user", null);
+        LoggedIn result = logInAndExchangeCode("reuse-user");
+        String old = result.tokens().get("refresh_token").asString();
+        JsonNode refreshed = refresh(result);
+        clock.advance(Duration.ofSeconds(31));
+        assertRefreshRefused(old);
+        assertSession(result.asid(), "REVOKED", "REUSE_DETECTED");
+        assertRefreshRefused(refreshed.get("refresh_token").asString());
+        Map<String, Object> audit = jdbc.sql("SELECT user_id, session_id, success, failure_reason FROM login_audit "
+                        + "WHERE event_type = 'TOKEN_REFRESH_REUSE' AND session_id = :asid")
+                .param("asid", result.asid()).query().singleRow();
+        assertThat(audit).containsEntry("user_id", result.userId()).containsEntry("failure_reason", "REUSE_DETECTED");
+        assertThat(audit.get("success")).isIn(false, 0);
+    }
+
+    @Test
+    @DisplayName("同一個 Refresh Token 的兩個併發刷新：一個成功、一個 invalid_grant，Session 不撤銷，成功拿到的新 "
+            + "token 可以再刷新（T-REFRESH-02）")
+    void concurrentRefreshesAreSerialized() throws Exception {
+        createUser("concurrent-user", null);
+        LoggedIn result = logInAndExchangeCode("concurrent-user");
+        String token = result.tokens().get("refresh_token").asString();
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        // 第一個刷新持有列鎖時多等一下：沒有列鎖或重讀時，第二個刷新必定會在此期間完成並拿到第二組 token
+        holdRefreshLockFor = Duration.ofMillis(300);
+        java.util.List<org.springframework.mock.web.MockHttpServletResponse> responses;
+        try {
+            java.util.concurrent.Callable<org.springframework.mock.web.MockHttpServletResponse> request = () -> {
+                start.await();
+                return mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
+                                .param("grant_type", "refresh_token").param("refresh_token", token))
+                        .andReturn().getResponse();
+            };
+            java.util.concurrent.Future<org.springframework.mock.web.MockHttpServletResponse> first =
+                    executor.submit(request);
+            java.util.concurrent.Future<org.springframework.mock.web.MockHttpServletResponse> second =
+                    executor.submit(request);
+            start.countDown();
+            responses = java.util.List.of(first.get(), second.get());
+        } finally {
+            holdRefreshLockFor = Duration.ZERO;
+            executor.shutdownNow();
+        }
+        assertThat(responses).extracting(org.springframework.mock.web.MockHttpServletResponse::getStatus)
+                .containsExactlyInAnyOrder(200, 400);
+        org.springframework.mock.web.MockHttpServletResponse refused = responses.stream()
+                .filter(response -> response.getStatus() == 400).findFirst().orElseThrow();
+        assertThat(refused.getContentAsString()).contains("invalid_grant");
+        org.springframework.mock.web.MockHttpServletResponse issued = responses.stream()
+                .filter(response -> response.getStatus() == 200).findFirst().orElseThrow();
+        String newToken = JSON.readTree(issued.getContentAsString()).get("refresh_token").asString();
+        assertSession(result.asid(), "ACTIVE", null);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM refresh_token_history WHERE session_id = :asid")
+                .param("asid", result.asid()).query(Integer.class).single()).as("只輪換了一次").isEqualTo(1);
+        assertThat(refresh(newToken).has("access_token")).as("成功的那一次拿到的新 token 可以再刷新").isTrue();
     }
 
     @Test
@@ -309,80 +363,6 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
         assertThat(userInfo.get("name").asString()).isEqualTo("User Info");
         // 不帶 token 的 API 呼叫回 401（瀏覽器的 Accept: text/html 則會導向登入頁）
         mockMvc.perform(get("/userinfo").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
-    }
-
-    private JsonNode refresh(LoggedIn result) throws Exception {
-        return tokenRequest(mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
-                .param("grant_type", "refresh_token").param("refresh_token", result.tokens().get("refresh_token").asString())));
-    }
-
-    private void assertRefreshRefused(LoggedIn result) throws Exception {
-        assertRefreshRefused(result.tokens().get("refresh_token").asString());
-    }
-
-    private void assertRefreshRefused(String refreshToken) throws Exception {
-        String body = mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
-                        .param("grant_type", "refresh_token")
-                        .param("refresh_token", refreshToken))
-                .andExpect(status().isBadRequest()).andReturn().getResponse().getContentAsString();
-        assertThat(body).contains("invalid_grant");
-    }
-
-    private String createUser(String username, String displayName, String... roles) {
-        return users.createUser(new NewUser(username, null, false, PASSWORD, displayName, java.util.Set.of(roles))).id();
-    }
-
-    /**
-     * 模擬瀏覽器：授權請求 → 登入頁 → 登入 → 授權碼；再模擬 BFF 以授權碼換 Token。
-     */
-    LoggedIn logInAndExchangeCode(String username) throws Exception {
-        return logInAndExchangeCode(username, new MockHttpSession());
-    }
-
-    /**
-     * 以指定的瀏覽器 Session 登入（可模擬同一個瀏覽器再次登入）。
-     */
-    LoggedIn logInAndExchangeCode(String username, MockHttpSession browser) throws Exception {
-        String verifier = randomVerifier();
-        MockHttpSession session = browser;
-
-        // 1. 未登入的瀏覽器發出授權請求 → 導向登入頁
-        MvcResult toLogin = mockMvc.perform(get(authorizeUrl(challenge(verifier))).session(session).accept(MediaType.TEXT_HTML))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(header().string(HttpHeaders.LOCATION, "/login")).andReturn();
-        // 舊的瀏覽器 Session 可能已被結束（登入 Session 失效時）：與瀏覽器一樣改用新的 Session Cookie
-        session = (MockHttpSession) toLogin.getRequest().getSession();
-
-        // 2. 登入頁有表單與 CSRF token；3. 送出帳密 → 回到原本的授權請求
-        String csrf = csrfToken(session);
-        MvcResult login = mockMvc.perform(post("/login").session(session)
-                        .param("username", username).param("password", PASSWORD).param("_csrf", csrf))
-                .andExpect(status().is3xxRedirection()).andReturn();
-        String savedRequest = login.getResponse().getRedirectedUrl();
-        assertThat(savedRequest).startsWith("http://localhost/oauth2/authorize");
-        String asid = (String) session.getAttribute(AuthSessionService.SESSION_ATTRIBUTE);
-        assertThat(asid).isNotNull();
-
-        // 4. 已登入 → 授權碼導回 client（以 URI 傳入：字串會被當成 URI 樣板再編碼一次）
-        MvcResult code = mockMvc.perform(get(URI.create(savedRequest)).session(session))
-                .andExpect(status().is3xxRedirection()).andReturn();
-        Map<String, String> callback = UriComponentsBuilder.fromUriString(code.getResponse().getRedirectedUrl())
-                .build().getQueryParams().toSingleValueMap();
-        assertThat(code.getResponse().getRedirectedUrl()).startsWith(REDIRECT_URI);
-        assertThat(callback).containsEntry("state", "state-123").containsKey("code");
-
-        // 5. BFF 以授權碼與 code_verifier 換 Token
-        JsonNode tokens = tokenRequest(mockMvc.perform(post("/oauth2/token").with(httpBasic("web-bff", "bff-secret"))
-                .param("grant_type", "authorization_code")
-                .param("code", callback.get("code"))
-                .param("redirect_uri", REDIRECT_URI)
-                .param("code_verifier", verifier)));
-        String userId = jdbc.sql("SELECT id FROM app_user WHERE username = :username").param("username", username)
-                .query(String.class).single();
-        return new LoggedIn(userId, asid, tokens);
-    }
-
-    record LoggedIn(String userId, String asid, JsonNode tokens) {
     }
 
     @Test
@@ -473,65 +453,5 @@ abstract class AbstractAuthorizationFlowIntegrationTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
         assertThat(jwks.get("keys")).hasSize(1);
         assertThat(jwks.get("keys").get(0).has("d")).isFalse();
-    }
-
-    private JsonNode tokenRequest(org.springframework.test.web.servlet.ResultActions actions) throws Exception {
-        return JSON.readTree(actions.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
-    }
-
-    private String csrfToken(MockHttpSession session) throws Exception {
-        String page = mockMvc.perform(get("/login").session(session))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        Matcher matcher = CSRF.matcher(page);
-        assertThat(matcher.find()).as("登入頁必須有 CSRF 欄位").isTrue();
-        return matcher.group(1);
-    }
-
-    private static URI authorizeUrl(String challenge) {
-        return UriComponentsBuilder.fromPath("/oauth2/authorize")
-                .queryParam("response_type", "code")
-                .queryParam("client_id", "web-bff")
-                .queryParam("redirect_uri", REDIRECT_URI)
-                .queryParam("scope", "openid profile")
-                .queryParam("state", "state-123")
-                .queryParam("code_challenge", challenge)
-                .queryParam("code_challenge_method", "S256")
-                .encode().build().toUri();
-    }
-
-    private static String randomVerifier() {
-        byte[] bytes = new byte[32];
-        new SecureRandom().nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    private static String challenge(String verifier) throws Exception {
-        byte[] digest = MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII));
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
-    }
-
-    @SpringBootConfiguration
-    @EnableAutoConfiguration
-    static class TestApplication {
-
-        /**
-         * 可推移的時鐘：Starter 的 Clock Bean 以 @ConditionalOnMissingBean 讓位給它。
-         */
-        @Bean
-        MutableClock clock() {
-            return new MutableClock();
-        }
-
-        /**
-         * 應用程式自訂的 claim；刻意使用 List.of()，確認刷新時仍能讀回（customizer 會轉換集合）。
-         */
-        @Bean
-        TokenClaimsContributor tenantsContributor() {
-            return (context, user) -> {
-                if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType()) && user.isPresent()) {
-                    context.getClaims().claim("tenants", java.util.List.of("tenant-a", "tenant-b"));
-                }
-            };
-        }
     }
 }

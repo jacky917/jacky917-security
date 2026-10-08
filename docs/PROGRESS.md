@@ -794,3 +794,167 @@
 - **Status**: 🟢 Completed（`v2.0.0` Release 建立後合併）
 - **變更**：根 POM 的 `<revision>` 改為 `2.1.0-SNAPSHOT`。
 - **注意**：`v2.0.0` 的 tag 必須建在版本為 `2.0.0` 的 commit（`303f62f`）上；若誤建在之後的 commit，發佈流程的 tag 檢查會中止發佈（`2.1.0-SNAPSHOT` ≠ `2.0.0`）。
+
+---
+## Step 34: Authorization Server 第 2 階段——工作 11（Refresh Token 重用偵測）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `RefreshTokenReuseDetector`：在 token 端點取代 Spring 的刷新 provider。每次刷新在同一個交易中：鎖定授權列（PostgreSQL `FOR UPDATE`、SQLite `IMMEDIATE`）、檢查登入 Session 與使用者、交給 Spring 簽發、把舊 token 的 SHA-256 記錄到 `refresh_token_history`、更新 `last_seen_at`。
+  - 已輪換的 token 再次出現：寬限期（`refresh.reuse-grace-period`，30 秒）內只拒絕；超過則撤銷登入 Session（`REUSE_DETECTED`，最新的 Refresh Token 一併失效）並寫入 `login_audit`。
+  - 使用者停用（含管理員鎖定、已刪除）或登入後變更密碼：拒絕並撤銷（`USER_DISABLED`、`PASSWORD_CHANGED`）。
+  - `AuthSessionService`：`revoke`、`revokeAll`（同一個交易中刪除授權）、`touch`、`findActive`。
+  - 稽核基礎：`LoginAuditEvent`、`JdbcLoginAuditListener`（交易結束後發布，寫入失敗只記錄日誌）。
+  - 新設定：`refresh.reuse-grace-period`（0～2 分鐘）、`refresh.history-retention`（24 小時，1 小時～Refresh Token 有效期）。
+  - Dialect：`lockAuthorizationByRefreshTokenSql` 改為以授權 ID 鎖定的 `lockAuthorizationSql`。
+- **行為調整**：暫時鎖定（`locked_until`）不再阻擋刷新，只阻擋密碼登入；否則任何人故意輸錯密碼就能讓帳號持有人所有裝置被登出。
+- **Commands Run & Results**:
+  - 新增整合測試（SQLite、PostgreSQL 各一次）：T-REFRESH-01～05、寬限期內不撤銷、暫時鎖定仍可刷新；`RefreshTokenReuseDetectorTest` 13 個分支。
+  - 破壞實驗：移除列鎖後，PostgreSQL 的併發刷新測試 3 次全部失敗（兩個請求都成功）；還原後通過。
+  - 第一次執行時寬限期測試失敗：測試推移剛好 30 秒，加上測試本身的時間就超過寬限期，改為 29 秒。
+  - `mvn -B -o clean verify`：**SUCCESS**，278 個測試（Resource Server 47、Authorization Server 213、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-092**: 暫時鎖定只阻擋密碼登入，不阻擋已登入 Session 的刷新。
+  - **DEC-093**: 稽核事件由元件在交易結束後發布，不使用 `@TransactionalEventListener`。
+  - **DEC-094**: 列鎖以授權 ID 進行，鎖定後重新讀取授權。
+
+---
+## Step 35: Authorization Server 第 2 階段——工作 12（登出、帳號頁）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `Jacky917LogoutHandler`：RP-Initiated Logout（`/connect/logout`）與登入服務的 `POST /logout` 撤銷整個登入 Session（`LOGOUT`，授權一併刪除），並寫入 `login_audit`。登入 Session 從瀏覽器 Session 與 `id_token_hint` 兩處尋找，瀏覽器 Session 過期、ID Token 過期時仍可登出。
+  - 帳號頁 `/jacky917/account`：登入中的裝置（登入方式、時間、IP、瀏覽器、目前的裝置），登出單一裝置或所有裝置（`LOGOUT_ALL`）；不能登出他人的 Session（404）。
+  - `LoginSessionValidationFilter` 也套用到登入頁的 filter chain：在其他裝置被登出的瀏覽器回到登入頁。
+  - `AuthSession` 加入 `ipAddress`、`userAgent`；登入頁新增「已登出」訊息；已登入頁連到帳號頁；`PageSupport` 抽出頁面共用的文字與品牌設定。
+  - 測試重構：`AbstractFlowIntegrationTest` 抽出共用的 `@SpringBootTest` 設定與模擬瀏覽器、BFF 的工具。
+- **Commands Run & Results**:
+  - 新增 `*LogoutIntegrationTest`（SQLite、PostgreSQL 各 11 個）、`Jacky917LogoutHandlerTest`（5 個）。
+  - 第一次執行時 RP-Initiated Logout 測試都回 400：登出端點的 GET 只讀 query string，而 MockMvc 的 `param()` 不會放進 query string；「未註冊的 redirect URI」測試因此是以錯誤的原因通過。改以 query string 傳送，並在該測試中確認拒絕的原因是 `post_logout_redirect_uri`。
+  - 破壞實驗：不設定登出處理器時，3 個 RP-Initiated Logout 測試失敗；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，305 個測試（Resource Server 47、Authorization Server 240、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-095**: 登出時，瀏覽器 Session 與 `id_token_hint` 所屬的登入 Session 都撤銷。
+  - **DEC-096**: 帳號頁放在 `/jacky917/account`，時間以伺服器的預設時區顯示。
+
+---
+## Step 36: Authorization Server 第 2 階段——工作 13（登入保護與稽核）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `LoginFailureHandler`：既有帳號的密碼錯誤才計數；連續 `login-protection.max-failures`（5）次時鎖定 `lock-duration`（15 分鐘）並發布 `ACCOUNT_LOCKED`；鎖定期間的嘗試不延長鎖定；所有失敗都寫入 `LOGIN` 稽核（`LoginFailureReason`），頁面訊息相同。
+  - `LoginAttemptGuard`：同一個 IP 最近一分鐘失敗 `max-failures-per-ip-per-minute`（20）次後，在檢查密碼之前就拒絕（`/login?error=rate_limited`）。
+  - 密碼登入與第三方登入的成功、失敗都寫入 `login_audit`。
+  - `UserAccountService#recordLoginFailure`：單一 `UPDATE` 完成計數與鎖定。
+  - 新設定：`login-protection.*`。
+- **Commands Run & Results**:
+  - 新增 `*LoginProtectionIntegrationTest`（SQLite、PostgreSQL 各 5 個）、`LoginAttemptGuardTest`、`LoginFailureHandlerTest`；Google 登入整合測試加上稽核的檢查。
+  - 第一次執行時 IP 限流沒有生效：filter 以 servlet path 判斷 `/login`，而 servlet path 依部署方式可能為空（MockMvc 即是如此）；改以 request URI 判斷。
+  - 鎖定時間在 SQLite 只保存到毫秒：寫入前先截斷，讀回後才能正確判斷「此次失敗造成鎖定」。
+  - `mvn -B -o clean verify`：**SUCCESS**，324 個測試（Resource Server 47、Authorization Server 259、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-097**: 鎖定時失敗次數歸零；對已鎖定帳號的嘗試不延長鎖定。
+  - **DEC-098**: 被限流拒絕的嘗試也計入該 IP 的失敗。
+
+---
+## Step 37: Authorization Server 第 2 階段——工作 14 之一（帳號連結）
+- **Status**: 🟢 Completed（GitHub、LINE 為工作 14 之二）
+- **變更**:
+  - 第三方登入的已驗證 Email 屬於既有帳號時，不再直接拒絕：保存待確認的連結（`user_action_token`，10 分鐘、只用一次），導向 `/jacky917/link-account`。使用者以原帳號的密碼，或以原帳號已連結的提供者登入確認後才連結並登入；取消則什麼都不建立。`account-linking.mode: manual-only` 時維持直接拒絕。
+  - 連結頁的密碼錯誤計入帳號鎖定與 IP 限流。
+  - 帳號頁：已連結的帳號、「連結」（以該提供者登入後連結到目前的使用者並還原原本的登入）、「解除連結」（不能解除唯一的登入方式）；寫入 `ACCOUNT_LINKED`、`ACCOUNT_UNLINKED`。
+  - 已連結帳號的第三方登入不再受暫時鎖定影響（與 DEC-092 一致）。
+  - 重構：`IdentityProviders`（登入頁與帳號頁共用）、`LoginCompletion`（完成登入）、`Hashes`（SHA-256）；第三方登入測試抽出 `AbstractGoogleIntegrationTest`。
+- **Commands Run & Results**:
+  - 新增 `*AccountLinkingIntegrationTest`（SQLite、PostgreSQL 各 6 個）、`ManualOnlyAccountLinkingIntegrationTest`；`FederatedLoginSuccessHandlerTest` 新增 `LINK_REQUIRED`。
+  - 破壞實驗：略過連結頁的密碼檢查、不完成待確認連結 → 對應的 2 個測試失敗；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，338 個測試（Resource Server 47、Authorization Server 273、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-099**: 連結確認的 token 只放在瀏覽器 Session，不放在網址中。
+  - **DEC-100**: 帳號頁發起的連結完成後還原原本的登入，不建立新的登入 Session。
+  - **DEC-101**: 不能解除唯一的登入方式。
+
+---
+## Step 38: Authorization Server 第 2 階段——工作 14 之二（GitHub、LINE）
+- **Status**: 🟢 Completed（工作 14 完成）
+- **變更**:
+  - `GitHubFederatedUserInfoMapper`：數字 `id` 為 subject；Email 取自 `/user/emails` 中主要且已驗證的地址（需要 `user:email`），失敗時沒有 Email 但仍可登入；公開 Email 不採信。
+  - `LineIdTokens`：`JwtDecoderFactory<ClientRegistration>` Bean，LINE 的 ID Token 以 channel secret 驗證 HS256，其他提供者維持 RS256。
+  - 使用指南：Google、GitHub、LINE 的設定範例與差異。
+- **查證**：LINE Developers 文件——網頁登入的 ID Token 以 HS256、channel secret 簽署；沒有 `email_verified` claim。
+- **Commands Run & Results**:
+  - 新增 `ExternalProvidersIntegrationTest`（假的 GitHub 與 LINE，5 個）與 `GitHubFederatedUserInfoMapperTest`（3 個）。
+  - 破壞實驗：LINE 改回 RS256 → LINE 登入失敗（`Signed JWT rejected`）；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，346 個測試（Resource Server 47、Authorization Server 281、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-102**: LINE 的 Email 一律視為未驗證，不用於比對既有帳號。
+  - **DEC-103**: GitHub 的 Email 端點由使用者資訊端點推得，以支援 GitHub Enterprise Server。
+
+---
+## Step 39: Authorization Server 第 2 階段——工作 15（排程：金鑰輪換、清理）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `SigningKeyRotation`：使用滿 `rotation-period − announce-period`（89 天）時建立並公開 `NEXT`；公開滿 `announce-period`（1 天）後啟用，舊金鑰改為 `RETIRING`；`max(Access Token, 30 分鐘) + 5 分鐘` 後退役。
+  - `DataCleanup`：資料模型 §14.1 的清理規則，分批刪除（`cleanup.batch-size`）；過期的登入 Session 改為 `EXPIRED` 並刪除其授權。
+  - `ScheduledJobLock`：以 `shedlock` 表讓每個週期只有一個實例執行（不引入 ShedLock）。
+  - `MaintenanceScheduler`：自己的執行緒排程，不啟用應用程式的 `@Scheduled`；啟動後經過一個週期才第一次執行。
+  - 新設定：`keys.rotation-enabled`、`keys.rotation-period`、`keys.announce-period`、`cleanup.*`；`SigningKeyStore` 新增 `findByStatus`、`deleteRetiredBefore`。
+- **查證**：Spring Authorization Server 7.1.1 的 `JwtGenerator` 以固定 30 分鐘簽發 ID Token。
+- **Commands Run & Results**:
+  - 新增 `*MaintenanceIntegrationTest`（SQLite、PostgreSQL 各 5 個）、`MaintenanceSchedulerTest`（3 個）。
+  - 破壞實驗：清理授權時拿掉「至少有一個 token」的條件 → 等待同意中的授權被刪除，測試失敗；還原後通過。
+  - `mvn -B -o clean verify`：**SUCCESS**，360 個測試（Resource Server 47、Authorization Server 295、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-104**: 排程鎖自行實作（使用既有的 `shedlock` 表），持有到週期的 9 成、不提早釋放。
+  - **DEC-105**: 排程使用 starter 自己的執行緒，不使用 `@EnableScheduling`、不註冊 `TaskScheduler` Bean。
+
+---
+## Step 40: Authorization Server 第 2 階段——工作 16（多實例：Spring Session JDBC）
+- **Status**: 🟢 Completed
+- **變更**:
+  - 多實例的瀏覽器 Session：應用程式加入 `spring-boot-starter-session-jdbc` 即由 Spring Boot 啟用（`SPRING_SESSION` 表已在 V1 migration 中）。Starter 對 `spring-session-core` 為選用依賴。
+  - `AuthorizationServerSessionRegistryAutoConfiguration`：有 Spring Session 時，OIDC 的 Session registry 改為 `SpringSessionBackedSessionRegistry`。
+  - E2E：`MultiInstanceEndToEndTest`（兩個登入服務 + embedded PostgreSQL + Spring Session JDBC，前面是輪流轉送的 `RoundRobinProxy`）；原本的 E2E 也改以 Spring Session JDBC 執行（SQLite）；啟動工具抽出為 `E2eApplications`。
+- **查證**：Spring Authorization Server 7.1.1 預設的 Session registry 在記憶體中，token 端點以它產生 ID Token 的 `sid`；Spring Session 的 `SpringSessionBackedSessionRegistry` 的 `registerNewSession` 為空操作。Spring Boot 4.1.1 的 Session 自動配置類別名稱已對照 jar 確認（Redis 為 `SessionDataRedisAutoConfiguration`，原本猜錯，已修正）。
+- **Commands Run & Results**:
+  - 多實例 E2E 2 個測試通過；破壞實驗：登入服務改用記憶體 Session → 2 個測試都失敗（登入頁的 CSRF 在另一個實例無效）；還原後通過。
+  - 新增 `SessionRegistryAutoConfigurationTest`（2 個）。
+  - `mvn -B -o clean verify`：**SUCCESS**，371 個測試（Resource Server 47、Authorization Server 297、範例 14、E2E 6）。
+- **Decision Log**:
+  - **DEC-106**: Spring Session JDBC 為選用：多實例時由應用程式加入依賴。
+
+---
+## Step 41: Authorization Server 第 2 階段——工作 17（Metrics、健康檢查），第 2 階段完成
+- **Status**: 🟢 Completed（第 2 階段：工作 11～17 全部完成，尚未發佈）
+- **變更**:
+  - `AuthorizationServerMetrics`（應用程式有 Micrometer 時）：`jacky917.as.login`、`token.issued`、`refresh.reuse_detected`、`refresh.grace_rejected`、`refresh.rejected`、`session.active`、`signing_key.age`、`cleanup.deleted`。
+  - `SigningKeyHealthIndicator`（應用程式有 Spring Boot 健康檢查時）：沒有 `ACTIVE` 金鑰時 `DOWN`；`rotationOverdue`。
+  - 新事件：`AccessTokenIssuedEvent`、`RefreshTokenRejectedEvent`、`DataCleanupEvent`；Micrometer 與 `spring-boot-health` 為選用依賴。
+  - 使用指南：§4.5 監控；「目前的限制」只剩第 3 階段以後的項目。
+- **查證**：Spring Boot 4.1.1 的 `HealthIndicator` 位於 `org.springframework.boot.health.contributor`（`spring-boot-health`）；metrics 自動配置類別名稱已對照 jar。
+- **Commands Run & Results**:
+  - 新增 `ObservabilityIntegrationTest`（3 個）、`SigningKeyHealthIndicatorTest`（2 個）；`Jacky917TokenCustomizerTest`、`RefreshTokenReuseDetectorTest` 加上事件的檢查。
+  - 第一次執行時 `session.active` 為 0：測試在重用偵測撤銷 Session 之後才讀 gauge，改為登入後立即讀取。
+  - `mvn -B -o clean verify`：**SUCCESS**，377 個測試（Resource Server 47、Authorization Server 303、範例 14、E2E 6）。
+  - `CHANGELOG.md` 新增 `[Unreleased]`：Authorization Server starter（第 1、2 階段）。
+- **待使用者決定**：第 2 階段在分支 `claude/as-phase-2`，合併到 `main`（`2.1.0-SNAPSHOT`）之後，原規劃的 2.2.0 是否改為隨 2.1.0 發佈、AS 是否在 2.1.0 即轉為正式版。
+
+---
+## Step 42: Authorization Server 第 2 階段——多面向審查的修正
+- **Status**: 🟢 Completed（尚未發佈）
+- **背景**：對 `claude/as-phase-2`（工作 11～17）做多面向審查（一般品質、測試覆蓋、錯誤處理、註解、型別設計），依審查結果修正全部 Critical、Important 與建議事項。
+- **變更**:
+  - 登入保護：只有 `BadCredentialsException` 計入帳號鎖定，非預期錯誤記為 `ERROR` 不計數；`LoginAttemptGuard` 以解碼後的路徑比對（`/%6Cogin` 不再繞過限流）；鎖定改為兩個條件互斥的 `UPDATE`，只有實際鎖定的那一次回傳 `true`；新增 `LockoutPolicy`、`AccountLockout`（登入頁與連結確認頁共用）。
+  - GitHub：只有 403／404 視為沒有 Email，其他錯誤讓登入失敗（避免建立重複帳號）；支援 GitHub Enterprise Server 的 `/api/v3/user`。
+  - 帳號連結：用掉待確認連結與建立連結在同一個交易（`PendingLinkService#confirm`，連結以 savepoint 加入）；所有失敗都有日誌、`ACCOUNT_LINKED` 失敗稽核與具體訊息；連結確認頁的重導加上 context path；新增 `FederatedLoginFailureHandler`；`unlink` 回傳 `UnlinkResult`。
+  - 登出：撤銷失敗時仍清除瀏覽器登入；「登出所有裝置」在一個交易中完成。
+  - 稽核與 metrics：稽核寫入失敗記錄完整事件並發布 `LoginAuditWriteFailedEvent`；排程每一步各自執行、失敗時釋放鎖並發布 `MaintenanceFailedEvent`；新增 `audit.write_failures`、`maintenance.failures`；`cleanup.deleted` 的標籤改為 `target`；metrics listener 的失敗不影響請求；健康檢查在停用輪換時不回報逾期。
+  - 型別：`LoginAuditEvent` 的失敗原因與登入方式改為 enum；`CleanupTarget`；`FederatedLoginRejectedException` 改用 factory；`AuthSession`、`LinkIntent`、`RotatedRefreshToken`、各事件在建構時檢查。
+  - 註解與文件：修正事實錯誤的 Javadoc，更新使用指南與詳細設計 §7.2、§8.2、§13.2。
+  - 本文件 Step 41 原本寫「第 2 階段已合併到 `main`」，實際尚未合併，已更正。
+- **Commands Run & Results**:
+  - 新增測試：帳號接管情境、連結確認頁的鎖定／停用／連續失敗、Refresh Token 仍有效的授權不被清除、偽造的 LINE ID Token、GitHub 故障、併發的登入失敗、`SigningKeyRotation`、`LinkIntent` 序列化等；併發刷新測試改為必定重疊。
+  - `mvn -B -o verify`：**SUCCESS**（Authorization Server 345 個測試，原本 303 個）；`scripts/check-doc-links.py`：0 個問題。
+- **Decision Log**:
+  - **DEC-107**: 排程工作成功時不提早釋放鎖，失敗時釋放，讓任何實例的下一次排程即可重試。
+  - **DEC-108**: 排程的首次執行維持「啟動後一個週期」；每天部署的應用程式改由管理工作呼叫 `DataCleanup#runAll()`（文件說明），避免重啟時所有工作一起執行。
+  - **DEC-109**: 重用以外的刷新拒絕不寫入稽核（資料庫的事件類型 CHECK 約束不允許新類型），以 metric 與 `auth_session.revoke_reason` 記錄。
+- **Next TODO**:
+  - 合併 PR 後，決定第 2 階段的發佈版本，以及 AS 是否轉為正式版。

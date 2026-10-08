@@ -2,15 +2,9 @@ package jacky917.security.authorizationserver.web;
 
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.extern.slf4j.Slf4j;
-import org.jspecify.annotations.Nullable;
-import org.springframework.context.MessageSource;
-import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.oauth2.client.registration.ClientRegistration;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,8 +13,6 @@ import org.springframework.web.servlet.support.RequestContextUtils;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -33,17 +25,18 @@ import java.util.Map;
  * Texts come from the starter's own message bundle
  * ({@code jacky917/authorization-server-messages}) in the request's
  * language, so the application's {@code MessageSource} is not affected.
- * Every login error shows the same text (detailed design §7.2), so the
- * page never reveals whether an account exists or is locked.
+ * Every password login error shows the same text (detailed design §7.2), so
+ * the page never reveals whether an account exists or is locked; rate
+ * limiting, external logins and account links have their own texts.
  * <p>
  * 文字取自 starter 自己的訊息檔（{@code jacky917/authorization-server-messages}），
- * 依請求的語言顯示，不影響應用程式的 {@code MessageSource}。所有登入錯誤都顯示
- * 相同的文字（詳細設計 §7.2），頁面因此不會透露帳號是否存在或被鎖定。
+ * 依請求的語言顯示，不影響應用程式的 {@code MessageSource}。所有密碼登入錯誤都
+ * 顯示相同的文字（詳細設計 §7.2），頁面因此不會透露帳號是否存在或被鎖定；限流、
+ * 第三方登入與帳號連結有各自的文字。
  *
  * @author Jacky
  * @since 2.1.0
  */
-@Slf4j
 @Controller
 public class LoginController {
 
@@ -58,11 +51,11 @@ public class LoginController {
     public static final String SIGNED_IN_PATH = "/jacky917/signed-in";
 
     private static final String[] PAGE_KEYS = {"login.title", "login.username", "login.password", "login.submit",
-            "login.or", "signed-in.title", "signed-in.message"};
+            "login.or", "signed-in.title", "signed-in.message", "signed-in.account"};
 
     private final AuthorizationServerProperties.Branding branding;
-    private final MessageSource messages;
-    private final List<Provider> providers;
+    private final PageSupport page;
+    private final IdentityProviders providers;
 
     /**
      * Creates the controller.
@@ -71,19 +64,13 @@ public class LoginController {
      *
      * @param properties           the authorization server properties
      *                             <br>Authorization Server 設定屬性
-     * @param clientRegistrations  the identity providers shown as buttons,
-     *                             or {@code null} without any
-     *                             <br>顯示為按鈕的身分提供者；沒有時為 {@code null}
+     * @param providers            the identity providers shown as buttons
+     *                             <br>顯示為按鈕的身分提供者
      */
-    public LoginController(AuthorizationServerProperties properties,
-                           @Nullable ClientRegistrationRepository clientRegistrations) {
+    public LoginController(AuthorizationServerProperties properties, IdentityProviders providers) {
         this.branding = properties.getBranding();
-        this.providers = providers(properties.getLogin().getProviders(), clientRegistrations);
-        ResourceBundleMessageSource source = new ResourceBundleMessageSource();
-        source.setBasename("jacky917/authorization-server-messages");
-        source.setDefaultEncoding("UTF-8");
-        source.setFallbackToSystemLocale(false);
-        this.messages = source;
+        this.page = new PageSupport(branding);
+        this.providers = providers;
     }
 
     /**
@@ -94,6 +81,8 @@ public class LoginController {
      * @param error    present after a failed login; its value selects the
      *                 message
      *                 <br>登入失敗後出現，值決定顯示的訊息
+     * @param logout   present after logging out
+     *                 <br>登出後出現
      * @param request  the current request, for its language
      *                 <br>目前的請求，用於判斷語言
      * @param model    the view model
@@ -102,7 +91,8 @@ public class LoginController {
      *         <br>登入頁面
      */
     @GetMapping("/login")
-    public String login(@RequestParam(required = false) String error, HttpServletRequest request, Model model) {
+    public String login(@RequestParam(required = false) String error, @RequestParam(required = false) String logout,
+                        HttpServletRequest request, Model model) {
         Locale locale = RequestContextUtils.getLocale(request);
         populate(model, locale);
         // 「?error」沒有值：依容器不同可能是空字串或 null，因此以參數是否存在判斷
@@ -111,18 +101,26 @@ public class LoginController {
                 case "rate_limited" -> "login.error.rate-limited";
                 case "federation" -> "login.error.federation";
                 case "account_exists" -> "login.error.account-exists";
+                case "link_expired" -> "login.error.link-expired";
+                case "link_failed" -> "login.error.link-failed";
+                case "linked_elsewhere" -> "login.error.linked-elsewhere";
+                case "provider_already_linked" -> "login.error.provider-already-linked";
                 default -> "login.error.bad-credentials";
             };
-            model.addAttribute("error", messages.getMessage(key, null, locale));
+            model.addAttribute("error", page.message(key, null, locale));
+        } else if (request.getParameterMap().containsKey("logout")) {
+            model.addAttribute("notice", page.message("login.logged-out", null, locale));
         }
         return "jacky917/login";
     }
 
     /**
      * Shows a confirmation after logging in without an authorization
-     * request, for example by opening the login page directly.
+     * request, for example by opening the login page directly, with the
+     * reason when a pending account link could not be completed.
      * <p>
-     * 在沒有授權請求的情況下登入後（例如直接開啟登入頁）顯示的確認頁。
+     * 在沒有授權請求的情況下登入後（例如直接開啟登入頁）顯示的確認頁；待確認的
+     * 帳號連結無法完成時，一併顯示原因。
      *
      * @param request  the current request, for its language
      *                 <br>目前的請求，用於判斷語言
@@ -133,7 +131,12 @@ public class LoginController {
      */
     @GetMapping(SIGNED_IN_PATH)
     public String signedIn(HttpServletRequest request, Model model) {
-        populate(model, RequestContextUtils.getLocale(request));
+        Locale locale = RequestContextUtils.getLocale(request);
+        populate(model, locale);
+        String linkError = AccountController.takeLinkError(request);
+        if (linkError != null) {
+            model.addAttribute("error", page.message("account.error." + linkError, null, locale));
+        }
         return "jacky917/signed-in";
     }
 
@@ -155,51 +158,12 @@ public class LoginController {
     }
 
     private void populate(Model model, Locale locale) {
-        Map<String, String> text = new LinkedHashMap<>();
-        for (String key : PAGE_KEYS) {
-            text.put(key, messages.getMessage(key, null, locale));
-        }
-        model.addAttribute("text", text);
-        model.addAttribute("lang", locale.toLanguageTag());
-        model.addAttribute("productName", branding.getProductName());
-        model.addAttribute("logoUrl", branding.getLogoUrl());
+        page.populate(model, locale, PAGE_KEYS);
         List<Map<String, String>> buttons = new ArrayList<>();
-        for (Provider provider : providers) {
+        for (IdentityProviders.Provider provider : providers.list()) {
             buttons.add(Map.of("url", "/oauth2/authorization/" + provider.registrationId(),
-                    "label", messages.getMessage("login.with", new Object[]{provider.name()}, locale)));
+                    "label", page.message("login.with", new Object[]{provider.name()}, locale)));
         }
         model.addAttribute("providers", buttons);
-    }
-
-    private static List<Provider> providers(List<String> configured, @Nullable ClientRegistrationRepository repository) {
-        List<Provider> found = new ArrayList<>();
-        if (repository == null) {
-            return found;
-        }
-        if (!configured.isEmpty()) {
-            for (String registrationId : configured) {
-                ClientRegistration client = repository.findByRegistrationId(registrationId);
-                if (client == null) {
-                    throw new IllegalStateException("login.providers contains " + registrationId
-                            + ", but there is no client registration with that id");
-                }
-                found.add(new Provider(client.getRegistrationId(), client.getClientName()));
-            }
-        } else if (repository instanceof Iterable<?> registrations) {
-            for (Object registration : registrations) {
-                ClientRegistration client = (ClientRegistration) registration;
-                found.add(new Provider(client.getRegistrationId(), client.getClientName()));
-            }
-            // Spring Boot 預設的 repository 以雜湊表保存，列出的順序不固定：依顯示名稱排序
-            found.sort(Comparator.comparing(Provider::name, String.CASE_INSENSITIVE_ORDER));
-        } else {
-            // 無法列出的 repository（例如存放在資料庫中）：第三方登入仍可使用，但登入頁沒有按鈕
-            log.warn("The ClientRegistrationRepository cannot list its registrations, so the login page shows no "
-                    + "identity provider buttons; set " + AuthorizationServerProperties.PREFIX + ".login.providers");
-        }
-        return List.copyOf(found);
-    }
-
-    private record Provider(String registrationId, String name) {
     }
 }

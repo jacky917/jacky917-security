@@ -103,6 +103,32 @@ public interface UserAccountService {
     void recordLoginSuccess(String userId, Instant at);
 
     /**
+     * Records a failed password login. When the consecutive failures reach
+     * the policy's {@code maxFailures}, the account is locked until
+     * {@code at + lockDuration} and the count starts again from zero.
+     * <p>
+     * 記錄一次密碼登入失敗。連續失敗達到政策的 {@code maxFailures} 次時，帳號
+     * 鎖定到 {@code at + lockDuration}，失敗次數重新從零開始計算。
+     * <p>
+     * Concurrent failures must not overwrite each other's count, and only
+     * the failure that actually locked the account returns {@code true}.
+     * <p>
+     * 併發的失敗不可互相覆蓋計數，且只有實際造成鎖定的那一次失敗回傳
+     * {@code true}。
+     *
+     * @param userId  the user id
+     *                <br>使用者 ID
+     * @param at      the time of the failure
+     *                <br>失敗的時間
+     * @param policy  when the account is locked
+     *                <br>何時鎖定帳號
+     * @return {@code true} if this failure locked the account
+     *         <br>此次失敗造成帳號鎖定時為 {@code true}
+     * @since 2.1.0
+     */
+    boolean recordLoginFailure(String userId, Instant at, LockoutPolicy policy);
+
+    /**
      * Replaces the stored password hash without counting it as a password
      * change, for example when re-hashing with stronger parameters.
      * <p>

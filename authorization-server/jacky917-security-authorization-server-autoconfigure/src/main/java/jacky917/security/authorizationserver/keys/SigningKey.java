@@ -49,4 +49,19 @@ public record SigningKey(
         @Nullable Instant activatedAt,
         @Nullable Instant retiringAt,
         @Nullable Instant retiredAt) {
+
+    /**
+     * Returns when the key started signing tokens: when it became
+     * {@code ACTIVE}, or when it was created for a key that was active from
+     * the start.
+     * <p>
+     * 回傳金鑰開始簽發 token 的時間：成為 {@code ACTIVE} 的時間；一開始就是
+     * {@code ACTIVE} 的金鑰則為建立時間。
+     *
+     * @return the time the key started signing
+     *         <br>金鑰開始簽章的時間
+     */
+    public Instant signingSince() {
+        return activatedAt == null ? createdAt : activatedAt;
+    }
 }

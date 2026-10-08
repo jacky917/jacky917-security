@@ -82,3 +82,44 @@ button {
     font-weight: 600;
 }
 .provider:hover { border-color: var(--jacky917-primary); }
+.notice {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--jacky917-border);
+    color: var(--jacky917-muted);
+}
+.card.wide { max-width: 560px; }
+h2 { margin: 24px 0 8px; font-size: 16px; }
+.devices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.device {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 12px;
+    border: 1px solid var(--jacky917-border);
+    border-radius: 8px;
+}
+.device-info { min-width: 0; }
+.device-info p { margin: 0; }
+.meta { color: var(--jacky917-muted); font-size: 13px; overflow-wrap: anywhere; }
+.badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--jacky917-primary);
+    color: #fff;
+    font-size: 12px;
+}
+button.secondary {
+    margin-top: 0;
+    border: 1px solid var(--jacky917-border);
+    background: transparent;
+    color: inherit;
+    white-space: nowrap;
+}
+button.secondary:hover { border-color: var(--jacky917-primary); }
+.hint { margin: 4px 0 0; color: var(--jacky917-muted); font-size: 13px; }
+a.link { color: var(--jacky917-primary); }

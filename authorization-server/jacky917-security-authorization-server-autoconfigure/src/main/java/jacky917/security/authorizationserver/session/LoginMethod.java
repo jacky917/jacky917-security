@@ -22,5 +22,14 @@ public enum LoginMethod {
      * <p>
      * 透過外部身分提供者，例如 Google。
      */
-    FEDERATED
+    FEDERATED;
+
+    /**
+     * The identity provider recorded for password logins, in login sessions,
+     * audit events and the access token {@code idp} claim.
+     * <p>
+     * 密碼登入所記錄的身分提供者，用於登入 Session、稽核事件與 Access Token 的
+     * {@code idp} claim。
+     */
+    public static final String LOCAL_IDP = "local";
 }

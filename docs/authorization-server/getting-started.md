@@ -1,9 +1,9 @@
 # Authorization Server 使用指南（2.1.0 preview）
 
-`jacky917-security-authorization-server-starter` 把 Spring Authorization Server 組裝成一個可以直接使用的登入服務：帳號密碼與 Google 登入、OAuth 2.0／OpenID Connect、簽章金鑰管理，資料預設存在 SQLite，只改設定就能切換到 PostgreSQL。
+`jacky917-security-authorization-server-starter` 把 Spring Authorization Server 組裝成一個可以直接使用的登入服務：帳號密碼與 Google、GitHub、LINE 登入、OAuth 2.0／OpenID Connect、Refresh Token 重用偵測、登出與帳號頁、登入保護與稽核、簽章金鑰的自動輪換，資料預設存在 SQLite，只改設定就能切換到 PostgreSQL（可多實例）。
 
 > [!IMPORTANT]
-> **預覽版（第 1 階段）**：不隨 2.0.0 發佈（2.1.0 起發佈到 GitHub Packages）。目前請 clone 本 repo 後執行 `mvn -DskipTests install` 在本機使用。上線前請先讀 [§9 目前的限制](#9-目前的限制第-1-階段)。
+> **預覽版（第 1、2 階段已實作，尚未發佈）**：不隨 2.0.0 發佈（2.1.0 起發佈到 GitHub Packages）。目前請 clone 本 repo 後執行 `mvn -DskipTests install` 在本機使用。上線前請先讀 [§9 目前的限制](#9-目前的限制)。
 
 ## 目錄
 
@@ -12,10 +12,10 @@
 3. [設定參考](#3-設定參考)
 4. [資料庫](#4-資料庫)
 5. [Client（BFF、批次程式、App）](#5-clientbff批次程式app)
-6. [第三方登入（Google）](#6-第三方登入google)
+6. [第三方登入（Google、GitHub、LINE）](#6-第三方登入googlegithubline)
 7. [Token 內容](#7-token-內容)
 8. [業務 API 與 BFF 的設定](#8-業務-api-與-bff-的設定)
-9. [目前的限制（第 1 階段）](#9-目前的限制第-1-階段)
+9. [目前的限制](#9-目前的限制)
 10. [上線檢查清單](#10-上線檢查清單)
 
 ---
@@ -126,10 +126,23 @@ public class AuthServerApplication {
 | `token.authorization-code-ttl` | `1m` | 30 秒～5 分鐘 |
 | `token.session-max-age` | `90d` | 登入 Session 的絕對上限；不得短於 Refresh Token |
 | `token.audience` | `jacky917-api` | Access Token 的 `aud` |
+| `refresh.reuse-grace-period` | `30s` | 0～2 分鐘。已輪換的 Refresh Token 在此期間內再次出現時視為併發刷新：拒絕，但不撤銷登入 Session |
+| `refresh.history-retention` | `24h` | 1 小時～`token.refresh-token-ttl`。已輪換的 Refresh Token 保留多久以偵測重用；超過後再次出現仍會被拒絕，只是不撤銷 Session |
 | `keys.algorithm` | `RS256` | 新金鑰的演算法：`RS256`、`ES256`。Token 一律以**目前金鑰**的演算法簽章，修改此設定只影響之後產生的金鑰 |
 | `keys.encryption-key` | **必填** | Base64 的 32 bytes；**不可寫在設定檔中** |
 | `keys.encryption-key-id` | `v1` | 主金鑰的識別碼，更換主金鑰時一併修改 |
+| `keys.rotation-enabled` | `true` | 是否自動輪換簽章金鑰（見 [§4.4](#44-排程工作金鑰輪換清理)） |
+| `keys.rotation-period` | `90d` | 一把金鑰簽章多久後被取代，至少 7 天 |
+| `keys.announce-period` | `1d` | 新公鑰在開始簽章前先公開的時間，至少 5 分鐘且短於輪換週期 |
+| `cleanup.enabled` | `true` | 是否定期刪除過期的資料 |
+| `cleanup.batch-size` | `1000` | 每個刪除陳述式的筆數，10～10000 |
+| `cleanup.login-audit-retention` | `180d` | `login_audit` 的保留期間 |
+| `cleanup.admin-audit-retention` | `730d` | `admin_audit_log` 的保留期間 |
 | `password.min-length` | `12` | 8～64 |
+| `account-linking.mode` | `confirm-with-existing-login` | 第三方登入的已驗證 Email 屬於既有帳號時：`confirm-with-existing-login`（登入原帳號確認後連結）或 `manual-only`（拒絕，只能從帳號頁連結） |
+| `login-protection.max-failures` | `5` | 1～20。連續密碼錯誤達此次數時鎖定帳號（只阻擋密碼登入，已登入的裝置不受影響） |
+| `login-protection.lock-duration` | `15m` | 1 分鐘～24 小時 |
+| `login-protection.max-failures-per-ip-per-minute` | `20` | 1～10000。同一個 IP 最近一分鐘失敗達此次數後，該 IP 的登入一律拒絕（顯示「嘗試次數過多」）。IP 取自 `getRemoteAddr()`，在反向代理之後必須設定 `server.forward-headers-strategy` |
 | `password.bcrypt-strength` | `12` | 10～14；調高後，使用者下次登入時自動重新雜湊 |
 | `bootstrap-admin.username`／`password`／`email` | — | 第一位管理員 |
 | `branding.product-name` | `jacky917` | 登入頁上的產品名稱 |
@@ -183,6 +196,22 @@ spring:
 
 Starter 會自動選擇 PostgreSQL 版的 migration。建議使用 Authorization Server 專屬的資料庫（表名固定為 Spring Security 的官方名稱，例如 `oauth2_authorization`）。
 
+#### 多個實例
+
+授權、登入 Session、金鑰都存在資料庫中；多個實例另外需要共用**瀏覽器 Session**（登入頁的 CSRF、被中斷的授權請求）。加入 Spring Session JDBC 即可，資料表已由 starter 的 migration 建立：
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-session-jdbc</artifactId>
+</dependency>
+```
+
+- 有 Spring Session 時，starter 會以它追蹤 OpenID Connect 的 Session，ID Token 的 `sid` 與登出檢查在不同實例間也正確。
+- 負載平衡器不需要黏性 Session。在反向代理之後請設定 `server.forward-headers-strategy`，讓登入服務以對外的網址產生重導。
+- 排程工作（[§4.4](#44-排程工作金鑰輪換清理)）以資料庫鎖確保每個週期只在一個實例執行。
+- SQLite 只能單一實例；單一實例不需要 Spring Session（瀏覽器 Session 存在記憶體中較快）。
+
 ### 4.3 自己的資料表
 
 Starter 以**自己的 Flyway 與歷史表**（`jacky917_as_schema_history`）執行它的 migration，不使用、也不改變應用程式的 Flyway 設定。登入服務若有自己的表，照常放在 `src/main/resources/db/migration`，由 Spring Boot 的 Flyway 執行（歷史表 `flyway_schema_history`），兩邊的版本號互不影響。
@@ -190,6 +219,42 @@ Starter 以**自己的 Flyway 與歷史表**（`jacky917_as_schema_history`）�
 兩者共用同一個資料庫，因此 Starter 把 `spring.flyway.baseline-on-migrate` 與 `spring.flyway.baseline-version` 預設為 `true` 與 `0`：應用程式的 Flyway 看到 Starter 的表時以版本 0 建立 baseline，`V1` 起的 migration 仍會全部執行。應用程式自行設定這兩個屬性時以應用程式的設定為準。
 
 ---
+
+### 4.4 排程工作（金鑰輪換、清理）
+
+Starter 以自己的執行緒執行下列工作（不會啟用應用程式的 `@Scheduled`）。每個工作在啟動後經過一個週期才第一次執行；多個實例時，以 `shedlock` 表確保每個週期只有一個實例執行。工作失敗時記錄 `ERROR` 日誌、計入 `jacky917.as.maintenance.failures`，並釋放鎖，任何實例的下一次排程都會重試；同一個工作的各個清理步驟各自執行，一步失敗不會跳過其他步驟。
+
+重新部署的頻率高於工作週期時（例如每天部署），每日清理永遠等不到第一次執行；這種情況請由管理工作呼叫 `DataCleanup#runAll()`。
+
+| 工作 | 週期 | 內容 |
+|---|---|---|
+| 金鑰輪換 | 每小時檢查 | 目前的金鑰使用滿 `rotation-period − announce-period` 時建立 `NEXT` 金鑰並公開；公開滿 `announce-period` 後開始簽章，舊金鑰改為 `RETIRING`（仍公開，已簽發的 token 仍可驗證）；它可能簽發的 token 全部到期、再加上 5 分鐘緩衝（涵蓋其他實例最多 1 分鐘的金鑰快取）後改為 `RETIRED`，不再公開。使用者不需要重新登入 |
+| 清理授權 | 15 分鐘 | 所有 token 皆已過期的授權；沒有任何 token、超過 1 小時的授權（使用者在同意畫面離開） |
+| 清理 Session | 每小時 | 已輪換的 Refresh Token 紀錄；超過絕對有效期的登入 Session 改為 `EXPIRED`；撤銷或過期超過 30 天的登入 Session |
+| 每日清理 | 每天 | 到期超過 7 天的操作 token、超過保留期的稽核紀錄、退役超過一年的金鑰 |
+
+可能大量累積的資料表每次最多刪除 `cleanup.batch-size` 筆，不會長時間鎖住資料表；登入 Session 改為 `EXPIRED` 與刪除退役金鑰影響的筆數很少，以單一陳述式執行。
+
+### 4.5 監控（metrics、健康檢查、事件）
+
+應用程式有 Micrometer 時（例如 `spring-boot-starter-actuator`），starter 提供下列 metrics：
+
+| 名稱 | 類型 | 標籤 | 用途 |
+|---|---|---|---|
+| `jacky917.as.login` | counter | `idp`、`result`（`success` 或失敗原因） | 登入成功率、暴力破解偵測 |
+| `jacky917.as.token.issued` | counter | `grant_type`、`client_id` | 簽發量（計的是簽發嘗試：之後儲存失敗的也會計入） |
+| `jacky917.as.refresh.reuse_detected` | counter | `client_id` | **告警**：大於 0 代表 Refresh Token 可能外洩 |
+| `jacky917.as.refresh.grace_rejected` | counter | `client_id` | 併發刷新；持續增加代表 client 沒有讓同一個使用者的刷新依序執行 |
+| `jacky917.as.refresh.rejected` | counter | `reason` | 重用偵測拒絕的刷新（Spring 本身的拒絕，例如 Refresh Token 已過期，不計入）；登出後再出現的 Refresh Token 計為 `unknown_token` |
+| `jacky917.as.session.active` | gauge | — | 有效的登入 Session 數 |
+| `jacky917.as.signing_key.age` | gauge（天） | — | 目前金鑰的使用天數；**超過 `keys.rotation-period` + 2 天時告警**（輪換排程沒有執行）。沒有 `ACTIVE` 金鑰時為無限大，同一條告警也會觸發 |
+| `jacky917.as.cleanup.deleted` | counter | `target`（`authorizations`、`refresh_token_history`、`expired_sessions`、`sessions`、`action_tokens`、`audits`、`signing_keys`） | 清理是否正常；`expired_sessions` 是改為 `EXPIRED` 的筆數 |
+| `jacky917.as.audit.write_failures` | counter | `type` | **告警**：大於 0 代表稽核紀錄不完整，IP 限流也看不到這些登入失敗 |
+| `jacky917.as.maintenance.failures` | counter | `task`（工作名稱或 `cleanup.<target>`） | **告警**：排程工作或清理步驟失敗 |
+
+有 Spring Boot 的健康檢查時，`/actuator/health` 另外包含 `signingKey`：沒有 `ACTIVE` 簽章金鑰時為 `DOWN`；詳細資料有金鑰 ID、演算法、使用天數，以及啟用輪換時的 `rotationOverdue`（輪換逾期時狀態仍為 `UP`，請以 `signing_key.age` 告警；不含任何金鑰內容）。資料庫連線由 Spring Boot 本身的檢查回報。可以 `management.health.signingkey.enabled=false` 關閉。
+
+應用程式也可以直接監聽 starter 發布的事件（例如轉送到 SIEM）：`LoginAuditEvent`（所有登入、登出、連結與重用的稽核）、`AccessTokenIssuedEvent`、`RefreshTokenRejectedEvent`、`DataCleanupEvent`、`LoginAuditWriteFailedEvent`、`MaintenanceFailedEvent`。Metrics 的 listener 失敗只記錄日誌，不會影響登入或 token 請求。
 
 ## 5. Client（BFF、批次程式、App）
 
@@ -233,9 +298,9 @@ jacky917:
 
 ---
 
-## 6. 第三方登入（Google）
+## 6. 第三方登入（Google、GitHub、LINE）
 
-使用 Spring Boot 標準的 OAuth2 Client 設定，有設定時登入頁會出現「使用 Google 登入」：
+使用 Spring Boot 標準的 OAuth2 Client 設定，有設定的提供者會出現在登入頁（「使用 Google 登入」等）：
 
 ```yaml
 spring:
@@ -247,17 +312,43 @@ spring:
             client-id: ${GOOGLE_CLIENT_ID}
             client-secret: ${GOOGLE_CLIENT_SECRET}
             scope: openid,profile,email
+          github:
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+            scope: read:user,user:email        # user:email 才能取得已驗證的 Email
+          line:
+            client-name: LINE
+            client-id: ${LINE_CHANNEL_ID}
+            client-secret: ${LINE_CHANNEL_SECRET}
+            scope: openid,profile,email
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          line:
+            issuer-uri: https://access.line.me
+            user-name-attribute: sub
 ```
 
-在 Google Cloud Console 的 OAuth 用戶端設定 redirect URI：`https://auth.example.com/login/oauth2/code/google`。其他 OpenID Connect 提供者（Microsoft、LINE 等）的設定方式相同；非 OIDC 的提供者需要提供 `FederatedUserInfoMapper` Bean。
+各提供者後台設定的 redirect URI 為 `https://auth.example.com/login/oauth2/code/<registration id>`（例如 `.../code/google`）。
+
+| 提供者 | 說明 |
+|---|---|
+| Google 與其他 OpenID Connect 提供者 | 以 ID Token 的 `sub` 識別；`email_verified` 為 true 的 Email 才視為已驗證 |
+| GitHub | 以數字 `id` 識別（登入名稱可能變更）；Email 取自 `/user/emails` 中**主要且已驗證**的地址，需要 `user:email` scope，沒有時使用者沒有 Email（仍可登入）。GitHub 故障（逾時、5xx、速率限制）時登入失敗，請使用者重試，避免已有帳號的使用者得到重複的帳號。公開個人資料中的 Email 一律不採信。GitHub Enterprise Server 也適用：registration id 為 `github`，或使用者資訊端點以 `/api/v3/user` 結尾 |
+| LINE | 網頁登入的 ID Token 以 channel secret 簽 HS256，starter 會自動改用 HS256 驗證（registration id 為 `line` 或 issuer 為 `https://access.line.me`）。LINE 不提供 `email_verified`，因此 LINE 的 Email 不會用於比對既有帳號 |
+| 其他非 OIDC 的提供者 | 提供 `FederatedUserInfoMapper` Bean |
 
 | 情況 | 結果 |
 |---|---|
-| 第一次以這個 Google 帳號登入 | 建立新使用者（角色 `USER`）；只有 Google 已驗證的 Email 才會儲存 |
-| 已連結的 Google 帳號 | 登入同一位使用者；停用的使用者會被拒絕 |
-| Google 已驗證的 Email 屬於既有帳號 | **拒絕登入**（顯示「此 Email 已有帳號」），不會自動連結；帳號連結確認於第 2 階段提供 |
+| 第一次以這個外部帳號登入 | 建立新使用者（角色 `USER`）；只有已驗證的 Email 才會儲存 |
+| 已連結的外部帳號 | 登入同一位使用者；停用或被管理員鎖定的使用者會被拒絕 |
+| 外部帳號已驗證的 Email 屬於既有帳號 | **不會自動連結**（D06）。導向 `/jacky917/link-account`：使用者輸入原帳號的密碼，或以原帳號已連結的其他提供者登入，確認後才連結並登入；取消或 10 分鐘內未確認則什麼都不建立。設定 `account-linking.mode: manual-only` 時改為直接拒絕（「此 Email 已有帳號」），只能從帳號頁連結 |
+| 已登入的使用者在帳號頁按「連結」 | 以該提供者登入後連結到目前的使用者；已屬於其他使用者的外部帳號會被拒絕 |
+| 帳號頁「解除連結」 | 移除連結；若它是唯一的登入方式（沒有密碼、也沒有其他連結）則拒絕 |
 
-Google 的 token 只用於取得使用者資料，用完立即丟棄，不會儲存。
+連結確認頁輸入的密碼與登入頁相同：錯誤會計入帳號鎖定與 IP 限流。連結與解除連結都寫入稽核紀錄（`ACCOUNT_LINKED`、`ACCOUNT_UNLINKED`）。
+
+提供者的 token 只用於取得使用者資料，用完立即丟棄，不會儲存。
 
 ---
 
@@ -288,7 +379,8 @@ Google 的 token 只用於取得使用者資料，用完立即丟棄，不會儲
 
 - `client_credentials` 的 Token 只有 `aud`、`client_id`、`scope`，`sub` 為 client id。
 - ID Token 有 `name`、`picture`、`locale`（`profile` scope）、`email`（`email` scope 且已驗證）、`amr`（`pwd` 或 `fed`），**不含**角色與權限。
-- 使用者被停用或鎖定、或登入 Session 已失效時，刷新會得到 `invalid_grant`。
+- 使用者被停用或被管理員鎖定、在其他地方變更了密碼、或登入 Session 已失效時，刷新會得到 `invalid_grant`（前兩種情況會同時撤銷該登入 Session）。連續登入失敗造成的暫時鎖定只阻擋密碼登入，不影響已登入的裝置。
+- **重用偵測**：每次刷新都會換發新的 Refresh Token。舊的 Refresh Token 在寬限期（`refresh.reuse-grace-period`，預設 30 秒）之後再次出現，代表它可能已外洩：整個登入 Session 立即撤銷（最新的 Refresh Token 也失效），並寫入稽核紀錄（`login_audit` 的 `TOKEN_REFRESH_REUSE`）。BFF 請確保同一個使用者的刷新依序執行（[`example-bff`](../../examples/example-bff) 有示範），否則併發的刷新會有一個失敗。
 - 自訂 claim：提供 `TokenClaimsContributor` Bean。
 
 ---
@@ -329,22 +421,44 @@ spring:
 
 完整的 BFF 範例（API 代理、自動刷新、同一位使用者的刷新依序執行、RP-Initiated Logout）：[`examples/example-bff`](../../examples/example-bff)。
 
+### 登入保護與稽核紀錄
+
+- 連續密碼錯誤 `login-protection.max-failures` 次（預設 5）後，帳號鎖定 `login-protection.lock-duration`（預設 15 分鐘）。鎖定期間正確的密碼也無法登入，也不會延長鎖定；登入成功時失敗次數歸零。
+- 只有密碼錯誤才計入鎖定。非預期的錯誤（例如資料庫無法使用）記錄為 `ERROR` 並稽核為 `ERROR`，不計入，因此不會鎖住輸入正確密碼的使用者。
+- 同一個 IP 最近一分鐘失敗 `login-protection.max-failures-per-ip-per-minute` 次（預設 20）後，該 IP 的登入在檢查密碼之前就被拒絕。登入頁與帳號連結確認頁都受保護，路徑以解碼後的值比對（`/%6Cogin` 這類編碼無法略過）。
+- 登入頁對所有密碼登入失敗顯示相同的訊息（不透露帳號是否存在或被鎖定），只有限流與第三方登入有各自的訊息；真正的原因寫入 `login_audit`：
+
+| `event_type` | 何時 | `failure_reason` |
+|---|---|---|
+| `LOGIN` | 每次登入（密碼或第三方），成功或失敗 | `BAD_CREDENTIALS`、`UNKNOWN_USER`、`LOCKED`、`DISABLED`、`NO_PASSWORD`、`RATE_LIMITED`、`ERROR`、`FEDERATION`、`USER_CANNOT_LOG_IN`、`ACCOUNT_EXISTS`、`LINK_REQUIRED` |
+| `ACCOUNT_LOCKED` | 連續失敗造成鎖定 | — |
+| `ACCOUNT_LINKED` | 連結第三方帳號，成功或失敗 | `LINK_EXPIRED`、`LINKED_TO_ANOTHER_USER`、`PROVIDER_ALREADY_LINKED`、`FEDERATION` |
+| `ACCOUNT_UNLINKED` | 解除連結 | — |
+| `LOGOUT` | 登出（見下一節） | — |
+| `TOKEN_REFRESH_REUSE` | 偵測到 Refresh Token 重用（每次都寫入，即使 Session 已撤銷） | `REUSE_DETECTED` |
+
+稽核事件同時以 Spring 的 `ApplicationEvent`（`LoginAuditEvent`）發布，應用程式可以另外監聽並轉送到 SIEM。寫入失敗不影響登入：整個事件（不含輸入的帳號）記錄在 `ERROR` 日誌中以便補回，並計入 `jacky917.as.audit.write_failures`。IP 限流計算的是寫入 `login_audit` 的失敗，寫入失敗期間看不到這些嘗試。
+
+### 登出與帳號頁
+
+| 方式 | 結果 |
+|---|---|
+| BFF 導向 `/connect/logout?id_token_hint=…&post_logout_redirect_uri=…`（RP-Initiated Logout） | 撤銷該次登入的登入 Session（刪除其授權，Refresh Token 立即失效），結束登入服務的瀏覽器登入，導回 `post_logout_redirect_uri`（必須是 client 設定的 `post-logout-redirect-uris` 之一） |
+| 登入服務的瀏覽器 Session 已過期 | 仍以 `id_token_hint` 找到並撤銷登入 Session；ID Token 本身過期也可以 |
+| 帳號頁 `/jacky917/account` | 列出登入中的裝置（登入方式、時間、IP、瀏覽器），可以登出單一裝置或「登出所有裝置」；也可以連結或解除連結第三方帳號（見 [§6](#6-第三方登入googlegithubline)） |
+| 登入服務的 `POST /logout` | 撤銷目前的登入 Session，回到 `/login?logout` |
+
+每次登出都寫入稽核紀錄（`login_audit` 的 `LOGOUT`）。已簽發的 Access Token 仍有效至到期（最長 `token.access-token-ttl`），見 [限制 §6](../resource-server/limitations.md#6-token-無法撤銷)。帳號頁的時間以伺服器的預設時區顯示。
+
 > [!WARNING]
 > 在同一台主機上以不同埠號執行登入服務與 BFF 時（例如 `localhost:9000` 與 `localhost:8082`），兩者預設的 `JSESSIONID` Cookie 會互相覆蓋（瀏覽器的 Cookie 不區分埠號），登入流程會失敗。請為登入服務設定不同的 Cookie 名稱：`server.servlet.session.cookie.name: JACKY917_AS_SESSION`。
 
 ---
 
-## 9. 目前的限制（第 1 階段）
+## 9. 目前的限制
 
 | 項目 | 現況 | 預計 |
 |---|---|---|
-| Refresh Token 重用偵測 | 舊的 Refresh Token 會被拒絕，但不會因此撤銷整個登入 Session | 第 2 階段 |
-| 登出 | 結束登入服務的瀏覽器 Session；已簽發的 Refresh Token 仍有效至過期 | 第 2 階段：登出時撤銷整個登入 Session |
-| 登入保護 | 沒有失敗次數鎖定與 IP 限流（管理員設定的 `locked_until` 會生效） | 第 2 階段 |
-| 稽核紀錄 | 不寫入 `login_audit` | 第 2 階段 |
-| 金鑰輪換、資料清理 | 沒有排程；過期的授權不會自動刪除 | 第 2 階段 |
-| 多實例 | 登入頁的 Session 存在記憶體中，多實例需要黏性 Session；SQLite 只能單一實例 | 第 2 階段：PostgreSQL 搭配 Spring Session JDBC |
-| 第三方帳號連結 | Email 屬於既有帳號時拒絕登入 | 第 2 階段 |
 | 第三方 client、同意畫面、Admin API | 不支援（設定第三方 client 會啟動失敗） | 第 3 階段 |
 | 註冊、忘記密碼 | 不支援 | 依需求 |
 | MySQL | 不支援 | 第 5 階段 |
@@ -360,4 +474,4 @@ spring:
 - [ ] PostgreSQL：專屬資料庫、應用程式帳號只有必要權限（[資料模型 §13.3](../design/auth-server-data-model.md#133-資料庫帳號與權限)）
 - [ ] 全程 HTTPS；反向代理有正確傳遞 `X-Forwarded-*`（`server.forward-headers-strategy`）
 - [ ] 第一位管理員登入後已變更密碼
-- [ ] 已了解 [§9 目前的限制](#9-目前的限制第-1-階段)，特別是登出後 Refresh Token 仍有效
+- [ ] 已了解 [§9 目前的限制](#9-目前的限制)
