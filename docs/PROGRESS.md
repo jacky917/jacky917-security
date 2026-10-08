@@ -1057,3 +1057,15 @@
 - **Commands Run & Results**:
   - `AccountSelfServiceIntegrationTest` 新增 4 個（兩種資料庫）：註冊與驗證（T-ACCT-05）、既有 Email 不透露資訊（T-ACCT-06）、取代未完成的註冊與舊連結無法以舊密碼驗證、表單錯誤與重新寄送。
   - `AccountConfigurationIntegrationTest`：開啟註冊但無法寄信時失敗（T-ACCT-08）。`AuthorizationFlowIntegrationTest`：預設設定下登入頁沒有註冊與忘記密碼連結，頁面 404。
+
+## Step 51: Authorization Server——工作 25（第三方 client、scope、API resource 管理）
+- **Status**: 🟢 Completed
+- **變更**:
+  - 設定檔支援 `trust-level: third-party`（D30）：必須有 `privacy-policy-url`、不可使用 `client_credentials`、不可要求 `as:` scope；`requireAuthorizationConsent=true`。新增 `description`、`logo-url`、`homepage-url`、`privacy-policy-url`、`terms-url`，儲存在 `client_profile`（`ClientDetails`）。網址檢查集中在 `ClientUris`。
+  - 管理 API：`/admin/api/clients`（列出、建立第三方 client 並回傳只顯示一次的 secret、部分更新、重新產生 secret、核准／停權／重新啟用、刪除）；設定中的 client 唯讀（`409`）。停權與刪除會刪除授權。
+  - 管理 API：`/admin/api/scopes`、`/admin/api/api-resources`（CRUD；scope 不能對應 `as:` 權限；仍在使用的不能刪除）。
+  - 使用指南 §5（第三方 client）、§9（新端點與規則）、§10。
+- **Commands Run & Results**:
+  - `AdminApiIntegrationTest` 新增 4 個（兩種資料庫）：第三方 client 的建立與 secret（T-ADMIN-07）、規則與設定中的 client 唯讀、狀態轉換、scope 與 API resource。
+  - `AuthorizationServerPropertiesTest`：第三方 client 規則；`ClientRegistrationIntegrationTest`：設定檔中的第三方 client 要求同意並儲存資訊。
+

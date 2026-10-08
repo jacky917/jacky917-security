@@ -6,10 +6,15 @@ import jacky917.security.authorizationserver.admin.AdminApiExceptionHandler;
 import jacky917.security.authorizationserver.admin.AdminAuditService;
 import jacky917.security.authorizationserver.admin.AdminJwtAuthenticationConverter;
 import jacky917.security.authorizationserver.admin.AuditAdminController;
+import jacky917.security.authorizationserver.admin.ClientAdminController;
+import jacky917.security.authorizationserver.admin.ClientAdminService;
 import jacky917.security.authorizationserver.admin.RoleAdminController;
 import jacky917.security.authorizationserver.admin.RoleAdminService;
+import jacky917.security.authorizationserver.admin.ScopeAdminController;
+import jacky917.security.authorizationserver.admin.ScopeAdminService;
 import jacky917.security.authorizationserver.admin.UserAdminController;
 import jacky917.security.authorizationserver.admin.UserAdminService;
+import jacky917.security.authorizationserver.client.ClientProfileRepository;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.session.Jacky917LogoutHandler;
@@ -23,10 +28,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
+import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
+import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
@@ -163,5 +170,38 @@ class AuthorizationServerAdminApiConfiguration {
     @ConditionalOnMissingBean
     RoleAdminController jacky917RoleAdminController(RoleAdminService roles) {
         return new RoleAdminController(roles);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    ClientAdminService clientAdminService(JdbcClient jdbcClient, JdbcOperations jdbcOperations,
+                                          ClientProfileRepository profiles, PasswordEncoder passwordEncoder,
+                                          AuthorizationServerProperties properties, AdminAuditService audit,
+                                          PlatformTransactionManager transactionManager, Clock clock) {
+        // 管理 API 也要看到已停權的 client，因此不使用只回傳啟用中 client 的 RegisteredClientRepository Bean
+        return new ClientAdminService(jdbcClient, new JdbcRegisteredClientRepository(jdbcOperations), profiles,
+                passwordEncoder, properties, audit, new TransactionTemplate(transactionManager), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    ClientAdminController jacky917ClientAdminController(ClientAdminService clients) {
+        return new ClientAdminController(clients);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    ScopeAdminService scopeAdminService(JdbcClient jdbcClient, AuthorizationServerProperties properties,
+                                        AdminAuditService audit, PlatformTransactionManager transactionManager,
+                                        Clock clock) {
+        return new ScopeAdminService(jdbcClient, properties, audit, new TransactionTemplate(transactionManager),
+                clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    ScopeAdminController jacky917ScopeAdminController(ScopeAdminService scopes) {
+        return new ScopeAdminController(scopes);
     }
 }

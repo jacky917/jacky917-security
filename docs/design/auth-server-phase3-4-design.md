@@ -380,7 +380,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 22 | 變更密碼、強制變更：`PasswordChangeService`、`AccountPasswordController`、`PasswordChangeRequiredFilter`（兩條 filter chain）、`bootstrap-admin.password-change-required` | ✅ |
 | 23 | 忘記密碼：`PasswordResetController`（`/jacky917/password/forgot`、`/jacky917/password/reset`）、登入頁的連結、IP 限流涵蓋這些表單 | ✅ |
 | 24 | 註冊與 Email 驗證：`RegistrationService`、`RegistrationController`（`/jacky917/register`、`/jacky917/verify-email`、`/jacky917/verify-email/resend`）、登入頁的連結；使用指南「帳號自助功能」 | ✅ |
-| 25 | 第三方 client、scope、API resource 管理 | |
+| 25 | 第三方 client、scope、API resource 管理：設定檔 `trust-level: third-party`（`ClientUris`、`ClientDetails`）、`ClientAdminService`／`ClientAdminController`、`ScopeAdminService`／`ScopeAdminController`；使用指南 §5、§9 | ✅ |
 | 26 | 同意畫面、撤回授權 | |
 | 27 | `aud` 依 scope 決定 | |
 | 28 | 兩步驟驗證 | |
@@ -394,4 +394,6 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 刷新時的「密碼在登入後變更」檢查（工作 22） | 詳細設計 §5.4：`password_changed_at > session.created_at` 時拒絕並撤銷 | 移除此檢查；每一種變更密碼的方式（管理員設定、重設連結、使用者自行變更）都明確撤銷登入 Session（`PASSWORD_CHANGED`） | 使用者自行變更時必須保留進行變更的那一個 Session；原本的檢查會在下一次刷新時把它撤銷 |
 | Email 驗證（工作 24） | §5.4：開啟連結後按確認即完成 | 確認時必須輸入註冊時設定的密碼 | 註冊時就設定密碼，若只靠連結驗證，以他人地址註冊的人在對方點開連結後就擁有該帳號；未完成的註冊被取代時也一樣。要求密碼後，必須同時擁有信箱與密碼才能完成 |
 | 重新寄送驗證信（工作 24） | §5.4：可重新寄送 | 獨立的 `POST /jacky917/verify-email/resend`，只對未完成的註冊寄信，畫面一律相同 | 寄送畫面不保留密碼，重新寄送不能再走註冊表單 |
+| 管理 API 建立的 client（工作 25） | §6.4：建立 client | 一律為第三方 client，grant type 由驗證方式決定（confidential：`authorization_code`、`refresh_token`；public：`authorization_code`）；scope 必須已在 `app_scope` 定義 | 第一方 client 由設定管理；讓同意畫面一定能顯示 scope 的名稱與說明 |
+| 內建 scope 的更新（工作 25） | §6.4：內建 scope 不可刪除 | 內建 scope 也只能修改名稱與說明（不能改是否需要同意與權限對應） | `openid` 等 OIDC scope 的行為由規格決定 |
 | `admin_audit_log` 的對象種類（工作 18） | 資料模型 §8.3 的 7 種 | V1_1_0 加入 `API_RESOURCE` | API resource 的管理也要稽核；SQLite 無法修改約束，與 `login_audit` 一起重建 |

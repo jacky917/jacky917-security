@@ -267,7 +267,7 @@ Starter 以自己的執行緒執行下列工作（不會啟用應用程式的 `@
 
 ## 5. Client（BFF、批次程式、App）
 
-第 1 階段的 client 在設定中宣告，每次啟動時建立或更新（以設定為準）。
+自己的應用程式（第一方 client）在設定中宣告，每次啟動時建立或更新（以設定為準）。合作廠商等第三方應用可以寫在設定中，也可以透過[管理 API](#9-管理-api) 建立。
 
 ```yaml
 jacky917:
@@ -289,6 +289,13 @@ jacky917:
           grant-types: authorization_code
           redirect-uris: com.example.app:/callback
           scopes: openid,profile
+        partner-app:                              # 第三方應用（使用者必須同意）
+          trust-level: third-party
+          display-name: 合作夥伴 App
+          secret: ${PARTNER_APP_SECRET}
+          redirect-uris: https://partner.example.com/callback
+          scopes: openid,profile
+          privacy-policy-url: https://partner.example.com/privacy
 ```
 
 | 屬性 | 預設 | 說明 |
@@ -300,10 +307,14 @@ jacky917:
 | `redirect-uris` | — | 完全比對。`https`（`localhost` 可用 `http`），不可有 fragment；原生 App 可用反向網域名稱的 scheme |
 | `post-logout-redirect-uris` | — | 登出後可導回的網址，完全比對 |
 | `scopes` | `openid` | `openid` 只能用於授權碼流程 |
+| `trust-level` | `first-party` | `third-party`：見下方 |
+| `description`、`logo-url`、`homepage-url`、`privacy-policy-url`、`terms-url` | — | 顯示在同意畫面上；網址必須是 `https` |
+
+**第三方 client**（`trust-level: third-party`）：使用者第一次授權時必須同意要求的 scope；必須有 `privacy-policy-url`；不可使用 `client-credentials`（沒有使用者可以同意）；不可要求以 `as:` 開頭的 scope（會授予管理權限）。Token 不含角色，`permissions` 只有「使用者同意的 scope 對應的權限」中使用者也擁有的部分（見 [§7](#7-token-內容)）。
 
 **一律套用、無法關閉**：所有 client 都必須使用 PKCE；Refresh Token 每次使用都會換發新的（舊的立即失效）。有效期取自 `token.*`。
 
-**停權**：把 `client_profile.status` 改為 `SUSPENDED`，該 client 換 Token 時會得到 `invalid_client`（Admin API 於第 3 階段提供）。
+設定中的 client 由設定管理：管理 API 可以讀取，但不能修改、停權或刪除（`409`）。停權的 client 換 Token 時會得到 `invalid_client`。
 
 ---
 
@@ -520,6 +531,14 @@ spring:
 | `DELETE /admin/api/sessions/{asid}` | 撤銷一個登入 Session |
 | `GET`／`POST /admin/api/roles`、`GET`／`PUT`／`DELETE /admin/api/roles/{code}` | 角色；`PUT` 取代名稱、說明與權限清單 |
 | `GET`／`POST /admin/api/permissions`、`GET`／`PUT`／`DELETE /admin/api/permissions/{code}` | 權限 |
+| `GET /admin/api/clients`、`GET /admin/api/clients/{clientId}` | 所有 client（含設定中的，`configured: true`） |
+| `POST /admin/api/clients` | 建立第三方 client：`clientId`、`name`、`description`、`authenticationMethod`（`client_secret_basic`、`client_secret_post`、`none`）、`redirectUris`、`postLogoutRedirectUris`、`scopes`、`privacyPolicyUrl`（必填）、`logoUrl`、`homepageUrl`、`termsUrl`、`status`（`ACTIVE` 或 `PENDING_REVIEW`）。回傳的 `clientSecret` 只顯示這一次 |
+| `PATCH /admin/api/clients/{clientId}` | 只修改有出現的欄位；選填網址傳空字串表示清除 |
+| `POST /admin/api/clients/{clientId}/secret` | 重新產生 secret，舊的立即失效 |
+| `POST /admin/api/clients/{clientId}/approve`、`/suspend`、`/activate` | 核准審核中的 client、停權（刪除它的所有授權）、重新啟用 |
+| `DELETE /admin/api/clients/{clientId}` | 刪除 client、授權與同意紀錄 |
+| `GET`／`POST /admin/api/scopes`、`GET`／`PUT`／`DELETE /admin/api/scopes/{code}` | scope：`displayName`、`description`（顯示在同意畫面上）、`consentRequired`（預設 `true`）、`apiResource`、`permissions` |
+| `GET`／`POST /admin/api/api-resources`、`GET`／`PUT`／`DELETE /admin/api/api-resources/{code}` | API resource（Access Token 的 `aud` 的值） |
 | `GET /admin/api/audit/logins?userId=&type=&from=&to=` | 登入稽核（`login_audit`），新的在前 |
 | `GET /admin/api/audit/admin?targetType=&targetId=&operatorUserId=&from=&to=` | 管理操作稽核（`admin_audit_log`），新的在前 |
 
@@ -538,7 +557,9 @@ curl -X POST https://auth.example.com/admin/api/users \
 - 內建的角色與權限（`AS_ADMIN`、`AS_SUPPORT`、`USER`、`as:*`）不能刪除、不能改代碼；`AS_ADMIN` 一律擁有全部 `as:` 權限。仍有使用者的角色、仍被角色使用的權限不能刪除（`409`）。
 - 讓使用者無法登入（`LOCKED`、`DISABLED`、刪除）或設定其密碼時，會撤銷其所有登入 Session，Refresh Token 立即失效。角色變更在使用者下一次取得 token（最長 `token.access-token-ttl`）時生效。
 - 管理員不能停用或刪除自己，也不能移除自己最後一個擁有 `as:user:write` 的角色。
-- 每個寫入操作都寫入 `admin_audit_log`（操作者、client、IP、變更前後的快照，不含密碼雜湊）。
+- 透過管理 API 建立的 client 一律是第三方 client，只使用授權碼流程（confidential client 另有 Refresh Token），scope 必須已在 `/admin/api/scopes` 定義且不可以 `as:` 開頭。第一方 client 請寫在設定中。
+- Scope 不能對應 `as:` 權限；內建 scope（`openid`、`profile`、`email`）只能修改名稱與說明，不能刪除。仍有 client 可以要求的 scope、仍有 scope 屬於它或設定為 `token.audience` 的 API resource 不能刪除（`409`）。
+- 每個寫入操作都寫入 `admin_audit_log`（操作者、client、IP、變更前後的快照，不含密碼雜湊與 client secret）。
 - 錯誤以 [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 回傳；欄位錯誤在 `errors` 中。
 - 管理 API 直接操作預設的使用者資料表；以其他使用者來源取代 `UserAccountService` 時，請設定 `admin-api.enabled=false` 或自行提供。
 
@@ -548,7 +569,7 @@ curl -X POST https://auth.example.com/admin/api/users \
 
 | 項目 | 現況 | 預計 |
 |---|---|---|
-| 第三方 client、同意畫面 | 不支援（設定第三方 client 會啟動失敗） | 第 3 階段 |
+| 第三方 client 的同意畫面 | 暫時使用 Spring Authorization Server 的預設頁面 | 第 3 階段（工作 26） |
 | 管理畫面 | 不提供；以[管理 API](#9-管理-api) 自行整合 | — |
 | MySQL | 不支援 | 第 5 階段 |
 

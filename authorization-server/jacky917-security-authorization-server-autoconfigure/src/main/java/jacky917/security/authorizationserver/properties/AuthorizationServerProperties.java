@@ -1,6 +1,7 @@
 package jacky917.security.authorizationserver.properties;
 
 import jacky917.security.authorizationserver.user.LockoutPolicy;
+import jacky917.security.authorizationserver.client.ClientUris;
 import jacky917.security.core.TrustLevel;
 import lombok.Getter;
 import lombok.Setter;
@@ -198,23 +199,7 @@ public class AuthorizationServerProperties implements Validator {
     }
 
     static boolean isAllowedRedirect(String uri) {
-        try {
-            URI parsed = URI.create(uri);
-            if (!parsed.isAbsolute() || parsed.getFragment() != null) {
-                return false;
-            }
-            String scheme = parsed.getScheme();
-            // RFC 8252 §7.1：原生 App 的私有 scheme 必須是反向網域名稱（含 "."），例如 com.example.app:/callback
-            if (!"http".equals(scheme) && !"https".equals(scheme)) {
-                return scheme.contains(".");
-            }
-            if (parsed.getHost() == null) {
-                return false;
-            }
-            return "https".equals(scheme) || LOCAL_HOSTS.contains(parsed.getHost());
-        } catch (IllegalArgumentException ex) {
-            return false;
-        }
+        return ClientUris.isAllowedRedirect(uri);
     }
 
     private static void validateIssuer(URI issuer, Errors errors) {
@@ -884,9 +869,11 @@ public class AuthorizationServerProperties implements Validator {
     }
 
     /**
-     * A first-party client, bound from {@code .clients.<client-id>.*}.
+     * A client, bound from {@code .clients.<client-id>.*}. Clients in the
+     * configuration cannot be changed through the administration API.
      * <p>
-     * 第一方 client，綁定自 {@code .clients.<client-id>.*}。
+     * Client，綁定自 {@code .clients.<client-id>.*}。設定檔中的 client 無法透過
+     * 管理 API 修改。
      * <p>
      * Every client must use PKCE, and refresh tokens are rotated on each
      * use; neither can be turned off. Token lifetimes come from
@@ -907,12 +894,52 @@ public class AuthorizationServerProperties implements Validator {
         private String displayName;
 
         /**
-         * Trust level. Only {@code first-party} is supported until the
-         * consent screen is available.
+         * Trust level. A {@code third-party} client always asks users to
+         * consent, must have {@code privacy-policy-url}, cannot use
+         * {@code client_credentials} and cannot ask for scopes starting
+         * with {@code as:}; its tokens carry no roles (D30).
          * <p>
-         * 信任等級。同意畫面完成前只支援 {@code first-party}。
+         * 信任等級。{@code third-party} 的 client 一律要求使用者同意、必須有
+         * {@code privacy-policy-url}、不可使用 {@code client_credentials}，也不可
+         * 要求以 {@code as:} 開頭的 scope；它的 token 不含角色（D30）。
          */
         private TrustLevel trustLevel = TrustLevel.FIRST_PARTY;
+
+        /**
+         * Description shown on the consent page.
+         * <p>
+         * 顯示在同意畫面上的說明。
+         */
+        private String description;
+
+        /**
+         * Logo shown on the consent page; an {@code https} URL.
+         * <p>
+         * 顯示在同意畫面上的 Logo，{@code https} 網址。
+         */
+        private String logoUrl;
+
+        /**
+         * Home page of the application; an {@code https} URL.
+         * <p>
+         * 應用程式的首頁，{@code https} 網址。
+         */
+        private String homepageUrl;
+
+        /**
+         * Privacy policy of the application; an {@code https} URL, required
+         * for third-party clients.
+         * <p>
+         * 應用程式的隱私權政策，{@code https} 網址；第三方 client 必填。
+         */
+        private String privacyPolicyUrl;
+
+        /**
+         * Terms of service of the application; an {@code https} URL.
+         * <p>
+         * 應用程式的服務條款，{@code https} 網址。
+         */
+        private String termsUrl;
 
         /**
          * How the client authenticates at the token endpoint.
@@ -975,8 +1002,28 @@ public class AuthorizationServerProperties implements Validator {
                 errors.rejectValue("clients", "invalid", path + ": client id must be 2-100 lowercase letters, digits, "
                         + "'.', '_' or '-'");
             }
-            if (trustLevel != TrustLevel.FIRST_PARTY) {
-                errors.rejectValue("clients", "unsupported", path + ": only first-party clients are supported");
+            Map<String, String> urls = new LinkedHashMap<>();
+            urls.put("logo-url", logoUrl);
+            urls.put("homepage-url", homepageUrl);
+            urls.put("privacy-policy-url", privacyPolicyUrl);
+            urls.put("terms-url", termsUrl);
+            urls.forEach((name, url) -> {
+                if (url != null && !url.isBlank() && !ClientUris.isWebUrl(url)) {
+                    errors.rejectValue("clients", "invalid", path + ": " + name + " must be an absolute https URL");
+                }
+            });
+            if (trustLevel == TrustLevel.THIRD_PARTY) {
+                if (privacyPolicyUrl == null || privacyPolicyUrl.isBlank()) {
+                    errors.rejectValue("clients", "required", path + ": a third-party client requires "
+                            + "privacy-policy-url");
+                }
+                if (grantTypes != null && grantTypes.contains(GrantType.CLIENT_CREDENTIALS)) {
+                    errors.rejectValue("clients", "invalid", path + ": a third-party client cannot use "
+                            + "client_credentials, because no user can consent");
+                }
+                scopes.stream().filter(scope -> scope.startsWith("as:")).forEach(scope -> errors.rejectValue(
+                        "clients", "invalid", path + ": a third-party client cannot ask for " + scope
+                                + "; scopes starting with as: give administration permissions"));
             }
             if (grantTypes == null || grantTypes.isEmpty()) {
                 errors.rejectValue("clients", "required", path + ": grant-types must not be empty");

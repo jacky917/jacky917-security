@@ -377,6 +377,166 @@ abstract class AbstractAdminApiIntegrationTest extends AbstractFlowIntegrationTe
         call(getJson("/admin/api/roles"), userToken("no-role-reader")).andExpect(status().isForbidden());
     }
 
+    // ---- 工作 25：第三方 client、scope、API resource ----
+
+    @Test
+    @DisplayName("建立第三方 client：secret 只回傳一次且可用；要求同意；重新產生後舊 secret 失效；稽核不含 secret（T-ADMIN-07）")
+    void managesThirdPartyClients() throws Exception {
+        String admin = adminToken("client-admin");
+        JsonNode created = json(send(postJson("/admin/api/clients"), admin, partnerClient("partner-app"))
+                .andExpect(status().isCreated()));
+        String secret = created.get("clientSecret").asString();
+        JsonNode client = created.get("client");
+        assertThat(client.get("trustLevel").asString()).isEqualTo("THIRD_PARTY");
+        assertThat(client.get("status").asString()).isEqualTo("ACTIVE");
+        assertThat(client.get("configured").asBoolean()).isFalse();
+        assertThat(client.get("grantTypes")).extracting(JsonNode::asString)
+                .containsExactly("authorization_code", "refresh_token");
+        assertThat(client.get("privacyPolicyUrl").asString()).isEqualTo("https://partner.example.com/privacy");
+        assertThat(clients.findByClientId("partner-app").getClientSettings().isRequireAuthorizationConsent()).isTrue();
+        assertThat(tokenEndpointStatus("partner-app", secret)).as("secret 正確：client 驗證通過，授權碼無效").isEqualTo(400);
+        assertThat(tokenEndpointStatus("partner-app", "wrong")).isEqualTo(401);
+
+        JsonNode renewed = json(call(postJson("/admin/api/clients/partner-app/secret"), admin)
+                .andExpect(status().isOk()));
+        assertThat(tokenEndpointStatus("partner-app", secret)).as("舊的 secret 失效").isEqualTo(401);
+        assertThat(tokenEndpointStatus("partner-app", renewed.get("clientSecret").asString())).isEqualTo(400);
+
+        JsonNode updated = json(send(patchJson("/admin/api/clients/partner-app"), admin, Map.of("name", "Partner",
+                "scopes", List.of("openid", "email"), "logoUrl", "")).andExpect(status().isOk()));
+        assertThat(updated.get("name").asString()).isEqualTo("Partner");
+        assertThat(updated.get("scopes")).extracting(JsonNode::asString).containsExactly("email", "openid");
+        assertThat(updated.get("logoUrl").isNull()).isTrue();
+        assertThat(updated.get("privacyPolicyUrl").asString()).as("未指定的欄位不變")
+                .isEqualTo("https://partner.example.com/privacy");
+
+        JsonNode audit = json(call(get("/admin/api/audit/admin").param("targetType", "CLIENT")
+                .param("targetId", "partner-app"), admin).andExpect(status().isOk()));
+        assertThat(audit.get("items")).extracting(entry -> entry.get("action").asString())
+                .containsExactly("CLIENT_UPDATED", "CLIENT_SECRET_CHANGED", "CLIENT_CREATED");
+        assertThat(audit.toString()).doesNotContain(secret).doesNotContain("bcrypt");
+    }
+
+    @Test
+    @DisplayName("第三方 client 的規則：必須有隱私權政策、scope 必須存在且不可為 as:；設定檔中的 client 唯讀（409）")
+    void refusesInvalidClients() throws Exception {
+        String admin = adminToken("strict-client-admin");
+        Map<String, Object> noPolicy = new java.util.HashMap<>(partnerClient("no-policy"));
+        noPolicy.remove("privacyPolicyUrl");
+        noPolicy.put("scopes", List.of("as:user:read"));
+        noPolicy.put("redirectUris", List.of("http://partner.example.com/callback"));
+        JsonNode problem = json(send(postJson("/admin/api/clients"), admin, noPolicy)
+                .andExpect(status().isBadRequest()));
+        assertThat(problem.get("errors").get("privacyPolicyUrl").asString()).contains("required");
+        assertThat(problem.get("errors").get("scopes").asString()).contains("as:");
+        assertThat(problem.get("errors").get("redirectUris").asString()).contains("https");
+        Map<String, Object> unknownScope = new java.util.HashMap<>(partnerClient("unknown-scope"));
+        unknownScope.put("scopes", List.of("orders.read"));
+        assertThat(json(send(postJson("/admin/api/clients"), admin, unknownScope).andExpect(status().isBadRequest()))
+                .get("errors").get("scopes").asString()).contains("not defined");
+
+        JsonNode listed = json(call(getJson("/admin/api/clients"), admin).andExpect(status().isOk()));
+        assertThat(listed).anySatisfy(client -> {
+            assertThat(client.get("clientId").asString()).isEqualTo("web-bff");
+            assertThat(client.get("configured").asBoolean()).isTrue();
+            assertThat(client.get("trustLevel").asString()).isEqualTo("FIRST_PARTY");
+        });
+        send(postJson("/admin/api/clients"), admin, partnerClient("web-bff")).andExpect(status().isConflict());
+        send(patchJson("/admin/api/clients/web-bff"), admin, Map.of("name", "x")).andExpect(status().isConflict());
+        call(postJson("/admin/api/clients/web-bff/secret"), admin).andExpect(status().isConflict());
+        call(postJson("/admin/api/clients/web-bff/suspend"), admin).andExpect(status().isConflict());
+        call(deleteJson("/admin/api/clients/web-bff"), admin).andExpect(status().isConflict());
+        call(getJson("/admin/api/clients/nobody"), admin).andExpect(status().isNotFound());
+
+        createUser("client-reader", null, "AS_SUPPORT");
+        call(getJson("/admin/api/clients"), userToken("client-reader")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Client 狀態：審核中與停權的 client 無法使用；停權刪除授權；核准、重新啟用；刪除後 404")
+    void changesClientStatus() throws Exception {
+        String admin = adminToken("status-admin");
+        Map<String, Object> pending = new java.util.HashMap<>(partnerClient("pending-app"));
+        pending.put("status", "PENDING_REVIEW");
+        pending.put("authenticationMethod", "none");
+        JsonNode created = json(send(postJson("/admin/api/clients"), admin, pending).andExpect(status().isCreated()));
+        assertThat(created.get("clientSecret").isNull()).as("public client 沒有 secret").isTrue();
+        assertThat(created.get("client").get("grantTypes")).extracting(JsonNode::asString)
+                .containsExactly("authorization_code");
+        assertThat(clients.findByClientId("pending-app")).as("審核中").isNull();
+        call(postJson("/admin/api/clients/pending-app/activate"), admin).andExpect(status().isConflict());
+        call(postJson("/admin/api/clients/pending-app/secret"), admin).andExpect(status().isConflict());
+
+        call(postJson("/admin/api/clients/pending-app/approve"), admin).andExpect(status().isOk());
+        assertThat(clients.findByClientId("pending-app")).isNotNull();
+        String registeredClientId = clients.findByClientId("pending-app").getId();
+        jdbc.sql("INSERT INTO oauth2_authorization (id, registered_client_id, principal_name, authorization_grant_type) "
+                + "VALUES ('authz-of-pending', :client, 'someone', 'authorization_code')")
+                .param("client", registeredClientId).update();
+
+        JsonNode suspended = json(call(postJson("/admin/api/clients/pending-app/suspend"), admin)
+                .andExpect(status().isOk()));
+        assertThat(suspended.get("status").asString()).isEqualTo("SUSPENDED");
+        assertThat(clients.findByClientId("pending-app")).isNull();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM oauth2_authorization WHERE registered_client_id = :client")
+                .param("client", registeredClientId).query(Integer.class).single()).as("授權已刪除").isZero();
+        call(postJson("/admin/api/clients/pending-app/activate"), admin).andExpect(status().isOk());
+        assertThat(clients.findByClientId("pending-app")).isNotNull();
+
+        call(deleteJson("/admin/api/clients/pending-app"), admin).andExpect(status().isNoContent());
+        call(getJson("/admin/api/clients/pending-app"), admin).andExpect(status().isNotFound());
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM client_profile WHERE registered_client_id = :client")
+                .param("client", registeredClientId).query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    @DisplayName("Scope 與 API resource：建立、更新、權限對應（不可為 as:）；仍在使用或內建時不能刪除")
+    void managesScopesAndApiResources() throws Exception {
+        String admin = adminToken("scope-admin");
+        send(postJson("/admin/api/api-resources"), admin, Map.of("code", "orders-api", "name", "Orders"))
+                .andExpect(status().isCreated());
+        send(postJson("/admin/api/permissions"), admin, Map.of("code", "shipment:read", "name", "Read shipments"))
+                .andExpect(status().isCreated());
+        JsonNode problem = json(send(postJson("/admin/api/scopes"), admin, Map.of("code", "orders.admin",
+                "displayName", "Admin", "permissions", List.of("as:user:read"))).andExpect(status().isBadRequest()));
+        assertThat(problem.get("errors").get("permissions").asString()).contains("as:");
+        send(postJson("/admin/api/scopes"), admin, Map.of("code", "as:anything", "displayName", "x"))
+                .andExpect(status().isBadRequest());
+
+        JsonNode scope = json(send(postJson("/admin/api/scopes"), admin, Map.of("code", "orders.read",
+                "displayName", "Read your orders", "apiResource", "orders-api", "permissions", List.of("shipment:read")))
+                .andExpect(status().isCreated()));
+        assertThat(scope.get("consentRequired").asBoolean()).isTrue();
+        assertThat(scope.get("permissions")).extracting(JsonNode::asString).containsExactly("shipment:read");
+        assertThat(json(call(getJson("/admin/api/api-resources/orders-api"), admin).andExpect(status().isOk()))
+                .get("scopes")).extracting(JsonNode::asString).containsExactly("orders.read");
+        assertThat(json(call(getJson("/admin/api/permissions/shipment:read"), admin)).get("scopes"))
+                .extracting(JsonNode::asString).containsExactly("orders.read");
+
+        Map<String, Object> partner = new java.util.HashMap<>(partnerClient("orders-partner"));
+        partner.put("scopes", List.of("openid", "orders.read"));
+        send(postJson("/admin/api/clients"), admin, partner).andExpect(status().isCreated());
+        call(deleteJson("/admin/api/scopes/orders.read"), admin).andExpect(status().isConflict());
+        call(deleteJson("/admin/api/api-resources/orders-api"), admin).andExpect(status().isConflict());
+        call(deleteJson("/admin/api/scopes/openid"), admin).andExpect(status().isConflict());
+        // token.audience 使用中
+        call(deleteJson("/admin/api/api-resources/jacky917-api"), admin).andExpect(status().isConflict());
+
+        JsonNode builtIn = json(send(putJson("/admin/api/scopes/profile"), admin, Map.of("displayName", "Profile",
+                "consentRequired", false, "permissions", List.of("shipment:read"))).andExpect(status().isOk()));
+        assertThat(builtIn.get("displayName").asString()).isEqualTo("Profile");
+        assertThat(builtIn.get("consentRequired").asBoolean()).as("內建 scope 只改名稱與說明").isTrue();
+        assertThat(builtIn.get("permissions")).isEmpty();
+
+        call(deleteJson("/admin/api/clients/orders-partner"), admin).andExpect(status().isNoContent());
+        call(deleteJson("/admin/api/scopes/orders.read"), admin).andExpect(status().isNoContent());
+        call(deleteJson("/admin/api/api-resources/orders-api"), admin).andExpect(status().isNoContent());
+        JsonNode audit = json(call(get("/admin/api/audit/admin").param("targetType", "SCOPE")
+                .param("targetId", "orders.read"), admin));
+        assertThat(audit.get("items")).extracting(entry -> entry.get("action").asString())
+                .containsExactly("SCOPE_DELETED", "SCOPE_CREATED");
+    }
+
     // ---- 共用工具 ----
 
     /**
@@ -421,6 +581,23 @@ abstract class AbstractAdminApiIntegrationTest extends AbstractFlowIntegrationTe
     JsonNode json(ResultActions result) throws Exception {
         String body = result.andReturn().getResponse().getContentAsString();
         return body.isEmpty() ? JSON.nullNode() : JSON.readTree(body);
+    }
+
+    static Map<String, Object> partnerClient(String clientId) {
+        return Map.of("clientId", clientId, "name", "Partner App", "description", "Imports your orders",
+                "redirectUris", List.of("https://partner.example.com/callback"), "scopes", List.of("openid", "profile"),
+                "privacyPolicyUrl", "https://partner.example.com/privacy",
+                "logoUrl", "https://partner.example.com/logo.png");
+    }
+
+    /**
+     * 以 client 的 secret 呼叫 token 端點（授權碼無效）：client 驗證通過時 400，失敗時 401。
+     */
+    int tokenEndpointStatus(String clientId, String secret) throws Exception {
+        return mockMvc.perform(post("/oauth2/token").with(httpBasic(clientId, secret))
+                        .param("grant_type", "authorization_code").param("code", "not-a-code")
+                        .param("redirect_uri", "https://partner.example.com/callback"))
+                .andReturn().getResponse().getStatus();
     }
 
     static MockHttpServletRequestBuilder getJson(String path) {
