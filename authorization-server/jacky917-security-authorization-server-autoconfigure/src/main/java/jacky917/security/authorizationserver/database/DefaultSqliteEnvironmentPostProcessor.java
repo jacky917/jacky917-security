@@ -14,10 +14,12 @@ import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Adds the authorization server's database defaults with the lowest
@@ -27,10 +29,12 @@ import java.util.Objects;
  * 一律優先。
  * <ul>
  *   <li>When {@code spring.datasource.url} is not set, the application uses
- *       a SQLite file with the required connection parameters, and its
- *       parent directory is created.
+ *       a SQLite file with the required connection parameters. A missing
+ *       parent directory is created, readable only by the owner on POSIX
+ *       systems.
  *       <br>未設定 {@code spring.datasource.url} 時，使用帶有必要連線參數的
- *       SQLite 檔案，並建立其上層資料夾。</li>
+ *       SQLite 檔案。上層資料夾不存在時會建立；在 POSIX 系統上只有擁有者可以
+ *       進入。</li>
  *   <li>The application's own Flyway (Spring Boot's) baselines at version 0
  *       when it finds the authorization server's tables, so all of the
  *       application's migrations still run. The authorization server's
@@ -61,6 +65,8 @@ public class DefaultSqliteEnvironmentPostProcessor implements EnvironmentPostPro
     public static final String PROPERTY_SOURCE_NAME = "jacky917AuthorizationServerDatabaseDefaults";
 
     private static final String DEFAULT_PATH = "./data/jacky917-auth.db";
+    private static final Set<PosixFilePermission> OWNER_ONLY_FILE = PosixFilePermissions.fromString("rw-------");
+    private static final Set<PosixFilePermission> OWNER_ONLY_DIRECTORY = PosixFilePermissions.fromString("rwx------");
     private static final String DATASOURCE_URL = "spring.datasource.url";
     private static final String DEFAULT_FILE = "jacky917.internal.authorization-server.default-sqlite-file";
 
@@ -85,13 +91,14 @@ public class DefaultSqliteEnvironmentPostProcessor implements EnvironmentPostPro
     }
 
     /**
-     * Restricts the default SQLite file to its owner (POSIX {@code 600})
-     * when the application still uses the default URL, because the file
-     * holds tokens and encrypted keys. Does nothing otherwise.
+     * Restricts the default SQLite file and its {@code -wal} and
+     * {@code -shm} files to their owner (POSIX {@code 600}) when the
+     * application still uses the default URL, because they hold tokens and
+     * encrypted keys. Does nothing otherwise.
      * <p>
-     * 應用程式仍使用預設 URL 時，把預設的 SQLite 檔案限制為只有擁有者可讀寫
-     * （POSIX {@code 600}），因為其中存放 token 與加密後的金鑰；其他情況不做
-     * 任何事。
+     * 應用程式仍使用預設 URL 時，把預設的 SQLite 檔案與其 {@code -wal}、
+     * {@code -shm} 限制為只有擁有者可讀寫（POSIX {@code 600}），因為其中存放
+     * token 與加密後的金鑰；其他情況不做任何事。
      *
      * @param environment  the application environment
      *                     <br>應用程式的環境
@@ -106,25 +113,41 @@ public class DefaultSqliteEnvironmentPostProcessor implements EnvironmentPostPro
             return;
         }
         Path path = Path.of((String) defaults.getProperty(DEFAULT_FILE));
-        if (!FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+        if (!isPosix()) {
             return;
         }
         try {
             if (Files.notExists(path)) {
-                Files.createFile(path, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+                Files.createFile(path, PosixFilePermissions.asFileAttribute(OWNER_ONLY_FILE));
             } else {
-                Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"));
+                Files.setPosixFilePermissions(path, OWNER_ONLY_FILE);
+            }
+            // SQLite 以主檔「建立當下」的權限建立 -wal、-shm；若在此之前已有連線建立側檔，一併收緊
+            for (String suffix : new String[]{"-wal", "-shm"}) {
+                Path side = Path.of(path + suffix);
+                if (Files.exists(side)) {
+                    Files.setPosixFilePermissions(side, OWNER_ONLY_FILE);
+                }
             }
         } catch (IOException ex) {
             throw new UncheckedIOException("Cannot restrict the permissions of " + path.toAbsolutePath(), ex);
         }
     }
 
+    private static boolean isPosix() {
+        return FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
+    }
+
     private static void createParentDirectory(Path path) {
         try {
             Path parent = path.toAbsolutePath().getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
+            if (parent != null && Files.notExists(parent)) {
+                // 由 starter 建立的資料夾只有擁有者可進入：其中的檔案（含 -wal、-shm）不論權限都無法被其他使用者讀取
+                if (isPosix()) {
+                    Files.createDirectories(parent, PosixFilePermissions.asFileAttribute(OWNER_ONLY_DIRECTORY));
+                } else {
+                    Files.createDirectories(parent);
+                }
             }
         } catch (IOException ex) {
             throw new UncheckedIOException("Cannot create the directory of " + path.toAbsolutePath(), ex);

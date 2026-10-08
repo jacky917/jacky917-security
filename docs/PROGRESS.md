@@ -738,3 +738,25 @@
   - **DEC-086**: Starter 的 migration 使用自己的 Flyway 與歷史表，不改變應用程式的 Flyway。
   - **DEC-087**: 登入 Session 失效時結束瀏覽器登入（重新登入），而不是拒絕授權。
   - **DEC-088**: Starter 的頁面一律放在 `/jacky917/` 之下。
+
+---
+## Step 30: 第二次 review 修正（使用者的 8 項審查）
+- **Status**: 🟢 Completed
+- **確認結果**：8 項中 7 項正確；第 3 項（側檔權限）方向正確但嚴重度較低：實測在目前的啟動順序下側檔已是 600，只是順序沒有保證。
+- **修正內容**:
+  1. ES256 時每次簽發都失敗：新增 `ActiveKeyJwtEncoder`，一律以目前金鑰的演算法簽章；授權流程測試另以 ES256 完整執行。
+  2. 發佈流程的授權條款檢查被註解中的字樣騙過：改以 XML 解析（`scripts/has-declared-license.py`），並改寫 TODO 註解。
+  3. 調整權限時一併處理 `-wal`、`-shm`；Starter 建立的資料夾為 `700`。
+  4. Authorization Server 模組 2.1.0 起才發佈（使用者決定）：設 `maven.deploy.skip`，並從 BOM 移除。
+  5. 移除誤提交的空資料庫檔案。
+  6. 新增 `login.providers`；未設定時依名稱排序（測試發現 Spring Boot 預設 repository 的順序不固定）；無法列出時於啟動時警告。
+  7. `Columns`：共用的截斷與欄位長度常數（不切斷 emoji）。
+  8. 同一次 token 請求內重複使用使用者與登入 Session 的查詢（約 8 次降為 5 次）。
+- **Commands Run & Results**:
+  - 以 ES256 執行授權流程：修正前 12／18 失敗（`Failed to select a JWK signing key`），修正後 18／18 通過。
+  - 授權條款檢查：目前的 `pom.xml` 回傳 1（拒絕發佈）；加入 `<licenses>` 後回傳 0。
+  - `mvn help:evaluate -Dexpression=maven.deploy.skip`：AS 兩個模組為 `true`，Resource Server 未設定。
+  - `mvn -B -o clean verify`：**SUCCESS**，242 個測試（Resource Server 47、Authorization Server 177、範例 14、E2E 4）。
+- **Decision Log**:
+  - **DEC-089**: Authorization Server 於 2.1.0 起發佈並加入 BOM（使用者決定）。
+  - **DEC-090**: Token 一律以目前金鑰的演算法簽章（在 encoder 處理，而不是 customizer）。

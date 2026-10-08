@@ -388,17 +388,18 @@
 | 路徑 (Path) | 模組 (Module) | 用途 (Purpose) | 關鍵說明 (Key Notes) |
 |---|---|---|---|
 | `pom.xml` | `parent` | 根 POM（aggregator + 建置設定） | 繼承 `spring-boot-starter-parent:4.1.1`；`${revision}` 統一版本；flatten 產生不含 parent 的發佈 POM；enforcer 依賴方向規則；Lombok 與 configuration-processor 的 annotation processor。 |
-| `jacky917-security-bom/pom.xml` | `bom` | BOM | 列出所有發佈模組的版本；flatten 以 bom 模式發佈。 |
+| `jacky917-security-bom/pom.xml` | `bom` | BOM | 列出所有發佈模組的版本（Authorization Server 於 2.1.0 加入）；flatten 以 bom 模式發佈。 |
 | `relocation/jacky917-security-starter/pom.xml` | `relocation` | 舊座標 relocation | `com.github.jacky917:jacky917-security-starter` → 新的 resource server starter；只在 2.0.x 發佈。 |
 | `.github/workflows/ci.yml` | `ci` | 持續整合 | push 到 `main`／`1.x` 與所有 PR：Java 21、25 建置與測試；文件連結檢查。 |
 | `.github/workflows/publish.yml` | `ci` | 發佈流程 | Release 時檢查 tag 等於 `revision`、已宣告授權條款；整個 reactor 測試通過後才部署到 GitHub Packages。 |
+| `scripts/has-declared-license.py` | `tooling` | 授權條款檢查 | 以 XML 解析確認 `pom.xml` 自行宣告了授權條款（發佈流程使用）。 |
 | `scripts/check-doc-links.py` | `tooling` | 文件檢查 | README 與 docs 的相對連結（含標題與 `<...>` 寫法）、錨點（重複標題依 GitHub 規則加 `-1`）、YAML 範例；有問題即非 0 結束。 |
 
 ### Authorization Server（🚧 第 1 階段開發中）
 
 | 路徑 (Path) | 模組 (Module) | 用途 (Purpose) | 關鍵說明 (Key Notes) |
 |---|---|---|---|
-| `authorization-server/jacky917-security-authorization-server-starter/` | `as-starter` | 登入服務引入的 starter | 聚合 AS autoconfigure。 |
+| `authorization-server/jacky917-security-authorization-server-starter/` | `as-starter` | 登入服務引入的 starter | 聚合 AS autoconfigure；2.1.0 前不發佈（`maven.deploy.skip`）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerAutoConfiguration.java` | `as-autoconfigure` | 自動配置入口 | `enabled=false` 時停用；在 DataSource 之後執行。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerDatabaseConfiguration.java` | `as-autoconfigure` | 資料庫配置（D22） | 選擇並驗證 dialect；SQLite 例外轉換。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../properties/AuthorizationServerProperties.java` | `as-autoconfigure` | 設定屬性 | `jacky917.security.authorization-server.*`；實作 `Validator`，設定錯誤時啟動失敗。 |
@@ -410,6 +411,8 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/SigningKeyService.java` | `as-autoconfigure` | 金鑰服務 | 產生 RS256／ES256 金鑰、快取 1 分鐘、啟動時確認可解密。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/KeyEncryptor.java` | `as-autoconfigure` | 私鑰加密 | AES-256-GCM，`kid` 為附加驗證資料。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/SigningKeyStore.java`、`JdbcSigningKeyStore.java` | `as-autoconfigure` | 金鑰儲存 SPI | 預設 `signing_key` 表，可換成 KMS。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/ActiveKeyJwtEncoder.java` | `as-autoconfigure` | Token 簽章 | 一律以目前金鑰與其演算法簽章（RS256／ES256）。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/.../support/Columns.java` | `as-autoconfigure` | 欄位長度 | 外部來源值的欄位長度上限與截斷（不切斷 emoji）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../keys/RotatingJwkSource.java` | `as-autoconfigure` | JWKS | 公開 `NEXT`、`ACTIVE`、`RETIRING` 的公鑰。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../autoconfigure/AuthorizationServerClientsConfiguration.java` | `as-autoconfigure` | Client 配置 | `PasswordEncoder`（`{bcrypt}`）、`RegisteredClientRepository`、啟動時同步設定中的 client。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/.../client/ClientRegistrationSynchronizer.java` | `as-autoconfigure` | Client 同步 | 依 `clients.*` 建立或更新 client；強制 PKCE、輪換 Refresh Token；secret 以 BCrypt 雜湊。 |
@@ -448,6 +451,8 @@
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/FakeOidcProvider.java` | `as-test` | 測試用 OIDC 提供者 | JDK `HttpServer`：token、JWKS、userinfo；每個測試類別各自啟動與關閉，每次登入以授權碼區分。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../support/MutableClock.java` | `as-test` | 可推移的時鐘 | 測試到期行為（Session 90 天、登入 Session 過期）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../{token,session,federation,authentication,database,support}/*Test.java` | `as-test` | 單元測試 | `Jacky917TokenCustomizer`、`SessionLinkingAuthorizationService`、`LoginSessionValidationFilter`、`PrincipalNormalizer`、`OidcFederatedUserInfoMapper`、`FederatedLoginSuccessHandler`、`SqliteExceptionTranslator`、`DefaultSqliteEnvironmentPostProcessor`、`UuidV7`：Mockito、固定時鐘、每個分支一個案例。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../web/LoginControllerTest.java`、`keys/ActiveKeyJwtEncoderTest.java`、`support/ColumnsTest.java` | `as-test` | 單元測試 | 登入頁的提供者按鈕、以目前金鑰的演算法簽章、截斷。 |
+| `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../flow/SqliteEs256AuthorizationFlowIntegrationTest.java` | `as-test` | 整合測試 | 以 ES256 金鑰完整執行授權流程。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/resources/app-migrations/` | `as-test` | 應用程式自己的 migration | 驗證與 Starter 的 migration 並存（歷史表分開）。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../autoconfigure/AutoConfigurationOrderingTest.java` | `as-test` | 單元測試 | `beforeName` 列出的類別都存在。 |
 | `authorization-server/jacky917-security-authorization-server-autoconfigure/src/test/.../keys/SigningKeyIntegrationTest.java` | `as-test` | 整合測試 | T-KEY-01、T-KEY-03、輪換期間的公開與簽章、ES256。 |

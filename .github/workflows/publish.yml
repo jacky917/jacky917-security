@@ -37,9 +37,10 @@ jobs:
           fi
 
       # 尚未決定授權條款前禁止發佈：沒有自行宣告時，發佈的 POM 會帶有繼承自 spring-boot-starter-parent 的 Apache License 2.0
+      # 以 XML 解析檢查 project/licenses 元素：純文字比對會被註解中的字樣騙過
       - name: Verify license is declared
         run: |
-          if [ ! -f LICENSE ] || ! grep -q '<licenses>' pom.xml; then
+          if [ ! -f LICENSE ] || ! python3 scripts/has-declared-license.py pom.xml; then
             echo "::error::LICENSE file and <licenses> in pom.xml are required before publishing (see the TODO in pom.xml)"
             exit 1
           fi

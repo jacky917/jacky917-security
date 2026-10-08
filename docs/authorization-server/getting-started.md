@@ -46,25 +46,14 @@ flowchart LR
 ### 2.1 依賴
 
 ```xml
-<dependencyManagement>
-    <dependencies>
-        <dependency>
-            <groupId>io.github.jacky917</groupId>
-            <artifactId>jacky917-security-bom</artifactId>
-            <version>2.0.0-SNAPSHOT</version>   <!-- 尚未發佈，需先在本機 mvn install -->
-            <type>pom</type>
-            <scope>import</scope>
-        </dependency>
-    </dependencies>
-</dependencyManagement>
-
-<dependencies>
-    <dependency>
-        <groupId>io.github.jacky917</groupId>
-        <artifactId>jacky917-security-authorization-server-starter</artifactId>
-    </dependency>
-</dependencies>
+<dependency>
+    <groupId>io.github.jacky917</groupId>
+    <artifactId>jacky917-security-authorization-server-starter</artifactId>
+    <version>2.0.0-SNAPSHOT</version>   <!-- 預覽版：只能在本機 mvn install 後使用 -->
+</dependency>
 ```
+
+> Authorization Server 模組**不隨 2.0.0 發佈**，也還不在 `jacky917-security-bom` 中，因此需要明確指定版本。2.1.0 起會發佈並加入 BOM。
 
 Starter 已包含 Spring Web MVC、Spring Authorization Server、OAuth2 Client（第三方登入）、JDBC、Flyway、Thymeleaf（登入頁）與 SQLite 驅動。
 
@@ -137,7 +126,7 @@ public class AuthServerApplication {
 | `token.authorization-code-ttl` | `1m` | 30 秒～5 分鐘 |
 | `token.session-max-age` | `90d` | 登入 Session 的絕對上限；不得短於 Refresh Token |
 | `token.audience` | `jacky917-api` | Access Token 的 `aud` |
-| `keys.algorithm` | `RS256` | 新金鑰的演算法：`RS256`、`ES256` |
+| `keys.algorithm` | `RS256` | 新金鑰的演算法：`RS256`、`ES256`。Token 一律以**目前金鑰**的演算法簽章，修改此設定只影響之後產生的金鑰 |
 | `keys.encryption-key` | **必填** | Base64 的 32 bytes；**不可寫在設定檔中** |
 | `keys.encryption-key-id` | `v1` | 主金鑰的識別碼，更換主金鑰時一併修改 |
 | `password.min-length` | `12` | 8～64 |
@@ -146,6 +135,7 @@ public class AuthServerApplication {
 | `branding.product-name` | `jacky917` | 登入頁上的產品名稱 |
 | `branding.logo-url` | — | `https://` 網址或本伺服器上的路徑 |
 | `branding.primary-color` | `#2563eb` | `#rgb` 或 `#rrggbb` |
+| `login.providers` | — | 登入頁顯示的第三方登入按鈕（registration id，依此順序）。未設定時顯示全部（依名稱排序）；使用無法列出所有 registration 的自訂 repository（例如存在資料庫中）時必須設定 |
 | `clients.<client-id>.*` | — | 見 [§5](#5-clientbff批次程式app) |
 
 ---
@@ -169,7 +159,7 @@ spring:
 | `transaction_mode=IMMEDIATE` | 寫入依序執行（併發刷新時的鎖定） |
 | `date_class=INTEGER` | 時間的儲存格式與 Spring Security 一致 |
 
-連線池的 `auto-commit` 必須維持 `true`（預設值）。SQLite **只支援單一實例**；資料庫檔案中有 token 與加密後的私鑰，請限制檔案權限（新建立的檔案預設為 `600`），備份請用 `VACUUM INTO`，不要直接複製使用中的檔案。
+連線池的 `auto-commit` 必須維持 `true`（預設值）。SQLite **只支援單一實例**；資料庫檔案（以及 `-wal`、`-shm`）中有 token 與加密後的私鑰。使用預設路徑時，Starter 會把自己建立的資料夾設為 `700`、資料庫檔案與 `-wal`、`-shm` 設為 `600`；自訂路徑時請自行限制權限。備份請用 `VACUUM INTO`，不要直接複製使用中的檔案。
 
 ### 4.2 PostgreSQL
 

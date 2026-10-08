@@ -1,9 +1,9 @@
 package jacky917.security.authorizationserver.autoconfigure;
 
 import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import jacky917.security.authorizationserver.keys.ActiveKeyJwtEncoder;
 import jacky917.security.authorizationserver.keys.JdbcSigningKeyStore;
 import jacky917.security.authorizationserver.keys.KeyEncryptor;
 import jacky917.security.authorizationserver.keys.RotatingJwkSource;
@@ -17,7 +17,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
 import java.time.Clock;
 
@@ -89,12 +88,14 @@ class AuthorizationServerKeysConfiguration {
     }
 
     /**
-     * Signs tokens with the active key only. Spring Security's encoder
-     * refuses to sign when several keys match, and several are published
-     * during a rotation.
+     * Signs tokens with the active key only, using its algorithm. Spring
+     * Security's encoder refuses to sign when several keys match (several
+     * are published during a rotation), and Spring Authorization Server
+     * always asks for RS256 for access tokens.
      * <p>
-     * 只以目前的金鑰簽章。輪換期間會公開多把金鑰，而 Spring Security 的
-     * encoder 在多把金鑰符合時會拒絕簽章。
+     * 只以目前的金鑰、並以它的演算法簽章。輪換期間會公開多把金鑰，而 Spring
+     * Security 的 encoder 在多把金鑰符合時會拒絕簽章；Spring Authorization
+     * Server 對 Access Token 也一律要求 RS256。
      *
      * @param keys  the signing key service
      *              <br>簽章金鑰服務
@@ -104,7 +105,7 @@ class AuthorizationServerKeysConfiguration {
     @Bean
     @ConditionalOnMissingBean
     JwtEncoder jwtEncoder(SigningKeyService keys) {
-        return new NimbusJwtEncoder((selector, context) -> selector.select(new JWKSet(keys.activeSigningKey())));
+        return new ActiveKeyJwtEncoder(keys);
     }
 
     @Bean

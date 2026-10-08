@@ -2,6 +2,7 @@ package jacky917.security.authorizationserver.web;
 
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.springframework.context.MessageSource;
 import org.springframework.context.support.ResourceBundleMessageSource;
@@ -18,6 +19,7 @@ import org.springframework.web.servlet.support.RequestContextUtils;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -41,6 +43,7 @@ import java.util.Map;
  * @author Jacky
  * @since 2.1.0
  */
+@Slf4j
 @Controller
 public class LoginController {
 
@@ -75,14 +78,7 @@ public class LoginController {
     public LoginController(AuthorizationServerProperties properties,
                            @Nullable ClientRegistrationRepository clientRegistrations) {
         this.branding = properties.getBranding();
-        List<Provider> found = new ArrayList<>();
-        if (clientRegistrations instanceof Iterable<?> registrations) {
-            for (Object registration : registrations) {
-                ClientRegistration client = (ClientRegistration) registration;
-                found.add(new Provider(client.getRegistrationId(), client.getClientName()));
-            }
-        }
-        this.providers = List.copyOf(found);
+        this.providers = providers(properties.getLogin().getProviders(), clientRegistrations);
         ResourceBundleMessageSource source = new ResourceBundleMessageSource();
         source.setBasename("jacky917/authorization-server-messages");
         source.setDefaultEncoding("UTF-8");
@@ -173,6 +169,35 @@ public class LoginController {
                     "label", messages.getMessage("login.with", new Object[]{provider.name()}, locale)));
         }
         model.addAttribute("providers", buttons);
+    }
+
+    private static List<Provider> providers(List<String> configured, @Nullable ClientRegistrationRepository repository) {
+        List<Provider> found = new ArrayList<>();
+        if (repository == null) {
+            return found;
+        }
+        if (!configured.isEmpty()) {
+            for (String registrationId : configured) {
+                ClientRegistration client = repository.findByRegistrationId(registrationId);
+                if (client == null) {
+                    throw new IllegalStateException("login.providers contains " + registrationId
+                            + ", but there is no client registration with that id");
+                }
+                found.add(new Provider(client.getRegistrationId(), client.getClientName()));
+            }
+        } else if (repository instanceof Iterable<?> registrations) {
+            for (Object registration : registrations) {
+                ClientRegistration client = (ClientRegistration) registration;
+                found.add(new Provider(client.getRegistrationId(), client.getClientName()));
+            }
+            // Spring Boot 預設的 repository 以雜湊表保存，列出的順序不固定：依顯示名稱排序
+            found.sort(Comparator.comparing(Provider::name, String.CASE_INSENSITIVE_ORDER));
+        } else {
+            // 無法列出的 repository（例如存放在資料庫中）：第三方登入仍可使用，但登入頁沒有按鈕
+            log.warn("The ClientRegistrationRepository cannot list its registrations, so the login page shows no "
+                    + "identity provider buttons; set " + AuthorizationServerProperties.PREFIX + ".login.providers");
+        }
+        return List.copyOf(found);
     }
 
     private record Provider(String registrationId, String name) {

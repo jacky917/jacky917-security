@@ -22,6 +22,8 @@ import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -32,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Adds the jacky917 claims to access tokens and ID tokens (detailed design
@@ -132,9 +135,14 @@ public class Jacky917TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodin
 
         String userId = context.getPrincipal().getName();
         Instant now = clock.instant();
-        UserAccount user = users.findById(userId).filter(account -> account.canLogIn(now))
+        // 同一次 token 請求會依序簽發 Access Token 與 ID Token：使用者與登入 Session 只查一次
+        UserAccount user = perRequest("user:" + userId, () -> users.findById(userId))
+                .filter(account -> account.canLogIn(now))
                 .orElseThrow(() -> refuse("user " + userId + " cannot log in"));
-        AuthSession session = loginSession(context.getAuthorization()).filter(found -> found.isUsable(now))
+        OAuth2Authorization authorization = context.getAuthorization();
+        AuthSession session = perRequest("session:" + (authorization == null ? "" : authorization.getId()),
+                () -> loginSession(authorization))
+                .filter(found -> found.isUsable(now))
                 .orElseThrow(() -> refuse("the login session of user " + userId + " is not active"));
 
         if (accessToken) {
@@ -162,6 +170,29 @@ public class Jacky917TokenCustomizer implements OAuth2TokenCustomizer<JwtEncodin
             }
         }
         contribute(context, Optional.of(user));
+    }
+
+    /**
+     * Reuses a lookup within the current HTTP request; outside a request it
+     * always runs the lookup. Nothing is kept across requests, so changes
+     * apply at the next token request (D18).
+     * <p>
+     * 在目前的 HTTP 請求中重複使用查詢結果；沒有請求時一律重新查詢。不會跨請求
+     * 保留，因此變更會在下一次 token 請求生效（D18）。
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> T perRequest(String key, Supplier<T> lookup) {
+        RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
+        if (attributes == null) {
+            return lookup.get();
+        }
+        String name = Jacky917TokenCustomizer.class.getName() + "." + key;
+        Object cached = attributes.getAttribute(name, RequestAttributes.SCOPE_REQUEST);
+        if (cached == null) {
+            cached = lookup.get();
+            attributes.setAttribute(name, cached, RequestAttributes.SCOPE_REQUEST);
+        }
+        return (T) cached;
     }
 
     private Optional<AuthSession> loginSession(OAuth2Authorization authorization) {

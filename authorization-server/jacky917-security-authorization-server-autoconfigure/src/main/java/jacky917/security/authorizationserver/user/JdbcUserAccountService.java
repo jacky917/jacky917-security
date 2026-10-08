@@ -1,6 +1,7 @@
 package jacky917.security.authorizationserver.user;
 
 import jacky917.security.authorizationserver.federation.FederatedUserInfo;
+import jacky917.security.authorizationserver.support.Columns;
 import jacky917.security.authorizationserver.support.UuidV7;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -152,9 +153,9 @@ public class JdbcUserAccountService implements UserAccountService {
                 .param("id", id)
                 .param("email", storeEmail ? info.email() : null)
                 .param("verified", storeEmail)
-                .param("name", truncate(info.displayName(), 128))
-                .param("avatar", truncate(info.avatarUrl(), 1024))
-                .param("locale", truncate(info.locale(), 16))
+                .param("name", Columns.truncate(info.displayName(), Columns.DISPLAY_NAME))
+                .param("avatar", Columns.truncate(info.avatarUrl(), Columns.AVATAR_URL))
+                .param("locale", Columns.truncate(info.locale(), Columns.LOCALE))
                 .param("at", at)
                 .update();
         jdbc.sql("INSERT INTO app_user_role (user_id, role_id, granted_at) SELECT :user, id, :at FROM app_role "
@@ -206,9 +207,6 @@ public class JdbcUserAccountService implements UserAccountService {
         }
     }
 
-    private static String truncate(String value, int maxLength) {
-        return value == null || value.length() <= maxLength ? value : value.substring(0, maxLength);
-    }
 
     private static Instant toInstant(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toInstant();

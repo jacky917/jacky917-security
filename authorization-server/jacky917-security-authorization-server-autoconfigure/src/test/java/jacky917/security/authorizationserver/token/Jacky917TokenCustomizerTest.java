@@ -12,10 +12,12 @@ import jacky917.security.authorizationserver.user.UserAccount;
 import jacky917.security.authorizationserver.user.UserAccountService;
 import jacky917.security.authorizationserver.user.UserStatus;
 import jacky917.security.core.TrustLevel;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -29,6 +31,8 @@ import org.springframework.security.oauth2.server.authorization.OAuth2Authorizat
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -46,6 +50,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -192,6 +198,38 @@ class Jacky917TokenCustomizerTest {
         assertThat(claims.get("profile")).isExactlyInstanceOf(LinkedHashMap.class);
         assertThat(((Map<?, ?>) claims.get("profile")).get("tags")).isExactlyInstanceOf(ArrayList.class);
         assertThat(claims.get("roles")).isExactlyInstanceOf(ArrayList.class);
+    }
+
+    @Nested
+    @DisplayName("查詢次數")
+    class Lookups {
+
+        @AfterEach
+        void clearRequest() {
+            RequestContextHolder.resetRequestAttributes();
+        }
+
+        @Test
+        @DisplayName("同一次 token 請求（Access Token + ID Token）：使用者、連結、Session 各只查一次")
+        void sameRequestReusesLookups() {
+            RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+            customize(OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.AUTHORIZATION_CODE);
+            customizeIdToken(Set.of("openid"));
+            verify(users, times(1)).findById(USER);
+            verify(links, times(1)).findSessionId("authorization-1");
+            verify(sessions, times(1)).find(ASID);
+        }
+
+        @Test
+        @DisplayName("不同請求：每次都重新查詢（權限與狀態的變更在下一次請求生效）")
+        void differentRequestsLookUpAgain() {
+            RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+            customize(OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.AUTHORIZATION_CODE);
+            RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+            customize(OAuth2TokenType.ACCESS_TOKEN, AuthorizationGrantType.AUTHORIZATION_CODE);
+            verify(users, times(2)).findById(USER);
+            verify(sessions, times(2)).find(ASID);
+        }
     }
 
     private Map<String, Object> customize(OAuth2TokenType type, AuthorizationGrantType grantType) {

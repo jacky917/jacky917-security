@@ -1,5 +1,6 @@
 package jacky917.security.authorizationserver.session;
 
+import jacky917.security.authorizationserver.support.Columns;
 import jacky917.security.authorizationserver.support.UuidV7;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.RowMapper;
@@ -29,9 +30,6 @@ public class AuthSessionService {
      * （{@code asid}）的屬性名稱。
      */
     public static final String SESSION_ATTRIBUTE = AuthSessionService.class.getName() + ".ASID";
-
-    private static final int USER_AGENT_MAX_LENGTH = 512;
-    private static final int IP_MAX_LENGTH = 45;
 
     private static final RowMapper<AuthSession> ROW_MAPPER = (rs, rowNum) -> new AuthSession(
             rs.getString("session_id"),
@@ -99,8 +97,8 @@ public class AuthSessionService {
                 .param("method", method.name())
                 .param("idp", idp)
                 .param("amr", amr)
-                .param("ip", truncate(ipAddress, IP_MAX_LENGTH))
-                .param("agent", truncate(userAgent, USER_AGENT_MAX_LENGTH))
+                .param("ip", Columns.truncate(ipAddress, Columns.IP_ADDRESS))
+                .param("agent", Columns.truncate(userAgent, Columns.USER_AGENT))
                 .param("now", Timestamp.from(now))
                 .param("expires", Timestamp.from(now.plus(maxAge)))
                 .update();
@@ -123,7 +121,4 @@ public class AuthSessionService {
                 .param("id", sessionId).query(ROW_MAPPER).optional();
     }
 
-    private static @Nullable String truncate(@Nullable String value, int maxLength) {
-        return value == null || value.length() <= maxLength ? value : value.substring(0, maxLength);
-    }
 }

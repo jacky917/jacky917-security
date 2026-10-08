@@ -29,7 +29,7 @@ class DefaultSqliteEnvironmentPostProcessorTest {
 
     @Test
     @DisplayName("沒有 datasource：預設 SQLite URL 與小連線池；只建立資料夾，不建立檔案")
-    void defaultsToSqlite() {
+    void defaultsToSqlite() throws Exception {
         Path database = dir.resolve("nested/auth.db");
         StandardEnvironment environment = environment(Map.of(
                 "jacky917.security.authorization-server.database.sqlite.path", database.toString()));
@@ -39,6 +39,10 @@ class DefaultSqliteEnvironmentPostProcessorTest {
         assertThat(environment.getProperty("spring.datasource.hikari.maximum-pool-size")).isEqualTo("4");
         assertThat(database.getParent()).isDirectory();
         assertThat(database).doesNotExist();
+        if (!System.getProperty("os.name").startsWith("Windows")) {
+            assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(database.getParent())))
+                    .as("starter 建立的資料夾只有擁有者可進入").isEqualTo("rwx------");
+        }
     }
 
     @Test
@@ -64,7 +68,7 @@ class DefaultSqliteEnvironmentPostProcessorTest {
 
     @Test
     @DisabledOnOs(OS.WINDOWS)
-    @DisplayName("restrictDefaultDatabaseFile：使用預設 URL 時改為 600；URL 被其他設定取代時不動作")
+    @DisplayName("restrictDefaultDatabaseFile：使用預設 URL 時主檔與 -wal、-shm 改為 600；URL 被其他設定取代時不動作")
     void restrictsOnlyTheDefaultFile() throws Exception {
         Path database = dir.resolve("auth.db");
         StandardEnvironment environment = environment(Map.of(
@@ -78,8 +82,15 @@ class DefaultSqliteEnvironmentPostProcessorTest {
         assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(database))).isEqualTo("rw-r--r--");
 
         environment.getPropertySources().remove("test");
+        Path wal = Path.of(database + "-wal");
+        Path shm = Path.of(database + "-shm");
+        Files.createFile(wal, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-r--r--")));
+        Files.createFile(shm, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-r--r--")));
         DefaultSqliteEnvironmentPostProcessor.restrictDefaultDatabaseFile(environment);
-        assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(database))).isEqualTo("rw-------");
+        for (Path file : new Path[]{database, wal, shm}) {
+            assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(file))).as(file.toString())
+                    .isEqualTo("rw-------");
+        }
     }
 
     private static StandardEnvironment environment(Map<String, Object> properties) {

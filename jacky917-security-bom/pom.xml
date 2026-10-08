@@ -39,16 +39,7 @@
                 <artifactId>jacky917-security-resource-server-starter</artifactId>
                 <version>${project.version}</version>
             </dependency>
-            <dependency>
-                <groupId>io.github.jacky917</groupId>
-                <artifactId>jacky917-security-authorization-server-autoconfigure</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.github.jacky917</groupId>
-                <artifactId>jacky917-security-authorization-server-starter</artifactId>
-                <version>${project.version}</version>
-            </dependency>
+            <!-- Authorization Server 模組於 2.1.0 起加入（目前為預覽版，不發佈） -->
         </dependencies>
     </dependencyManagement>
 

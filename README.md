@@ -79,10 +79,10 @@ groupId 皆為 `io.github.jacky917`（1.x 為 `com.github.jacky917`）。
 | `resource-server/` | `jacky917-security-resource-server-starter` | **業務 API 只需引入這一個** | ✅ |
 | | `jacky917-security-resource-server-autoconfigure` | 自動配置：`SecurityFilterChain`、claims → authorities、401/403 JSON、方法級授權 | ✅ |
 | | `jacky917-security-annotations` | `@RequireRole` / `@RequirePerm` / `@RequireScope` / `@RequireAny` / `@RequireAll` | ✅ |
-| `authorization-server/` | `jacky917-security-authorization-server-starter` | **預覽版（2.1.0 preview）**：OAuth 2.0／OIDC 登入服務（帳號密碼、Google），預設 SQLite、可切換 PostgreSQL。見 [使用指南](docs/authorization-server/getting-started.md) | ✅（尚未發佈） |
-| | `jacky917-security-authorization-server-autoconfigure` | 自動配置：資料庫、簽章金鑰、client、使用者、登入頁、Token claim、第三方登入 | ✅（尚未發佈） |
+| `authorization-server/` | `jacky917-security-authorization-server-starter` | **預覽版（2.1.0 preview）**：OAuth 2.0／OIDC 登入服務（帳號密碼、Google），預設 SQLite、可切換 PostgreSQL。見 [使用指南](docs/authorization-server/getting-started.md) | ❌ 2.1.0 起發佈 |
+| | `jacky917-security-authorization-server-autoconfigure` | 自動配置：資料庫、簽章金鑰、client、使用者、登入頁、Token claim、第三方登入 | ❌ 2.1.0 起發佈 |
 | `core/` | `jacky917-security-core` | 與 Authorization Server 共用的 claim 契約（純 Java，無任何依賴） | ✅ |
-| 根目錄 | `jacky917-security-bom` | 統一管理以上模組的版本 | ✅ |
+| 根目錄 | `jacky917-security-bom` | 統一管理以上已發佈模組的版本（Authorization Server 於 2.1.0 加入） | ✅ |
 | `relocation/` | `jacky917-security-starter`（舊座標） | 只在 2.0.x 發佈：把 1.x 的座標導向新的 starter | ✅ |
 | `examples/` | `example-resource-server` | 示範如何使用 Starter（RBAC、AND/OR、資料庫導向 ABAC、Swagger） | ❌ |
 | | `example-authorization-server` | 以 Authorization Server starter 建立的登入服務（示範使用者 alice、bob） | ❌ |

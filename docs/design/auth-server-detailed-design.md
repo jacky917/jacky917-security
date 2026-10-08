@@ -1044,6 +1044,11 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 直接登入後的頁面 | `GET /` | `GET /jacky917/signed-in`（需要登入） | Starter 對應 `/` 會與應用程式自己的首頁衝突而啟動失敗 |
 | 第三方登入的處理錯誤 | — | 任何無法處理的情況（例如沒有對應的 mapper）都登出並回到 `/login?error=federation` | 原本會以 HTTP 500 結束 |
 | 測試方式 | — | 核心類別另有單元測試（Mockito、固定時鐘，每個分支一個案例）；整合測試以可推移的 `Clock` Bean 測試到期（T-REFRESH-06）；假的 OIDC 提供者每個測試類別各自啟動與關閉、每次登入以授權碼區分；E2E 只有登入服務事先決定埠號，其餘以 `server.port=0` 啟動並在埠號衝突時重試 | 隔離、確定性、錯誤路徑都要涵蓋 |
+| 簽章演算法（第二次 review） | Access Token 依 Spring 的預設（RS256） | 以 `ActiveKeyJwtEncoder` 一律改用**目前金鑰**的演算法簽章 | 實測發現：Spring Authorization Server 對 Access Token 一律要求 RS256，設定 ES256 時每次簽發都失敗；改在 encoder 處理，演算法設定改變但舊金鑰仍在使用時也不會失敗。授權流程測試另以 ES256 金鑰完整執行一次 |
+| SQLite 側檔權限（第二次 review） | — | 調整權限時一併處理 `-wal`、`-shm`；Starter 建立的資料夾為 `700` | SQLite 以主檔「建立當下」的權限建立側檔；實測在目前的啟動順序下側檔已是 600，但順序沒有保證 |
+| 發佈範圍（第二次 review） | — | Authorization Server 模組設 `maven.deploy.skip`，並暫不列入 BOM，2.1.0 起發佈（使用者決定） | 2.0.0 只發佈 Resource Server |
+| 登入頁的提供者按鈕（第二次 review） | — | 可設定 `login.providers`；未設定時列出全部並依名稱排序；repository 無法列出時於啟動時警告 | Spring Boot 預設的 repository 以雜湊表保存，順序不固定（測試發現）；自訂 repository 可能無法列出 |
+| 一次換 Token 的查詢次數（第二次 review） | — | 同一次請求內重複使用使用者與登入 Session 的查詢結果（約 8 次降為 5 次） | 只在同一個請求內有效，不影響「每次簽發都從資料庫讀取」（D18） |
 | `/userinfo` | — | SAS 端點的 filter chain 以 `oauth2ResourceServer().jwt()` 驗證 Access Token，`JwtDecoder` 由公開的金鑰建立 | OIDC userinfo 需要 Bearer Token |
 | 停權 client 的同步 | — | 同步時使用未過濾的 repository | 實測發現：透過過濾後的 repository，已停權的 client 看起來不存在，重新啟動時會被重複新增而啟動失敗 |
 

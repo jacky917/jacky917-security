@@ -1,5 +1,6 @@
 package jacky917.security.authorizationserver.federation;
 
+import jacky917.security.authorizationserver.support.Columns;
 import jacky917.security.authorizationserver.support.UuidV7;
 import jacky917.security.authorizationserver.user.UserAccount;
 import jacky917.security.authorizationserver.user.UserAccountService;
@@ -126,8 +127,8 @@ public class FederatedIdentityService {
                 .param("subject", info.subject())
                 .param("email", info.email())
                 .param("verified", info.emailVerified())
-                .param("name", truncate(info.displayName(), 128))
-                .param("avatar", truncate(info.avatarUrl(), 1024))
+                .param("name", Columns.truncate(info.displayName(), Columns.DISPLAY_NAME))
+                .param("avatar", Columns.truncate(info.avatarUrl(), Columns.AVATAR_URL))
                 .param("raw", rawAttributes(info))
                 .param("now", Timestamp.from(now))
                 .update();
@@ -145,8 +146,8 @@ public class FederatedIdentityService {
                         + "WHERE provider = :provider AND provider_subject = :subject")
                 .param("email", info.email())
                 .param("verified", info.emailVerified())
-                .param("name", truncate(info.displayName(), 128))
-                .param("avatar", truncate(info.avatarUrl(), 1024))
+                .param("name", Columns.truncate(info.displayName(), Columns.DISPLAY_NAME))
+                .param("avatar", Columns.truncate(info.avatarUrl(), Columns.AVATAR_URL))
                 .param("raw", rawAttributes(info))
                 .param("now", Timestamp.from(now))
                 .param("provider", info.provider())
@@ -160,7 +161,4 @@ public class FederatedIdentityService {
         return JSON.writeValueAsString(attributes);
     }
 
-    private static String truncate(String value, int maxLength) {
-        return value == null || value.length() <= maxLength ? value : value.substring(0, maxLength);
-    }
 }

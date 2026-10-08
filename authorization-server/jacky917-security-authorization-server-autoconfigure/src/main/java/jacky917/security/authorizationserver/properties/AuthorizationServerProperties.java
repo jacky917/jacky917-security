@@ -121,6 +121,13 @@ public class AuthorizationServerProperties implements Validator {
      */
     private Branding branding = new Branding();
 
+    /**
+     * Login page settings.
+     * <p>
+     * 登入頁設定。
+     */
+    private Login login = new Login();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -331,6 +338,30 @@ public class AuthorizationServerProperties implements Validator {
                 errors.rejectValue("password.bcryptStrength", "range", "password.bcrypt-strength must be between 10 and 14");
             }
         }
+    }
+
+    /**
+     * Login page settings, bound from {@code .login.*}.
+     * <p>
+     * 登入頁設定，綁定自 {@code .login.*}。
+     */
+    @Getter
+    @Setter
+    public static class Login {
+
+        /**
+         * Registration ids of the identity providers shown as buttons, in
+         * this order. When empty, every registration is shown if the
+         * {@code ClientRegistrationRepository} can list them (Spring Boot's
+         * default can); set it when using a repository that cannot, such as
+         * a database-backed one.
+         * <p>
+         * 顯示為按鈕的身分提供者 registration id，依此順序顯示。未設定時，若
+         * {@code ClientRegistrationRepository} 可以列出所有 registration（Spring
+         * Boot 的預設實作可以）則全部顯示；使用無法列出的 repository（例如存放在
+         * 資料庫中的）時請設定此屬性。
+         */
+        private List<String> providers = new ArrayList<>();
     }
 
     /**
