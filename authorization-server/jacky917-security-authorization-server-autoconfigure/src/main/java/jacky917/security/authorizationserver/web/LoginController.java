@@ -1,5 +1,6 @@
 package jacky917.security.authorizationserver.web;
 
+import jacky917.security.authorizationserver.account.AccountMailer;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.CacheControl;
@@ -51,11 +52,12 @@ public class LoginController {
     public static final String SIGNED_IN_PATH = "/jacky917/signed-in";
 
     private static final String[] PAGE_KEYS = {"login.title", "login.username", "login.password", "login.submit",
-            "login.or", "signed-in.title", "signed-in.message", "signed-in.account"};
+            "login.or", "signed-in.title", "signed-in.message", "signed-in.account", "login.forgot"};
 
     private final AuthorizationServerProperties.Branding branding;
     private final PageSupport page;
     private final IdentityProviders providers;
+    private final AccountMailer mailer;
 
     /**
      * Creates the controller.
@@ -66,10 +68,15 @@ public class LoginController {
      *                             <br>Authorization Server 設定屬性
      * @param providers            the identity providers shown as buttons
      *                             <br>顯示為按鈕的身分提供者
+     * @param mailer               decides whether the forgotten password link
+     *                             is shown
+     *                             <br>決定是否顯示忘記密碼的連結
      */
-    public LoginController(AuthorizationServerProperties properties, IdentityProviders providers) {
+    public LoginController(AuthorizationServerProperties properties, IdentityProviders providers,
+                           AccountMailer mailer) {
         this.branding = properties.getBranding();
         this.page = new PageSupport(branding);
+        this.mailer = mailer;
         this.providers = providers;
     }
 
@@ -165,5 +172,6 @@ public class LoginController {
                     "label", page.message("login.with", new Object[]{provider.name()}, locale)));
         }
         model.addAttribute("providers", buttons);
+        model.addAttribute("forgotPassword", mailer.isAvailable());
     }
 }

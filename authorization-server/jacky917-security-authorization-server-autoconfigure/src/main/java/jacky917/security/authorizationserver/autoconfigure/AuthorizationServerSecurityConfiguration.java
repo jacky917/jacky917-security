@@ -4,6 +4,7 @@ import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import jacky917.security.authorizationserver.account.AccountLinks;
 import jacky917.security.authorizationserver.account.AccountMailer;
+import jacky917.security.authorizationserver.account.ActionTokenService;
 import jacky917.security.authorizationserver.account.PasswordChangeRequiredFilter;
 import jacky917.security.authorizationserver.account.PasswordChangeService;
 import jacky917.security.authorizationserver.audit.JdbcLoginAuditListener;
@@ -42,6 +43,7 @@ import jacky917.security.authorizationserver.federation.PendingLinkService;
 import jacky917.security.authorizationserver.user.PasswordPolicy;
 import jacky917.security.authorizationserver.web.AccountController;
 import jacky917.security.authorizationserver.web.AccountPasswordController;
+import jacky917.security.authorizationserver.web.PasswordResetController;
 import jacky917.security.authorizationserver.web.AccountLinkController;
 import jacky917.security.authorizationserver.web.IdentityProviders;
 import jacky917.security.authorizationserver.web.LoginController;
@@ -440,8 +442,19 @@ class AuthorizationServerSecurityConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    LoginController jacky917LoginController(AuthorizationServerProperties properties, IdentityProviders providers) {
-        return new LoginController(properties, providers);
+    LoginController jacky917LoginController(AuthorizationServerProperties properties, IdentityProviders providers,
+                                            AccountMailer mailer) {
+        return new LoginController(properties, providers, mailer);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    PasswordResetController jacky917PasswordResetController(AuthorizationServerProperties properties,
+                                                            UserAccountService users, ActionTokenService tokens,
+                                                            PasswordChangeService passwords,
+                                                            PasswordPolicy passwordPolicy, AccountMailer mailer,
+                                                            AccountLinks links) {
+        return new PasswordResetController(properties, users, tokens, passwords, passwordPolicy, mailer, links);
     }
 
     @Bean

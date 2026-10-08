@@ -117,7 +117,87 @@ abstract class AbstractAccountSelfServiceIntegrationTest extends AbstractFlowInt
                 .query(Boolean.class).single()).isFalse();
     }
 
+    // ---- 工作 23：忘記密碼 ----
+
+    @Test
+    @DisplayName("忘記密碼：只對已驗證的 Email 寄信；未驗證、不存在的 Email 不寄；畫面相同；登入頁有連結（T-ACCT-03）")
+    void sendsResetLinksOnlyToVerifiedEmails() throws Exception {
+        createUserWithEmail("forgetful", "forgetful@example.com");
+        users.createUser(new NewUser("unverified-forgetful", "unverified@example.com", false, PASSWORD, null, Set.of()));
+        assertThat(page(new MockHttpSession(), "/login")).contains("/jacky917/password/forgot").contains("忘記密碼");
+
+        String verified = forgot("forgetful@example.com");
+        String unverified = forgot("unverified@example.com");
+        String unknown = forgot("nobody@example.com");
+        assertThat(verified).contains("如果有帳號使用此 Email");
+        assertThat(unverified).isEqualTo(verified.replace("forgetful@example.com", "unverified@example.com"));
+        assertThat(unknown).contains("如果有帳號使用此 Email");
+        assertThat(mailer.sent).singleElement().satisfies(mail -> {
+            assertThat(mail.type()).isEqualTo(AccountMail.Type.PASSWORD_RESET);
+            assertThat(mail.to()).isEqualTo("forgetful@example.com");
+            assertThat(mail.link()).startsWith("http://localhost:9000/jacky917/password/reset?token=");
+        });
+    }
+
+    @Test
+    @DisplayName("重設密碼：開啟連結不使用 token；設定後撤銷所有 Session、清除暫時鎖定、舊密碼失效；token 只能用一次（T-ACCT-04）")
+    void resetsThePassword() throws Exception {
+        String userId = createUserWithEmail("resetter", "resetter@example.com");
+        LoggedIn device = logInAndExchangeCode("resetter");
+        jdbc.sql("UPDATE app_user SET locked_until = :until, failed_login_count = 4 WHERE id = :id")
+                .param("until", java.sql.Timestamp.from(clock.instant().plusSeconds(600))).param("id", userId).update();
+        forgot("resetter@example.com");
+        String token = tokenOf(mailer.sent.get(0));
+
+        assertThat(page(new MockHttpSession(), "/jacky917/password/reset?token=" + token)).contains("name=\"token\"");
+        assertThat(page(new MockHttpSession(), "/jacky917/password/reset?token=" + token)).as("開啟兩次仍有效")
+                .contains("name=\"newPassword\"");
+        assertThat(reset(token, NEW_PASSWORD, NEW_PASSWORD + "!")).contains("兩次輸入的新密碼不同");
+        assertThat(reset(token, "short", "short")).contains("不符合下方的規則");
+        assertThat(reset(token, NEW_PASSWORD, NEW_PASSWORD)).contains("密碼已設定");
+
+        assertSession(device.asid(), "REVOKED", "PASSWORD_CHANGED");
+        assertThat(reset(token, NEW_PASSWORD + "2", NEW_PASSWORD + "2")).as("只能使用一次").contains("此連結已失效");
+        mockMvc.perform(post("/login").session(new MockHttpSession()).with(csrf()).param("username", "resetter")
+                .param("password", PASSWORD)).andExpect(header().string(HttpHeaders.LOCATION, "/login?error"));
+        mockMvc.perform(post("/login").session(new MockHttpSession()).with(csrf()).param("username", "resetter")
+                .param("password", NEW_PASSWORD)).andExpect(header().string(HttpHeaders.LOCATION, "/jacky917/signed-in"));
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM login_audit WHERE user_id = :user AND event_type = 'PASSWORD_RESET'")
+                .param("user", userId).query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("重設連結：過期後失效；60 秒內重複要求只寄一封（T-ACCT-04、T-ACCT-07）")
+    void resetLinksExpireAndAreThrottled() throws Exception {
+        createUserWithEmail("throttled", "throttled@example.com");
+        forgot("throttled@example.com");
+        forgot("throttled@example.com");
+        assertThat(mailer.sent).hasSize(1);
+        String token = tokenOf(mailer.sent.get(0));
+        clock.advance(java.time.Duration.ofMinutes(61));
+        assertThat(page(new MockHttpSession(), "/jacky917/password/reset?token=" + token)).contains("此連結已失效");
+        forgot("throttled@example.com");
+        assertThat(mailer.sent).as("間隔超過 60 秒可以再寄").hasSize(2);
+    }
+
     // ---- 共用工具 ----
+
+    String forgot(String email) throws Exception {
+        return mockMvc.perform(post("/jacky917/password/forgot").session(new MockHttpSession()).with(csrf())
+                        .header(HttpHeaders.ACCEPT_LANGUAGE, "zh-TW").param("email", email))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    String reset(String token, String newPassword, String confirm) throws Exception {
+        return mockMvc.perform(post("/jacky917/password/reset").session(new MockHttpSession()).with(csrf())
+                        .header(HttpHeaders.ACCEPT_LANGUAGE, "zh-TW").param("token", token)
+                        .param("newPassword", newPassword).param("confirmPassword", confirm))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    static String tokenOf(AccountMail mail) {
+        return UriComponentsBuilder.fromUriString(mail.link()).build().getQueryParams().getFirst("token");
+    }
 
     String createUserWithEmail(String username, String email) {
         return users.createUser(new NewUser(username, email, true, PASSWORD, null, Set.of())).id();

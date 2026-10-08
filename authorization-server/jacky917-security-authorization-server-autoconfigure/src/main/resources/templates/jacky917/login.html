@@ -24,6 +24,8 @@
         <input id="password" name="password" type="password" autocomplete="current-password" required>
         <button type="submit" th:text="${text['login.submit']}">Sign in</button>
     </form>
+    <p th:if="${forgotPassword}"><a class="link" th:href="@{/jacky917/password/forgot}"
+                                    th:text="${text['login.forgot']}">Forgot password?</a></p>
     <div th:unless="${#lists.isEmpty(providers)}" class="providers">
         <p class="divider" th:text="${text['login.or']}">or</p>
         <a th:each="provider : ${providers}" class="provider" th:href="@{${provider.url}}"

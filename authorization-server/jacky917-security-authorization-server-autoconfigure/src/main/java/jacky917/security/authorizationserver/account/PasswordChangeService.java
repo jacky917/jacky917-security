@@ -144,7 +144,7 @@ public class PasswordChangeService {
             lockout.recordFailure(userId, now, request);
             return Outcome.WRONG_PASSWORD;
         }
-        Outcome invalid = check(newPassword, user);
+        Outcome invalid = validate(user, newPassword);
         if (invalid != null) {
             return invalid;
         }
@@ -171,7 +171,7 @@ public class PasswordChangeService {
      *         <br>{@code CHANGED}，或密碼被拒絕的原因
      */
     public Outcome reset(UserAccount user, String newPassword, HttpServletRequest request) {
-        Outcome invalid = check(newPassword, user);
+        Outcome invalid = validate(user, newPassword);
         if (invalid != null) {
             return invalid;
         }
@@ -179,7 +179,22 @@ public class PasswordChangeService {
         return Outcome.CHANGED;
     }
 
-    private @Nullable Outcome check(String newPassword, UserAccount user) {
+    /**
+     * Checks a new password without setting it: it must follow the policy
+     * and differ from the current one.
+     * <p>
+     * 檢查新密碼但不設定：必須符合政策，且與目前的密碼不同。
+     *
+     * @param user         the user
+     *                     <br>使用者
+     * @param newPassword  the new password
+     *                     <br>新密碼
+     * @return {@link Outcome#WEAK_PASSWORD}, {@link Outcome#SAME_PASSWORD},
+     *         or {@code null} if the password is acceptable
+     *         <br>{@code WEAK_PASSWORD}、{@code SAME_PASSWORD}；可接受時為
+     *         {@code null}
+     */
+    public @Nullable Outcome validate(UserAccount user, String newPassword) {
         try {
             passwordPolicy.check(newPassword);
         } catch (IllegalArgumentException ex) {

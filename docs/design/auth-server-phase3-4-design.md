@@ -378,7 +378,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 20 | 角色、權限：`RoleAdminService`、`RoleAdminController`；使用指南 §9 管理 API | ✅ |
 | 21 | 寄信 SPI：`AccountMailer`（`SpringAccountMailer`、`LoggingAccountMailer`、`UnavailableAccountMailer`）、`AccountMailContent`、`ActionTokenService`、`AccountLinks`、`account.*` 屬性 | ✅ |
 | 22 | 變更密碼、強制變更：`PasswordChangeService`、`AccountPasswordController`、`PasswordChangeRequiredFilter`（兩條 filter chain）、`bootstrap-admin.password-change-required` | ✅ |
-| 23 | 忘記密碼 | |
+| 23 | 忘記密碼：`PasswordResetController`（`/jacky917/password/forgot`、`/jacky917/password/reset`）、登入頁的連結、IP 限流涵蓋這些表單 | ✅ |
 | 24 | 註冊與 Email 驗證 | |
 | 25 | 第三方 client、scope、API resource 管理 | |
 | 26 | 同意畫面、撤回授權 | |

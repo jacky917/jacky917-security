@@ -1034,3 +1034,14 @@
 - **Decision Log**:
   - **DEC-114**: 密碼變更一律以明確撤銷登入 Session 處理，刷新時不再比對 `password_changed_at`，讓使用者自行變更時可以保留目前的裝置。
 
+---
+## Step 49: Authorization Server——工作 23（忘記密碼與重設密碼）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `PasswordResetController`：`GET/POST /jacky917/password/forgot`（只對可登入帳號的已驗證 Email 寄出連結，畫面一律相同）、`GET/POST /jacky917/password/reset`（開啟連結只顯示表單；送出時才使用 token；設定後撤銷所有登入 Session、清除暫時鎖定、稽核 `PASSWORD_RESET`、寄出通知）。只有可以寄信時才提供（否則 404）。
+  - 登入頁在可以寄信時顯示「忘記密碼？」。
+  - `LoginAttemptGuard` 的 IP 限流也涵蓋忘記密碼、重設密碼與註冊的 POST。
+  - `PasswordChangeService#validate`：設定前檢查新密碼。
+- **Commands Run & Results**:
+  - `AccountSelfServiceIntegrationTest` 新增 3 個（兩種資料庫）：只對已驗證的 Email 寄信且畫面相同（T-ACCT-03）、重設流程與 token 只能用一次（T-ACCT-04）、連結過期與 60 秒內只寄一封（T-ACCT-07）。
+
