@@ -14,11 +14,6 @@
     <name>jacky917-security-authorization-server-starter</name>
     <description>Authorization Server starter for jacky917-security: OAuth 2.0 / OIDC login service backed by SQLite or PostgreSQL</description>
 
-    <!-- 2.1.0 起才發佈（預覽版）：2.0.0 只發佈 Resource Server；屆時移除此設定並把模組加回 BOM -->
-    <properties>
-        <maven.deploy.skip>true</maven.deploy.skip>
-    </properties>
-
     <dependencies>
         <dependency>
             <groupId>io.github.jacky917</groupId>

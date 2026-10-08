@@ -4,9 +4,9 @@
 
 ## [Unreleased]
 
-### 新增：Authorization Server starter（預覽）
+### 新增：Authorization Server starter
 
-`jacky917-security-authorization-server-starter`：OAuth 2.0／OpenID Connect 登入服務，見 [使用指南](docs/authorization-server/getting-started.md)。
+`jacky917-security-authorization-server-starter` 與 `jacky917-security-authorization-server-autoconfigure`：OAuth 2.0／OpenID Connect 登入服務，見 [使用指南](docs/authorization-server/getting-started.md)。兩個模組開始發佈，並加入 `jacky917-security-bom`。
 
 - 帳號密碼與 Google、GitHub、LINE 登入；授權碼 + PKCE、`client_credentials`；Token 帶 `asid`、角色與權限（每次簽發都從資料庫讀取）。
 - Refresh Token 每次輪換；寬限期後重用即撤銷整個登入 Session。
@@ -16,6 +16,10 @@
 - 簽章金鑰（RS256／ES256，AES-256-GCM 加密保存）自動輪換；過期資料定期清理；多實例時以資料庫鎖確保排程只執行一次。
 - 預設 SQLite，只改設定即可切換 PostgreSQL；多實例搭配 Spring Session JDBC。
 - 選用的 Micrometer metrics 與 `signingKey` 健康檢查。
+- 管理 API（`/admin/api/**`，以 `as:*` 權限授權）：使用者、角色與權限、client、scope、API resource、登入與管理操作的稽核查詢；每個寫入操作都寫入 `admin_audit_log`。
+- 帳號自助功能：變更密碼（其他裝置登出）、第一位管理員首次登入強制變更密碼、忘記密碼、以 Email 註冊並驗證（預設關閉）。寄信使用 `spring-boot-starter-mail`，或提供自己的 `AccountMailer`。
+- 第三方應用程式：設定檔或管理 API 建立、同意畫面、帳號頁撤回授權；`token.audience-strategy: per-scope` 以 scope 所屬的 API resource 作為 `aud`。
+- 兩步驟驗證（TOTP）：帳號頁啟用、復原碼、密碼與第三方登入都要求驗證碼、`mfa.required-roles` 強制特定角色使用、管理員重設。
 
 ## [2.0.0] - 2026-10-08
 

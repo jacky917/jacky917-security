@@ -384,7 +384,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 26 | 同意畫面、撤回授權：`ConsentController`（`/oauth2/consent`）、`AuditingAuthorizationConsentService`、`ScopeDescriptions`、`AuthorizedApplicationService`、帳號頁「已授權的應用程式」 | ✅ |
 | 27 | `aud` 依 scope 決定：`token.audience-strategy`（`shared`／`per-scope`）、`ScopeAudienceResolver`；使用指南 §3、§7 | ✅ |
 | 28 | 兩步驟驗證：migration V1_1_1、`Totp`、`MfaService`、`MfaLoginFlow`（密碼、第三方、帳號連結三個入口）、`MfaChallengeController`、`AccountMfaController`、`QrCodes`、`MfaAdminController`；使用指南「兩步驟驗證」 | ✅ |
-| 29 | 發佈準備 | |
+| 29 | 發佈準備（不發佈）：AS 模組移除 `maven.deploy.skip` 並加入 BOM；使用指南、README、CHANGELOG、範例、E2E 指南更新 | ✅ |
 
 ### 12.2 與設計不同的地方
 

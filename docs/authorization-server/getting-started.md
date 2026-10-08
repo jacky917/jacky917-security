@@ -1,9 +1,9 @@
-# Authorization Server 使用指南（2.1.0 preview）
+# Authorization Server 使用指南（2.1.0）
 
-`jacky917-security-authorization-server-starter` 把 Spring Authorization Server 組裝成一個可以直接使用的登入服務：帳號密碼與 Google、GitHub、LINE 登入、OAuth 2.0／OpenID Connect、Refresh Token 重用偵測、登出與帳號頁、登入保護與稽核、簽章金鑰的自動輪換，資料預設存在 SQLite，只改設定就能切換到 PostgreSQL（可多實例）。
+`jacky917-security-authorization-server-starter` 把 Spring Authorization Server 組裝成一個可以直接使用的登入服務：帳號密碼與 Google、GitHub、LINE 登入、OAuth 2.0／OpenID Connect、Refresh Token 重用偵測、登出與帳號頁、變更與重設密碼、註冊與 Email 驗證、兩步驟驗證、第三方應用程式與同意畫面、管理 API、登入保護與稽核、簽章金鑰的自動輪換，資料預設存在 SQLite，只改設定就能切換到 PostgreSQL（可多實例）。
 
 > [!IMPORTANT]
-> **預覽版（第 1、2 階段已實作，尚未發佈）**：不隨 2.0.0 發佈（2.1.0 起發佈到 GitHub Packages）。目前請 clone 本 repo 後執行 `mvn -DskipTests install` 在本機使用。上線前請先讀 [§10 目前的限制](#10-目前的限制)。
+> 2.1.0 起發佈到 GitHub Packages（引用方式見 [GitHub Packages](../guides/github-packages.md)），並由 `jacky917-security-bom` 管理版本。上線前請先讀 [§10 目前的限制](#10-目前的限制) 與 [§11 上線檢查清單](#11-上線檢查清單)。
 
 ## 目錄
 
@@ -47,16 +47,27 @@ flowchart LR
 ### 2.1 依賴
 
 ```xml
-<dependency>
-    <groupId>io.github.jacky917</groupId>
-    <artifactId>jacky917-security-authorization-server-starter</artifactId>
-    <version>2.0.0</version>   <!-- 預覽版：不在 GitHub Packages 上，只能在本機 mvn install 後使用 -->
-</dependency>
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.github.jacky917</groupId>
+            <artifactId>jacky917-security-bom</artifactId>
+            <version>2.1.0</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
+<dependencies>
+    <dependency>
+        <groupId>io.github.jacky917</groupId>
+        <artifactId>jacky917-security-authorization-server-starter</artifactId>
+    </dependency>
+</dependencies>
 ```
 
-> Authorization Server 模組**不隨 2.0.0 發佈**，也還不在 `jacky917-security-bom` 中，因此需要明確指定版本。2.1.0 起會發佈並加入 BOM。
-
-Starter 已包含 Spring Web MVC、Spring Authorization Server、OAuth2 Client（第三方登入）、JDBC、Flyway、Thymeleaf（登入頁）與 SQLite 驅動。
+Starter 已包含 Spring Web MVC、Spring Authorization Server、OAuth2 Client（第三方登入）、JDBC、Flyway、Thymeleaf（登入頁）、SQLite 驅動與 ZXing（兩步驟驗證的 QR code）。寄信（忘記密碼、註冊）另外加入 `spring-boot-starter-mail`，見 [帳號自助功能](#帳號自助功能)。
 
 ### 2.2 最小設定
 

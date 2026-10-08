@@ -1106,3 +1106,11 @@
 - **Commands Run & Results**:
   - `TotpTest`：RFC 6238 附錄 B 的測試向量、Base32、時間步容許範圍與重複使用、QR code。
   - 新增 `MfaIntegrationTest`（兩種資料庫各 5 個）：啟用後要求驗證碼、第二步之前未登入、`amr`（T-MFA-01、06）；驗證碼與復原碼只能用一次、停用（T-MFA-02）；錯誤 5 次（T-MFA-03）；角色要求時登入中啟用（T-MFA-05）；管理員重設。`FederatedLoginSuccessHandlerTest`：第三方登入交給兩步驟驗證（T-MFA-04）。
+
+## Step 56: Authorization Server——工作 29（發佈準備，不發佈），群組 E
+- **Status**: 🟢 Completed（尚未發佈）
+- **變更**:
+  - `jacky917-security-authorization-server-autoconfigure`、`-starter` 移除 `maven.deploy.skip`，加入 `jacky917-security-bom`（已確認 flatten 後的 BOM 含兩個模組）。
+  - 使用指南移除「預覽版」，依賴改為以 BOM 引用；README 模組表、CHANGELOG（Unreleased）列出第 3、4 階段的功能；GitHub Packages 指南與專案結構文件更新。
+  - 範例登入服務：`mfa.required-roles: AS_ADMIN`、開啟註冊並以 `account.mail.log-links` 示範寄信；E2E 指南說明如何試用帳號頁、忘記密碼、註冊與兩步驟驗證。
+- **未做**: 實際發佈（版本號仍為 `2.1.0-SNAPSHOT`）。

@@ -143,9 +143,7 @@
         </dependencies>
     </dependencyManagement>
 
-    <!-- 2.1.0 起才發佈（預覽版）：2.0.0 只發佈 Resource Server；屆時移除 maven.deploy.skip 並把模組加回 BOM -->
     <properties>
-        <maven.deploy.skip>true</maven.deploy.skip>
         <embedded-postgres.version>2.2.2</embedded-postgres.version>
         <embedded-postgres-binaries.version>16.15.0</embedded-postgres-binaries.version>
     </properties>
