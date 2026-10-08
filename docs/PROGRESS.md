@@ -1009,3 +1009,15 @@
 - **Commands Run & Results**:
   - `AdminApiIntegrationTest` 新增 5 個（兩種資料庫）：業務角色與權限出現在使用者的 token 中、代碼驗證、內建保護、刪除規則、更新權限清單與 403。
 
+---
+## Step 47: Authorization Server——工作 21（寄信 SPI）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `AccountMailer` SPI 與三種實作：`SpringAccountMailer`（應用程式有 `JavaMailSender` 時，必須設定 `account.mail.from`）、`LoggingAccountMailer`（`account.mail.log-links=true`，僅限開發，建立時警告）、`UnavailableAccountMailer`（沒有寄信方式）。應用程式自己的 Bean 優先。
+  - `AccountMailContent`：信件主旨與內文取自 starter 的訊息檔（`mail.*`，英文與繁中），可覆寫。
+  - `ActionTokenService`：`EMAIL_VERIFY`、`PASSWORD_RESET` 的一次性 token（只存 SHA-256、新的取代舊的、60 秒內不重複發出、只能使用一次）。
+  - `AccountLinks`：以 `issuer` 產生信件中的連結（不依賴請求的 Host 標頭）。
+  - 屬性 `account.registration.enabled`、`account.email-verification-ttl`、`account.password-reset-ttl`、`account.mail.from`、`account.mail.log-links`；`spring-boot-starter-mail` 為選用依賴。
+- **Commands Run & Results**:
+  - 新增 `AccountMailTest`（5 個）、`AccountConfigurationIntegrationTest`（5 個，token 的部分在 SQLite 與 PostgreSQL 各執行一次）。
+

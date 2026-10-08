@@ -376,7 +376,7 @@ TOTP 演算法另以 RFC 6238 附錄 B 的測試向量驗證。
 | 18 | Admin API 基礎：Order 2 filter chain（`AdminJwtAuthenticationConverter`）、Problem Details、分頁、`AdminAuditService`、稽核查詢端點；migration V1_1_0 | ✅ |
 | 19 | 使用者管理：`UserAdminService`、`UserAdminController`（搜尋、建立、更新、刪除、解鎖、設定密碼、角色指派、登入 Session） | ✅ |
 | 20 | 角色、權限：`RoleAdminService`、`RoleAdminController`；使用指南 §9 管理 API | ✅ |
-| 21 | 寄信 SPI | |
+| 21 | 寄信 SPI：`AccountMailer`（`SpringAccountMailer`、`LoggingAccountMailer`、`UnavailableAccountMailer`）、`AccountMailContent`、`ActionTokenService`、`AccountLinks`、`account.*` 屬性 | ✅ |
 | 22 | 變更密碼、強制變更 | |
 | 23 | 忘記密碼 | |
 | 24 | 註冊與 Email 驗證 | |

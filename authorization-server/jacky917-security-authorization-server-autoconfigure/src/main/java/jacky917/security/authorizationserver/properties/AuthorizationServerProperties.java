@@ -164,6 +164,14 @@ public class AuthorizationServerProperties implements Validator {
      */
     private AdminApi adminApi = new AdminApi();
 
+    /**
+     * Account self-service: registration, email verification and password
+     * reset.
+     * <p>
+     * 帳號自助功能：註冊、Email 驗證與重設密碼。
+     */
+    private Account account = new Account();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -183,6 +191,7 @@ public class AuthorizationServerProperties implements Validator {
         properties.getLoginProtection().validate(errors);
         properties.getCleanup().validate(errors);
         properties.getAdminApi().validate(properties.getToken(), errors);
+        properties.getAccount().validate(errors);
         properties.getBootstrapAdmin().validate(errors);
         properties.getBranding().validate(errors);
         properties.getClients().forEach((clientId, client) -> client.validate(clientId, errors));
@@ -230,6 +239,101 @@ public class AuthorizationServerProperties implements Validator {
     private static void rejectOutOfRange(Errors errors, String field, Duration value, Duration min, Duration max) {
         if (value == null || value.compareTo(min) < 0 || value.compareTo(max) > 0) {
             errors.rejectValue(field, "range", field + " must be between " + min + " and " + max);
+        }
+    }
+
+    /**
+     * Account self-service, bound from {@code .account.*} (phase 3 and 4
+     * design §5).
+     * <p>
+     * 帳號自助功能，綁定自 {@code .account.*}（第 3、4 階段設計 §5）。
+     */
+    @Getter
+    @Setter
+    public static class Account {
+
+        /**
+         * Registration.
+         * <p>
+         * 註冊。
+         */
+        private Registration registration = new Registration();
+
+        /**
+         * How long an email verification link works, between 1 hour and 7
+         * days.
+         * <p>
+         * Email 驗證連結的有效期，1 小時～7 天。
+         */
+        private Duration emailVerificationTtl = Duration.ofHours(24);
+
+        /**
+         * How long a password reset link works, between 10 minutes and 24
+         * hours.
+         * <p>
+         * 重設密碼連結的有效期，10 分鐘～24 小時。
+         */
+        private Duration passwordResetTtl = Duration.ofHours(1);
+
+        /**
+         * Sending the account mails.
+         * <p>
+         * 寄出帳號信件。
+         */
+        private Mail mail = new Mail();
+
+        void validate(Errors errors) {
+            rejectOutOfRange(errors, "account.emailVerificationTtl", emailVerificationTtl, Duration.ofHours(1),
+                    Duration.ofDays(7));
+            rejectOutOfRange(errors, "account.passwordResetTtl", passwordResetTtl, Duration.ofMinutes(10),
+                    Duration.ofHours(24));
+        }
+
+        /**
+         * Registration, bound from {@code .account.registration.*}.
+         * <p>
+         * 註冊，綁定自 {@code .account.registration.*}。
+         */
+        @Getter
+        @Setter
+        public static class Registration {
+
+            /**
+             * Whether anyone can create an account with an email address.
+             * It needs a way to send mails; the application fails to start
+             * without one.
+             * <p>
+             * 是否開放任何人以 Email 建立帳號。需要寄信方式；沒有時應用程式
+             * 啟動失敗。
+             */
+            private boolean enabled = false;
+        }
+
+        /**
+         * Sending account mails, bound from {@code .account.mail.*}.
+         * <p>
+         * 寄出帳號信件，綁定自 {@code .account.mail.*}。
+         */
+        @Getter
+        @Setter
+        public static class Mail {
+
+            /**
+             * The sender address; required when the application has a
+             * {@code JavaMailSender}.
+             * <p>
+             * 寄件者地址；應用程式有 {@code JavaMailSender} 時必填。
+             */
+            private String from;
+
+            /**
+             * Writes the mails, with their links, to the log when there is
+             * no {@code JavaMailSender}. For development only.
+             * <p>
+             * 沒有 {@code JavaMailSender} 時，把信件（包含連結）寫入日誌。
+             * 僅限開發使用。
+             */
+            private boolean logLinks = false;
         }
     }
 

@@ -41,6 +41,7 @@ import org.springframework.context.annotation.Import;
 @Import({AuthorizationServerDatabaseConfiguration.class, AuthorizationServerKeysConfiguration.class,
         AuthorizationServerClientsConfiguration.class, AuthorizationServerUsersConfiguration.class,
         AuthorizationServerSecurityConfiguration.class, AuthorizationServerAdminApiConfiguration.class,
+        AuthorizationServerAccountConfiguration.class,
         AuthorizationServerMaintenanceConfiguration.class})
 public class AuthorizationServerAutoConfiguration {
 }

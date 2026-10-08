@@ -50,6 +50,12 @@
             <artifactId>spring-session-core</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- 應用程式加入 spring-boot-starter-mail 並設定 spring.mail.* 時，以它寄出帳號相關的信件 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+            <optional>true</optional>
+        </dependency>
         <!-- 應用程式有 Micrometer、Actuator 時才提供 metrics 與健康檢查 -->
         <dependency>
             <groupId>io.micrometer</groupId>
