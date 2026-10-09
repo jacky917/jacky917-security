@@ -15,7 +15,12 @@
         <h1 th:text="${text['account.title']}">Your account</h1>
     </header>
     <p th:if="${error}" class="error" role="alert" th:text="${error}">The account could not be linked.</p>
+    <p th:if="${notice}" class="notice" role="status" th:text="${notice}">Your password was changed.</p>
     <p th:text="${userName}">alice</p>
+    <p th:if="${hasPassword}"><a class="link" th:href="@{/jacky917/account/password}"
+                                 th:text="${text['account.password']}">Change password</a></p>
+    <p><a class="link" th:href="@{/jacky917/account/mfa}" th:text="${text['account.mfa']}">Two-step verification</a>
+        <span class="badge" th:text="${mfaEnabled ? text['account.mfa.on'] : text['account.mfa.off']}">Off</span></p>
 
     <h2 th:text="${text['account.devices']}">Signed-in devices</h2>
     <ul class="devices">
@@ -56,6 +61,24 @@
             <form th:unless="${identity.linked}" method="post"
                   th:action="@{/jacky917/account/link/{id}(id=${identity.id})}">
                 <button type="submit" class="secondary" th:text="${text['account.link']}">Link</button>
+            </form>
+        </li>
+    </ul>
+
+    <h2 th:unless="${#lists.isEmpty(apps)}" th:text="${text['account.apps']}">Authorized applications</h2>
+    <ul class="devices" th:unless="${#lists.isEmpty(apps)}">
+        <li th:each="app : ${apps}" class="device">
+            <div class="device-info">
+                <p>
+                    <img th:if="${app.logoUrl}" th:src="${app.logoUrl}" alt="" class="app-logo">
+                    <a th:if="${app.homepageUrl}" class="link" th:href="${app.homepageUrl}" rel="noopener"
+                       th:text="${app.name}">Partner App</a>
+                    <strong th:unless="${app.homepageUrl}" th:text="${app.name}">Partner App</strong>
+                </p>
+                <p class="meta" th:text="${#strings.listJoin(app.scopes.![name], '、')}">Profile、Email</p>
+            </div>
+            <form method="post" th:action="@{/jacky917/account/apps/{id}/revoke(id=${app.clientId})}">
+                <button type="submit" class="secondary" th:text="${text['account.apps.revoke']}">Remove access</button>
             </form>
         </li>
     </ul>

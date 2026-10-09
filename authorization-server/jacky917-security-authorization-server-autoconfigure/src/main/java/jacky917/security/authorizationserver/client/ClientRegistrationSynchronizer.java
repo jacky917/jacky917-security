@@ -4,6 +4,7 @@ import jacky917.security.authorizationserver.properties.AuthorizationServerPrope
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties.AuthenticationMethod;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties.Client;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties.GrantType;
+import jacky917.security.core.TrustLevel;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DuplicateKeyException;
@@ -32,12 +33,15 @@ import java.util.UUID;
  * <p>
  * The configuration is the source of truth for these clients: redirect
  * URIs, scopes, grant types, and token settings are overwritten on every
- * startup. Every client requires PKCE and rotates refresh tokens. A
- * suspended client stays suspended.
+ * startup. Every client requires PKCE and rotates refresh tokens;
+ * third-party clients also require consent. A suspended client stays
+ * suspended. Clients created through the administration API are not
+ * touched.
  * <p>
  * 這些 client 以設定為準：redirect URI、scope、grant type 與 token 設定在每次
- * 啟動時覆寫。所有 client 一律必須使用 PKCE，並輪換 Refresh Token。已停權的
- * client 仍維持停權。
+ * 啟動時覆寫。所有 client 一律必須使用 PKCE，並輪換 Refresh Token；第三方
+ * client 另外要求同意。已停權的 client 仍維持停權。透過管理 API 建立的 client
+ * 不受影響。
  *
  * @author Jacky
  * @since 2.1.0
@@ -131,13 +135,17 @@ public class ClientRegistrationSynchronizer {
                 .clientSecret(secret(clientId, config, existing == null ? null : existing.getClientSecret()))
                 .clientSettings(ClientSettings.builder()
                         .requireProofKey(true)
-                        .requireAuthorizationConsent(false)
+                        // 第三方 client 一律要求同意（D30）
+                        .requireAuthorizationConsent(config.getTrustLevel() == TrustLevel.THIRD_PARTY)
                         .build())
-                .tokenSettings(tokenSettings());
+                .tokenSettings(tokenSettings(properties));
         clients.save(builder.build());
         RegisteredClient saved = clients.findByClientId(clientId);
         String registeredClientId = saved != null ? saved.getId() : builder.build().getId();
-        profiles.createOrUpdate(registeredClientId, config.getTrustLevel(), displayName(clientId, config), now);
+        profiles.createOrUpdate(registeredClientId, config.getTrustLevel(), displayName(clientId, config),
+                new ClientDetails(blankToNull(config.getDescription()), blankToNull(config.getLogoUrl()),
+                        blankToNull(config.getHomepageUrl()), blankToNull(config.getPrivacyPolicyUrl()),
+                        blankToNull(config.getTermsUrl())), now);
         log.info("{} client {}", existing == null ? "Registered" : "Updated", clientId);
     }
 
@@ -164,7 +172,20 @@ public class ClientRegistrationSynchronizer {
         return passwordEncoder.encode(configured);
     }
 
-    private TokenSettings tokenSettings() {
+    /**
+     * Returns the token settings of every client: lifetimes from
+     * {@code token.*}, refresh tokens rotated on each use, and ID tokens
+     * signed with {@code keys.algorithm}.
+     * <p>
+     * 回傳所有 client 的 token 設定：有效期取自 {@code token.*}、Refresh Token
+     * 每次使用都輪換、ID Token 以 {@code keys.algorithm} 簽章。
+     *
+     * @param properties  the authorization server properties
+     *                    <br>Authorization Server 設定屬性
+     * @return the token settings
+     *         <br>token 設定
+     */
+    public static TokenSettings tokenSettings(AuthorizationServerProperties properties) {
         AuthorizationServerProperties.Token token = properties.getToken();
         return TokenSettings.builder()
                 .accessTokenTimeToLive(token.getAccessTokenTtl())
@@ -174,6 +195,10 @@ public class ClientRegistrationSynchronizer {
                 .reuseRefreshTokens(false)
                 .idTokenSignatureAlgorithm(SignatureAlgorithm.from(properties.getKeys().getAlgorithm().name()))
                 .build();
+    }
+
+    private static @Nullable String blankToNull(@Nullable String value) {
+        return StringUtils.hasText(value) ? value.strip() : null;
     }
 
     private static String displayName(String clientId, Client config) {

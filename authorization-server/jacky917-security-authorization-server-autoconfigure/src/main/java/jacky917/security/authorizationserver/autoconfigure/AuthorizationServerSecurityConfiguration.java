@@ -2,13 +2,26 @@ package jacky917.security.authorizationserver.autoconfigure;
 
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import jacky917.security.authorizationserver.account.AccountLinks;
+import jacky917.security.authorizationserver.account.AccountMailDispatcher;
+import jacky917.security.authorizationserver.account.AccountMailer;
+import jacky917.security.authorizationserver.account.ActionTokenService;
+import jacky917.security.authorizationserver.account.PasswordChangeRequiredFilter;
+import jacky917.security.authorizationserver.account.PasswordChangeService;
+import jacky917.security.authorizationserver.account.RegistrationService;
 import jacky917.security.authorizationserver.audit.JdbcLoginAuditListener;
 import jacky917.security.authorizationserver.audit.LoginAuditRepository;
 import jacky917.security.authorizationserver.authentication.AccountLockout;
 import jacky917.security.authorizationserver.authentication.LoginAttemptGuard;
+import jacky917.security.authorizationserver.authentication.LoginCompletion;
 import jacky917.security.authorizationserver.authentication.LoginFailureHandler;
 import jacky917.security.authorizationserver.authentication.LoginSuccessHandler;
 import jacky917.security.authorizationserver.authentication.PrincipalNormalizer;
+import jacky917.security.authorizationserver.client.ClientProfileRepository;
+import jacky917.security.authorizationserver.consent.AuditingAuthorizationConsentService;
+import jacky917.security.authorizationserver.consent.AuthorizedApplicationService;
+import jacky917.security.authorizationserver.consent.ScopeDescriptions;
+import jacky917.security.authorizationserver.database.AuthorizationServerDialect;
 import jacky917.security.authorizationserver.federation.FederatedIdentityService;
 import jacky917.security.authorizationserver.federation.FederatedLoginFailureHandler;
 import jacky917.security.authorizationserver.federation.FederatedLoginSuccessHandler;
@@ -16,32 +29,43 @@ import jacky917.security.authorizationserver.federation.FederatedUserInfoMapper;
 import jacky917.security.authorizationserver.federation.GitHubFederatedUserInfoMapper;
 import jacky917.security.authorizationserver.federation.LineIdTokens;
 import jacky917.security.authorizationserver.federation.OidcFederatedUserInfoMapper;
-import jacky917.security.authorizationserver.client.ClientProfileRepository;
-import jacky917.security.authorizationserver.database.AuthorizationServerDialect;
+import jacky917.security.authorizationserver.federation.PendingLinkService;
+import jacky917.security.authorizationserver.keys.KeyEncryptor;
+import jacky917.security.authorizationserver.mfa.MfaLoginFlow;
+import jacky917.security.authorizationserver.mfa.MfaService;
+import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.refresh.RefreshTokenHistoryRepository;
 import jacky917.security.authorizationserver.refresh.RefreshTokenReuseDetector;
-import jacky917.security.authorizationserver.token.AudienceResolver;
-import jacky917.security.authorizationserver.token.AuthorityResolver;
-import jacky917.security.authorizationserver.token.ConfiguredAudienceResolver;
-import jacky917.security.authorizationserver.token.DefaultAuthorityResolver;
-import jacky917.security.authorizationserver.token.Jacky917TokenCustomizer;
-import jacky917.security.authorizationserver.token.TokenClaimsContributor;
-import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.session.AuthSessionService;
 import jacky917.security.authorizationserver.session.Jacky917LogoutHandler;
 import jacky917.security.authorizationserver.session.LoginSessionValidationFilter;
 import jacky917.security.authorizationserver.session.SessionAuthorizationRepository;
 import jacky917.security.authorizationserver.session.SessionLinkingAuthorizationService;
+import jacky917.security.authorizationserver.token.AudienceResolver;
+import jacky917.security.authorizationserver.token.AuthorityResolver;
+import jacky917.security.authorizationserver.token.ConfiguredAudienceResolver;
+import jacky917.security.authorizationserver.token.DefaultAuthorityResolver;
+import jacky917.security.authorizationserver.token.Jacky917TokenCustomizer;
+import jacky917.security.authorizationserver.token.ScopeAudienceResolver;
+import jacky917.security.authorizationserver.token.TokenClaimsContributor;
+import jacky917.security.authorizationserver.user.PasswordPolicy;
 import jacky917.security.authorizationserver.user.UserAccountService;
-import jacky917.security.authorizationserver.authentication.LoginCompletion;
-import jacky917.security.authorizationserver.federation.PendingLinkService;
 import jacky917.security.authorizationserver.web.AccountController;
 import jacky917.security.authorizationserver.web.AccountLinkController;
+import jacky917.security.authorizationserver.web.AccountMfaController;
+import jacky917.security.authorizationserver.web.AccountPasswordController;
+import jacky917.security.authorizationserver.web.ConsentController;
 import jacky917.security.authorizationserver.web.IdentityProviders;
 import jacky917.security.authorizationserver.web.LoginController;
+import jacky917.security.authorizationserver.web.MfaChallengeController;
+import jacky917.security.authorizationserver.web.MfaSetupSupport;
+import jacky917.security.authorizationserver.web.PageSupport;
+import jacky917.security.authorizationserver.web.PasswordResetController;
+import jacky917.security.authorizationserver.web.RegistrationController;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
@@ -90,16 +114,24 @@ import java.time.ZoneId;
  * 登入頁。
  * <ul>
  *   <li>Order 1 handles only Spring Authorization Server's endpoints
- *       ({@code /oauth2/**}, {@code /.well-known/**}, {@code /userinfo},
- *       {@code /connect/**}); a browser without a login is sent to
- *       {@code /login}.
- *       <br>Order 1 只處理 Spring Authorization Server 的端點；未登入的瀏覽器
- *       會被導向 {@code /login}。</li>
- *   <li>Order 3 handles everything else: the login form with CSRF
- *       protection, a new session id after login, and headers that forbid
- *       framing.
- *       <br>Order 3 處理其餘請求：有 CSRF 保護的登入表單、登入後更換 Session
- *       ID，以及禁止被嵌入 iframe 的標頭。</li>
+ *       ({@code /oauth2/**} except the consent page, {@code /.well-known/**},
+ *       {@code /userinfo}, {@code /connect/**}); a browser without a login
+ *       is sent to {@code /login}, and one that must change its password to
+ *       the change page.
+ *       <br>Order 1 只處理 Spring Authorization Server 的端點（同意畫面除外）；
+ *       未登入的瀏覽器會被導向 {@code /login}，必須變更密碼的瀏覽器導向
+ *       變更頁。</li>
+ *   <li>Order 2, the administration API, is defined in
+ *       {@code AuthorizationServerAdminApiConfiguration}.
+ *       <br>Order 2（管理 API）定義在
+ *       {@code AuthorizationServerAdminApiConfiguration}。</li>
+ *   <li>Order 3 handles everything else: the login, account, consent and
+ *       two-step verification pages with CSRF protection, a new session id
+ *       after login, the forced password change, and a content security
+ *       policy that forbids framing.
+ *       <br>Order 3 處理其餘請求：有 CSRF 保護的登入、帳號、同意與兩步驟驗證
+ *       頁面、登入後更換 Session ID、強制變更密碼，以及禁止被嵌入的內容安全
+ *       政策。</li>
  * </ul>
  * Each chain backs off when the application defines a bean with the same
  * name.
@@ -113,9 +145,6 @@ import java.time.ZoneId;
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableWebSecurity
 class AuthorizationServerSecurityConfiguration {
-
-    private static final String CONTENT_SECURITY_POLICY =
-            "default-src 'self'; img-src 'self' https: data:; frame-ancestors 'none'; form-action 'self'";
 
     @Bean
     @Order(1)
@@ -132,6 +161,8 @@ class AuthorizationServerSecurityConfiguration {
         http.securityMatcher(authorizationServer.getEndpointsMatcher())
                 .with(authorizationServer, server -> server
                         .oidc(oidc -> oidc.logoutEndpoint(logout -> logout.logoutResponseHandler(logoutResponse)))
+                        // 第三方 client 的同意畫面（第 3、4 階段設計 §6.2）
+                        .authorizationEndpoint(authorization -> authorization.consentPage(ConsentController.CONSENT_PATH))
                         // 刷新改經過重用偵測（詳細設計 §5.4）
                         .tokenEndpoint(token -> token.authenticationProviders(reuseDetector::install)))
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
@@ -140,7 +171,9 @@ class AuthorizationServerSecurityConfiguration {
                 .exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(
                         new LoginUrlAuthenticationEntryPoint("/login"), new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
                 // 登入 Session 已失效時結束瀏覽器登入，授權請求因此回到登入頁，而不是錯誤頁
-                .addFilterBefore(new LoginSessionValidationFilter(sessions, clock), AuthorizationFilter.class);
+                .addFilterBefore(new LoginSessionValidationFilter(sessions, clock), AuthorizationFilter.class)
+                // 必須變更密碼的登入不能繼續授權請求（D29）
+                .addFilterBefore(new PasswordChangeRequiredFilter(), AuthorizationFilter.class);
         return http.build();
     }
 
@@ -185,9 +218,10 @@ class AuthorizationServerSecurityConfiguration {
                 .sessionManagement(session -> session.sessionFixation(fixation -> fixation.changeSessionId()))
                 // 在其他裝置被登出（例如「登出所有裝置」）的瀏覽器回到登入頁
                 .addFilterBefore(new LoginSessionValidationFilter(sessions, clock), AuthorizationFilter.class)
+                .addFilterBefore(new PasswordChangeRequiredFilter(), AuthorizationFilter.class)
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
-                        .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY)));
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(PageSupport.CONTENT_SECURITY_POLICY)));
         return http.build();
     }
 
@@ -237,8 +271,36 @@ class AuthorizationServerSecurityConfiguration {
     @ConditionalOnMissingBean
     @DependsOnDatabaseInitialization
     OAuth2AuthorizationConsentService authorizationConsentService(JdbcOperations jdbcOperations,
-                                                                  RegisteredClientRepository clients) {
-        return new JdbcOAuth2AuthorizationConsentService(jdbcOperations, clients);
+                                                                  RegisteredClientRepository clients,
+                                                                  ApplicationEventPublisher events, Clock clock) {
+        // 同意與撤回寫入稽核（第 3、4 階段設計 §6.2）
+        return new AuditingAuthorizationConsentService(new JdbcOAuth2AuthorizationConsentService(jdbcOperations,
+                clients), events, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    ScopeDescriptions scopeDescriptions(JdbcClient jdbcClient) {
+        return new ScopeDescriptions(jdbcClient);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    AuthorizedApplicationService authorizedApplicationService(JdbcClient jdbcClient, ScopeDescriptions scopes,
+                                                              ApplicationEventPublisher events,
+                                                              PlatformTransactionManager transactionManager,
+                                                              Clock clock) {
+        return new AuthorizedApplicationService(jdbcClient, scopes, events, new TransactionTemplate(transactionManager),
+                clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    ConsentController jacky917ConsentController(AuthorizationServerProperties properties,
+                                                RegisteredClientRepository clients, ClientProfileRepository profiles,
+                                                OAuth2AuthorizationConsentService consents, ScopeDescriptions scopes) {
+        return new ConsentController(properties, clients, profiles, consents, scopes);
     }
 
     /**
@@ -306,8 +368,11 @@ class AuthorizationServerSecurityConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    AudienceResolver audienceResolver(AuthorizationServerProperties properties) {
-        return new ConfiguredAudienceResolver(properties.getToken().getAudience());
+    AudienceResolver audienceResolver(AuthorizationServerProperties properties, JdbcClient jdbcClient) {
+        AuthorizationServerProperties.Token token = properties.getToken();
+        return token.getAudienceStrategy() == AuthorizationServerProperties.AudienceStrategy.PER_SCOPE
+                ? new ScopeAudienceResolver(jdbcClient, token.getAudience())
+                : new ConfiguredAudienceResolver(token.getAudience());
     }
 
     @Bean
@@ -339,8 +404,48 @@ class AuthorizationServerSecurityConfiguration {
     @Bean
     @ConditionalOnMissingBean
     LoginSuccessHandler loginSuccessHandler(AuthSessionService sessions, UserAccountService users,
-                                            ApplicationEventPublisher events, Clock clock) {
-        return new LoginSuccessHandler(sessions, users, events, clock);
+                                            ApplicationEventPublisher events, MfaLoginFlow mfaLoginFlow, Clock clock) {
+        return new LoginSuccessHandler(sessions, users, events, mfaLoginFlow, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @DependsOnDatabaseInitialization
+    MfaService mfaService(JdbcClient jdbcClient, UserAccountService users, KeyEncryptor keyEncryptor,
+                          AuthorizationServerProperties properties, PlatformTransactionManager transactionManager,
+                          Clock clock) {
+        return new MfaService(jdbcClient, users, keyEncryptor, properties.getMfa().getRequiredRoles(),
+                new TransactionTemplate(transactionManager), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    MfaLoginFlow mfaLoginFlow(MfaService mfa, LoginCompletion completion, UserAccountService users, Clock clock) {
+        return new MfaLoginFlow(mfa, completion, users, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    MfaSetupSupport jacky917MfaSetupSupport(AuthorizationServerProperties properties, UserAccountService users) {
+        return new MfaSetupSupport(properties, users);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    MfaChallengeController jacky917MfaChallengeController(
+            AuthorizationServerProperties properties, MfaLoginFlow flow, MfaService mfa, MfaSetupSupport setup,
+            UserAccountService users, AccountLockout lockout,
+            ObjectProvider<FederatedLoginSuccessHandler> federatedLogins, ApplicationEventPublisher events,
+            Clock clock) {
+        return new MfaChallengeController(properties, flow, mfa, setup, users, lockout, federatedLogins, events, clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    AccountMfaController jacky917AccountMfaController(AuthorizationServerProperties properties, MfaService mfa,
+                                                      MfaSetupSupport setup, ApplicationEventPublisher events,
+                                                      Clock clock) {
+        return new AccountMfaController(properties, mfa, setup, events, clock, ZoneId.systemDefault());
     }
 
     @Bean
@@ -403,15 +508,73 @@ class AuthorizationServerSecurityConfiguration {
     AccountController jacky917AccountController(AuthorizationServerProperties properties, AuthSessionService sessions,
                                                 UserAccountService users, Jacky917LogoutHandler logoutHandler,
                                                 FederatedIdentityService identities, IdentityProviders providers,
+                                                AuthorizedApplicationService applications, MfaService mfa,
                                                 ApplicationEventPublisher events, Clock clock) {
-        return new AccountController(properties, sessions, users, logoutHandler, identities, providers, events, clock,
-                ZoneId.systemDefault());
+        return new AccountController(properties, sessions, users, logoutHandler, identities, providers, applications,
+                mfa, events, clock, ZoneId.systemDefault());
     }
 
     @Bean
     @ConditionalOnMissingBean
-    LoginController jacky917LoginController(AuthorizationServerProperties properties, IdentityProviders providers) {
-        return new LoginController(properties, providers);
+    @DependsOnDatabaseInitialization
+    PasswordChangeService passwordChangeService(UserAccountService users, JdbcClient jdbcClient,
+                                                PasswordEncoder passwordEncoder, PasswordPolicy passwordPolicy,
+                                                AccountLockout lockout, AuthSessionService sessions,
+                                                AccountMailDispatcher mailer, AccountLinks links,
+                                                ApplicationEventPublisher events,
+                                                PlatformTransactionManager transactionManager, Clock clock) {
+        return new PasswordChangeService(users, jdbcClient, passwordEncoder, passwordPolicy, lockout, sessions, mailer,
+                links, events, new TransactionTemplate(transactionManager), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    AccountPasswordController jacky917AccountPasswordController(AuthorizationServerProperties properties,
+                                                                PasswordChangeService passwords,
+                                                                PasswordPolicy passwordPolicy) {
+        return new AccountPasswordController(properties, passwords, passwordPolicy);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    LoginController jacky917LoginController(AuthorizationServerProperties properties, IdentityProviders providers,
+                                            AccountMailer mailer) {
+        return new LoginController(properties, providers, mailer);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    PasswordResetController jacky917PasswordResetController(AuthorizationServerProperties properties,
+                                                            UserAccountService users, ActionTokenService tokens,
+                                                            PasswordChangeService passwords,
+                                                            PasswordPolicy passwordPolicy,
+                                                            AccountMailDispatcher mailer, AccountLinks links) {
+        return new PasswordResetController(properties, users, tokens, passwords, passwordPolicy, mailer, links);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = AuthorizationServerProperties.PREFIX, name = "account.registration.enabled",
+            havingValue = "true")
+    RegistrationService registrationService(AuthorizationServerProperties properties, UserAccountService users,
+                                            JdbcClient jdbcClient, PasswordEncoder passwordEncoder,
+                                            ActionTokenService tokens, AccountMailDispatcher mailer,
+                                            AccountLinks links, ApplicationEventPublisher events,
+                                            PlatformTransactionManager transactionManager, Clock clock) {
+        AuthorizationServerProperties.Account account = properties.getAccount();
+        return new RegistrationService(users, jdbcClient, passwordEncoder, tokens, mailer, links, events,
+                new TransactionTemplate(transactionManager), account.getEmailVerificationTtl(),
+                account.getPasswordResetTtl(), clock);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = AuthorizationServerProperties.PREFIX, name = "account.registration.enabled",
+            havingValue = "true")
+    RegistrationController jacky917RegistrationController(AuthorizationServerProperties properties,
+                                                          RegistrationService registrations,
+                                                          PasswordPolicy passwordPolicy) {
+        return new RegistrationController(properties, registrations, passwordPolicy);
     }
 
     @Bean
@@ -441,9 +604,10 @@ class AuthorizationServerSecurityConfiguration {
     AccountLinkController jacky917AccountLinkController(
             AuthorizationServerProperties properties, PendingLinkService pendingLinks, UserAccountService users,
             FederatedIdentityService identities, PasswordEncoder passwordEncoder, LoginCompletion completion,
-            IdentityProviders providers, ApplicationEventPublisher events, AccountLockout lockout, Clock clock) {
+            MfaLoginFlow mfaLoginFlow, IdentityProviders providers, ApplicationEventPublisher events,
+            AccountLockout lockout, Clock clock) {
         return new AccountLinkController(properties, pendingLinks, users, identities, passwordEncoder, completion,
-                providers, events, lockout, clock);
+                mfaLoginFlow, providers, events, lockout, clock);
     }
 
     @Bean
@@ -515,11 +679,11 @@ class AuthorizationServerSecurityConfiguration {
     @ConditionalOnMissingBean
     FederatedLoginSuccessHandler federatedLoginSuccessHandler(
             ObjectProvider<FederatedUserInfoMapper> mappers, FederatedIdentityService identities,
-            PendingLinkService pendingLinks, LoginCompletion completion,
+            PendingLinkService pendingLinks, LoginCompletion completion, MfaLoginFlow mfaLoginFlow,
             ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClients, ApplicationEventPublisher events,
             Clock clock) {
         return new FederatedLoginSuccessHandler(mappers.orderedStream().toList(), identities, pendingLinks, completion,
-                authorizedClients.getIfAvailable(), events, clock);
+                mfaLoginFlow, authorizedClients.getIfAvailable(), events, clock);
     }
 
     @Bean

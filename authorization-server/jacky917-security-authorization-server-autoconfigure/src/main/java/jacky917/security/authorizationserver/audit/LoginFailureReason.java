@@ -8,10 +8,11 @@ package jacky917.security.authorizationserver.audit;
  * <p>
  * The login page shows one message for all password failures, so it never
  * reveals whether the account exists or is locked (detailed design §7.2);
- * only rate limiting and external logins have their own messages.
+ * only rate limiting, two-step verification and external logins have their
+ * own messages.
  * <p>
  * 登入頁對所有密碼登入失敗顯示同一個訊息，不會透露帳號是否存在或被鎖定（詳細
- * 設計 §7.2）；只有限流與第三方登入有各自的訊息。
+ * 設計 §7.2）；只有限流、兩步驟驗證與第三方登入有各自的訊息。
  *
  * @author Jacky
  * @since 2.1.0
@@ -124,7 +125,14 @@ public enum LoginFailureReason {
      * <p>
      * 已輪換的 Refresh Token 在寬限期之後再次被使用。
      */
-    REUSE_DETECTED;
+    REUSE_DETECTED,
+
+    /**
+     * The two-step verification code or recovery code was wrong.
+     * <p>
+     * 兩步驟驗證的驗證碼或復原碼錯誤。
+     */
+    MFA_FAILED;
 
     /**
      * Returns whether a failure for this reason counts towards locking the
@@ -132,12 +140,16 @@ public enum LoginFailureReason {
      * <p>
      * 回傳此原因的失敗是否計入帳號鎖定。
      * <p>
-     * Only a wrong password does: an attempt on a locked or disabled account
-     * must not extend the lock, and an unexpected error must not lock out a
-     * user who typed the right password.
+     * Used by the password form's failure handler, where only a wrong
+     * password counts: an attempt on a locked or disabled account must not
+     * extend the lock, and an unexpected error must not lock out a user who
+     * typed the right password. Wrong two-step verification codes and a
+     * wrong current password on the change page are counted by their own
+     * pages.
      * <p>
-     * 只有密碼錯誤會計入：對已鎖定或已停用帳號的嘗試不應延長鎖定，非預期的錯誤
-     * 也不應鎖住輸入正確密碼的使用者。
+     * 由密碼表單的失敗處理器使用，只有密碼錯誤會計入：對已鎖定或已停用帳號的
+     * 嘗試不應延長鎖定，非預期的錯誤也不應鎖住輸入正確密碼的使用者。兩步驟驗證
+     * 的錯誤驗證碼與變更密碼頁的錯誤目前密碼，由各自的頁面計入。
      *
      * @return {@code true} only for {@link #BAD_CREDENTIALS}
      *         <br>只有 {@code BAD_CREDENTIALS} 為 {@code true}

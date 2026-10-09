@@ -201,11 +201,12 @@ class RefreshTokenReuseDetectorTest {
         }
 
         @Test
-        @DisplayName("登入之後變更了密碼：撤銷 Session（PASSWORD_CHANGED）")
+        @DisplayName("登入之後變更了密碼：不在刷新時判斷（變更密碼時已明確撤銷其他 Session，進行變更的 Session 必須保留）")
         void passwordChangedAfterLogin() {
             when(users.findById(USER)).thenReturn(Optional.of(user(UserStatus.ACTIVE, null, NOW.minusSeconds(1))));
-            assertRefused();
-            verify(sessions).revoke(ASID, RevokeReason.PASSWORD_CHANGED);
+            rotates();
+            assertThat(detector.authenticate(request(), delegate)).isNotNull();
+            verify(sessions, never()).revoke(anyString(), any());
         }
 
         @Test
@@ -312,6 +313,6 @@ class RefreshTokenReuseDetectorTest {
 
     private static UserAccount user(UserStatus status, Instant lockedUntil, Instant passwordChangedAt) {
         return new UserAccount(USER, "alice", null, false, "{bcrypt}hash", null, null, null, status, lockedUntil,
-                passwordChangedAt, null, NOW.minus(Duration.ofDays(1)));
+                passwordChangedAt, null, NOW.minus(Duration.ofDays(1)), false);
     }
 }

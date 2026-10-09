@@ -283,6 +283,6 @@ class Jacky917TokenCustomizerTest {
 
     private static UserAccount user(UserStatus status, Instant lockedUntil, boolean emailVerified) {
         return new UserAccount(USER, "alice", "alice@example.com", emailVerified, null, "Alice", null, null, status,
-                lockedUntil, null, null, NOW.minus(Duration.ofDays(1)));
+                lockedUntil, null, null, NOW.minus(Duration.ofDays(1)), false);
     }
 }

@@ -18,6 +18,16 @@ jacky917:
       bootstrap-admin:
         username: admin
         password: ${JACKY917_AS_ADMIN_PASSWORD:admin-password-123}
+      # 管理員必須使用兩步驟驗證：admin 第一次登入時先變更密碼，再以驗證器 App 啟用
+      mfa:
+        required-roles: AS_ADMIN
+      # 僅供本機示範：沒有 SMTP，忘記密碼與註冊的連結寫入日誌。正式環境請加入 spring-boot-starter-mail，
+      # 設定 spring.mail.* 與 account.mail.from，並移除 log-links
+      account:
+        registration:
+          enabled: true
+        mail:
+          log-links: true
       clients:
         web-bff:
           display-name: Example BFF

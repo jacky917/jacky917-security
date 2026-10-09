@@ -5,6 +5,8 @@ import jacky917.security.authorizationserver.audit.LoginAuditEventType;
 import jacky917.security.authorizationserver.audit.LoginFailureReason;
 import jacky917.security.authorizationserver.authentication.LoginCompletion;
 import jacky917.security.authorizationserver.federation.PendingLinkService.PendingLink;
+import jacky917.security.authorizationserver.mfa.MfaLoginFlow;
+import jacky917.security.authorizationserver.mfa.PendingLogin;
 import jacky917.security.authorizationserver.session.LoginMethod;
 import jacky917.security.authorizationserver.user.UserAccount;
 import jacky917.security.authorizationserver.web.AccountController;
@@ -91,6 +93,7 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
     private final FederatedIdentityService identities;
     private final PendingLinkService pendingLinks;
     private final LoginCompletion completion;
+    private final MfaLoginFlow mfa;
     private final @Nullable OAuth2AuthorizedClientRepository authorizedClients;
     private final ApplicationEventPublisher events;
     private final Clock clock;
@@ -109,6 +112,9 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
      *                           <br>待確認的連結
      * @param completion         logs the browser in
      *                           <br>登入瀏覽器
+     * @param mfa                starts two-step verification when the user
+     *                           needs it
+     *                           <br>使用者需要時開始兩步驟驗證
      * @param authorizedClients  where Spring stores the provider tokens, or
      *                           {@code null}
      *                           <br>Spring 存放提供者 token 的位置，或 {@code null}
@@ -118,13 +124,14 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
      *                           <br>時鐘
      */
     public FederatedLoginSuccessHandler(List<FederatedUserInfoMapper> mappers, FederatedIdentityService identities,
-                                        PendingLinkService pendingLinks, LoginCompletion completion,
+                                        PendingLinkService pendingLinks, LoginCompletion completion, MfaLoginFlow mfa,
                                         @Nullable OAuth2AuthorizedClientRepository authorizedClients,
                                         ApplicationEventPublisher events, Clock clock) {
         this.mappers = List.copyOf(mappers);
         this.identities = identities;
         this.pendingLinks = pendingLinks;
         this.completion = completion;
+        this.mfa = mfa;
         this.authorizedClients = authorizedClients;
         this.events = events;
         this.clock = clock;
@@ -220,6 +227,10 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
         }
 
         try {
+            if (mfa.challenge(user.id(), LoginMethod.FEDERATED, provider, "fed", authentication,
+                    PendingLogin.Continuation.FEDERATED, request, response)) {
+                return;
+            }
             completion.logIn(user.id(), LoginMethod.FEDERATED, provider, "fed", authentication, request, response);
         } catch (RuntimeException ex) {
             log.error("Cannot log user {} in after a login through {}", user.id(), provider, ex);
@@ -311,16 +322,24 @@ public class FederatedLoginSuccessHandler extends SavedRequestAwareAuthenticatio
     }
 
     /**
-     * Completes a link waiting for this user: logging in with a provider
-     * already linked to the user confirms it. A link that cannot be
-     * completed is logged, audited and reported through
+     * Completes a link waiting for this user, if the browser has one:
+     * logging in with a provider already linked to the user, or confirming
+     * with the password, confirms it. Two-step verification calls it once
+     * the second step passes, so a link is never created before that. A
+     * link that cannot be completed is logged, audited and reported through
      * {@link #LINK_ERROR_ATTRIBUTE}; the login itself goes on.
      * <p>
-     * 完成等待此使用者確認的連結：以已連結到該使用者的提供者登入即代表確認。無法
-     * 完成的連結會記錄日誌、稽核，並透過 {@code LINK_ERROR_ATTRIBUTE} 回報；登入
-     * 本身照常繼續。
+     * 若瀏覽器有等待此使用者確認的連結，完成它：以已連結到該使用者的提供者
+     * 登入，或以密碼確認，即代表確認。兩步驟驗證在第二步通過後呼叫它，因此
+     * 連結不會在那之前建立。無法完成的連結會記錄日誌、稽核，並透過
+     * {@code LINK_ERROR_ATTRIBUTE} 回報；登入本身照常繼續。
+     *
+     * @param userId   the user who logged in
+     *                 <br>登入的使用者
+     * @param request  the current request
+     *                 <br>目前的請求
      */
-    private void completePendingLink(String userId, HttpServletRequest request) {
+    public void completePendingLink(String userId, HttpServletRequest request) {
         String token = PendingLinkService.forget(request);
         if (token == null) {
             return;

@@ -167,10 +167,46 @@ class AuthorizationServerPropertiesTest {
         assertThat(messages).anyMatch(m -> m.contains("redirect URI myapp:/cb"));
         assertThat(messages).anyMatch(m -> m.startsWith("clients[public-refresh]") && m.contains("never receives refresh tokens"));
         assertThat(messages).anyMatch(m -> m.startsWith("clients[batch]") && m.contains("openid scope requires authorization_code"));
-        assertThat(messages).anyMatch(m -> m.startsWith("clients[partner]") && m.contains("only first-party"));
+        assertThat(messages).anyMatch(m -> m.startsWith("clients[partner]") && m.contains("requires privacy-policy-url"));
         assertThat(messages).anyMatch(m -> m.startsWith("clients[noop]") && m.contains("{bcrypt}"));
         assertThat(messages).anyMatch(m -> m.startsWith("clients[Bad Id]") && m.contains("client id"));
         assertThat(messages).hasSize(9);
+    }
+
+    @Test
+    @DisplayName("第三方 client（D30）：不可使用 client_credentials 與 as: scope；網址必須是 https；合法的第三方設定可通過")
+    void thirdPartyClientRules() {
+        AuthorizationServerProperties properties = withIssuer("https://auth.example.com");
+        AuthorizationServerProperties.Client partner = thirdPartyClient();
+        partner.setGrantTypes(Set.of(AuthorizationServerProperties.GrantType.AUTHORIZATION_CODE,
+                AuthorizationServerProperties.GrantType.CLIENT_CREDENTIALS));
+        partner.setScopes(Set.of("openid", "as:user:read"));
+        partner.setLogoUrl("http://partner.example.com/logo.png");
+        properties.getClients().put("partner", partner);
+
+        List<String> messages = validate(properties).getAllErrors().stream().map(error -> error.getDefaultMessage()).toList();
+        assertThat(messages).anyMatch(m -> m.contains("cannot use client_credentials"));
+        assertThat(messages).anyMatch(m -> m.contains("cannot ask for as:user:read"));
+        assertThat(messages).anyMatch(m -> m.contains("logo-url must be an absolute https URL"));
+        assertThat(messages).hasSize(3);
+
+        AuthorizationServerProperties valid = withIssuer("https://auth.example.com");
+        valid.getClients().put("partner", thirdPartyClient());
+        AuthorizationServerProperties.Client publicPartner = thirdPartyClient();
+        publicPartner.setAuthenticationMethod(AuthorizationServerProperties.AuthenticationMethod.NONE);
+        publicPartner.setSecret(null);
+        publicPartner.setGrantTypes(Set.of(AuthorizationServerProperties.GrantType.AUTHORIZATION_CODE));
+        valid.getClients().put("partner-app", publicPartner);
+        assertThat(validate(valid).hasErrors()).isFalse();
+    }
+
+    private static AuthorizationServerProperties.Client thirdPartyClient() {
+        AuthorizationServerProperties.Client client = validClient();
+        client.setTrustLevel(jacky917.security.core.TrustLevel.THIRD_PARTY);
+        client.setPrivacyPolicyUrl("https://partner.example.com/privacy");
+        client.setTermsUrl("https://partner.example.com/terms");
+        client.setLogoUrl("https://partner.example.com/logo.png");
+        return client;
     }
 
     @Test

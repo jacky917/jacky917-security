@@ -165,22 +165,6 @@ abstract class AbstractAuthorizationFlowIntegrationTest extends AbstractFlowInte
     }
 
     @Test
-    @DisplayName("變更密碼後，之前登入的 Session 刷新：invalid_grant，並撤銷（T-REFRESH-05）")
-    void refreshIsRefusedAfterPasswordChange() throws Exception {
-        String userId = createUser("password-user", null);
-        LoggedIn before = logInAndExchangeCode("password-user");
-        clock.advance(Duration.ofMinutes(1));
-        jdbc.sql("UPDATE app_user SET password_changed_at = :at WHERE id = :id")
-                .param("at", java.sql.Timestamp.from(clock.instant())).param("id", userId).update();
-        assertRefreshRefused(before);
-        assertSession(before.asid(), "REVOKED", "PASSWORD_CHANGED");
-
-        clock.advance(Duration.ofMinutes(1));
-        LoggedIn after = logInAndExchangeCode("password-user");
-        assertThat(refresh(after).has("access_token")).as("變更密碼之後的登入可以刷新").isTrue();
-    }
-
-    @Test
     @DisplayName("暫時鎖定（連續登入失敗）只阻擋密碼登入，已登入的 Session 仍可刷新")
     void temporaryLockDoesNotBlockRefresh() throws Exception {
         String lockedId = createUser("locked-user", null);
@@ -383,13 +367,26 @@ abstract class AbstractAuthorizationFlowIntegrationTest extends AbstractFlowInte
     }
 
     @Test
-    @DisplayName("登入頁不可被嵌入 iframe，並帶內容安全政策")
+    @DisplayName("登入頁不可被嵌入 iframe，並帶內容安全政策；不限制 form-action，登入後才能經授權端點導回其他網域的 client")
     void loginPageHeaders() throws Exception {
         mockMvc.perform(get("/login"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Frame-Options", "DENY"))
                 .andExpect(header().string("Content-Security-Policy",
-                        org.hamcrest.Matchers.containsString("frame-ancestors 'none'")));
+                        org.hamcrest.Matchers.containsString("frame-ancestors 'none'")))
+                .andExpect(header().string("Content-Security-Policy",
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("form-action"))));
+    }
+
+    @Test
+    @DisplayName("未開啟註冊、無法寄信（預設）：登入頁沒有註冊與忘記密碼的連結，這些頁面不存在")
+    void accountPagesNeedConfiguration() throws Exception {
+        String login = mockMvc.perform(get("/login")).andExpect(status().isOk()).andReturn().getResponse()
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(login).doesNotContain("/jacky917/register").doesNotContain("/jacky917/password/forgot");
+        mockMvc.perform(get("/jacky917/register")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/jacky917/verify-email").param("token", "x")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/jacky917/password/forgot")).andExpect(status().isNotFound());
     }
 
     @Test

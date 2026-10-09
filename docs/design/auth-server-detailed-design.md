@@ -1032,7 +1032,7 @@ SigningKeyRotationJob（每天執行一次，ShedLock 保護）:
 | 第一位管理員 | 第 4 階段強制首次登入後變更密碼 | 第 1 階段即建立（`bootstrap-admin.*`），只在沒有任何 `AS_ADMIN` 時建立一次 | 不開放註冊時，沒有它就無法登入；強制變更密碼仍留待第 4 階段 |
 | 登入失敗處理 | `LoginFailureHandler`：失敗計數、鎖定、稽核 | 第 1 階段一律導向 `/login?error`；計數、鎖定、IP 限流與 `login_audit` 於工作 13 加入 | 依工作分解；暫時鎖定（`locked_until`）在第 1 階段已會擋下登入 |
 | 登入頁的文字 | 應用程式的 `MessageSource`（`messages_zh_TW.properties` 等） | Starter 自己的訊息檔 `jacky917/authorization-server-messages`（英文預設、繁體中文），依請求語言顯示 | 不覆蓋、也不依賴應用程式的 `MessageSource` |
-| 內容安全政策 | `default-src 'self'; frame-ancestors 'none'` | 另加 `img-src 'self' https: data:`（外部 logo）與 `form-action 'self'` | 主色無法以內嵌樣式設定，改由 `/jacky917/theme.css` 提供（只接受色碼，避免注入 CSS） |
+| 內容安全政策 | `default-src 'self'; frame-ancestors 'none'` | 另加 `img-src 'self' https: data:`（外部 logo）。不設 `form-action`（第 3 階段修正：原本為 `'self'`） | 主色無法以內嵌樣式設定，改由 `/jacky917/theme.css` 提供（只接受色碼，避免注入 CSS）。Chrome 對表單送出後的每一次重導都套用 `form-action`：登入表單送出後經授權端點導向 client 的 redirect URI（其他網域、`localhost` 的其他埠號或 App 的 scheme）時會被擋下 |
 | 直接登入後的頁面 | — | `GET /` 顯示「已登入」 | 直接開啟登入頁並登入時，Spring Security 會導向 `/` |
 | 授權連結的判斷（§5.2） | 依「儲存時是否有 HTTP 請求」判斷 | 依「連結是否已存在」判斷：已存在則沿用；不存在時才從瀏覽器 Session 取得 `asid` | 換 Token 也有 HTTP 請求（來自 client），只是沒有瀏覽器 Session；原本的判斷會誤擋 |
 | 連結的檢查 | — | 只連結到**同一位使用者**的 `ACTIVE` Session；授權與連結在同一個交易中儲存，連結失敗時授權一併回滾 | 避免留下沒有 Session 的授權（之後的 Token 無法帶 `asid`） |

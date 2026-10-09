@@ -958,3 +958,179 @@
   - **DEC-109**: 重用以外的刷新拒絕不寫入稽核（資料庫的事件類型 CHECK 約束不允許新類型），以 metric 與 `auth_session.revoke_reason` 記錄。
 - **Next TODO**:
   - 合併 PR 後，決定第 2 階段的發佈版本，以及 AS 是否轉為正式版。
+
+---
+## Step 43: Authorization Server 第 3、4 階段詳細設計
+- **Status**: 🟢 設計完成（分支 `claude/as-phase-3`）
+- **範圍**（使用者確認的目標）：A 使用者與權限管理（Admin API）、B 帳號自助功能（註冊、Email 驗證、忘記／變更密碼）、C 第三方應用（同意畫面、client 與 scope 管理、`aud` 依 scope 決定）、D 兩步驟驗證（TOTP）、E 發佈準備（不發佈）。Apple 登入、即時撤銷、Redis、KMS、MySQL 不列入。
+- **變更**：新增 `docs/design/auth-server-phase3-4-design.md`（決策 D23～D31、資料表變更、Admin API、帳號頁面、同意畫面、TOTP、設定屬性、工作 18～29、測試案例）。
+- **Decision Log**:
+  - **DEC-110**: Admin API 以本 AS 簽發的 Bearer token 驗證，依 `as:*` 權限在 request 層級授權；不提供管理畫面（D23、D24）。
+  - **DEC-111**: 寄信以 `AccountMailer` SPI 抽象；沒有寄信方式時不提供需要寄信的功能，啟用註冊則啟動失敗（D26）。
+  - **DEC-112**: TOTP 自行實作（RFC 6238），密鑰以既有的主金鑰加密；QR code 使用 ZXing（D31）。
+- **Next TODO**:
+  - 工作 18：Admin API 基礎與 migration V1_1_0。
+
+---
+## Step 44: Authorization Server——工作 18（Admin API 基礎）
+- **Status**: 🟢 Completed
+- **變更**:
+  - Migration V1_1_0（兩種資料庫）：`app_user.password_change_required`；`login_audit` 新增 7 種事件（註冊、Email 驗證、重設密碼、兩步驟驗證的啟用與停用、同意與撤回）；`admin_audit_log` 新增對象種類 `API_RESOURCE`。SQLite 無法修改約束，以重建資料表的方式完成。
+  - `/admin/api/**` 的 Order 2 filter chain：只接受本 AS 簽發、`aud` 包含 `admin-api.audience` 的 Bearer token；使用者 token 以 `permissions` 中的 `as:*`、`client_credentials` token 以 `as:*` scope 授權；無狀態、無 CSRF。
+  - `AdminApiExceptionHandler`（RFC 9457 Problem Details，只處理管理 API 的 controller）、`PageResult`、`AdminAuditService`（`admin_audit_log`，在呼叫端的交易中寫入）、`AdminOperator`。
+  - 稽核查詢：`GET /admin/api/audit/logins`、`GET /admin/api/audit/admin`（篩選、分頁、新的在前）。
+  - 屬性：`admin-api.enabled`、`admin-api.audience`。
+- **Commands Run & Results**:
+  - 新增 `AdminApiIntegrationTest`（SQLite、PostgreSQL 各 6 個）：401／403、`client_credentials` 的 scope、稽核查詢與篩選、Problem Details、新的稽核值可以寫入。
+  - `mvn -B -o test`（AS 模組）：**SUCCESS**，357 個測試。
+
+---
+## Step 45: Authorization Server——工作 19（管理 API：使用者）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `UserAdminService`、`UserAdminController`：`GET/POST /admin/api/users`（搜尋帳號、Email、顯示名稱，`%`、`_` 視為一般字元）、`GET/PATCH/DELETE /admin/api/users/{id}`、`POST …/unlock`、`PUT …/password`、`PUT/DELETE …/roles/{role}`（可設定到期時間）、`GET/DELETE …/sessions`、`DELETE /admin/api/sessions/{asid}`。
+  - 讓使用者無法登入（`LOCKED`、`DISABLED`、刪除）時撤銷所有登入 Session（`USER_DISABLED`）；管理員設定密碼時撤銷所有登入 Session（`PASSWORD_CHANGED`），預設下次登入必須變更。
+  - 管理員不能停用或刪除自己，也不能移除自己最後一個擁有 `as:user:write` 的角色。
+  - 每個寫入操作與 `admin_audit_log` 在同一個交易中；快照不含密碼雜湊。
+  - `UserAccount` 新增 `passwordChangeRequired`。
+- **Commands Run & Results**:
+  - `AdminApiIntegrationTest` 新增 9 個（兩種資料庫）：建立使用者後登入的 token 帶有角色與權限、`AS_SUPPORT` 不能寫入、搜尋、停用撤銷 Session、部分更新與 409、設定密碼與解鎖、角色指派與到期、保護操作者自己、登入 Session 管理。
+  - `mvn -B -o test`（AS 模組）：**SUCCESS**，375 個測試。
+- **Decision Log**:
+  - **DEC-113**: 管理 API 直接操作預設的使用者資料表；以其他使用者來源取代 `UserAccountService` 的應用程式應關閉管理 API 或自行提供。
+
+---
+## Step 46: Authorization Server——工作 20（管理 API：角色與權限），群組 A 完成
+- **Status**: 🟢 Completed
+- **變更**:
+  - `RoleAdminService`、`RoleAdminController`：`GET/POST /admin/api/roles`、`GET/PUT/DELETE /admin/api/roles/{code}`、`GET/POST /admin/api/permissions`、`GET/PUT/DELETE /admin/api/permissions/{code}`。
+  - 代碼格式依資料模型 §5.1；`as:` 開頭的權限保留給登入服務。內建角色與權限不能刪除、不能改代碼；`AS_ADMIN` 的權限不能變更；仍有使用者的角色、仍被角色或 scope 使用的權限不能刪除。
+  - 使用指南新增 §9 管理 API（驗證、權限、端點、規則）；「目前的限制」與「上線檢查清單」改為 §10、§11。
+- **Commands Run & Results**:
+  - `AdminApiIntegrationTest` 新增 5 個（兩種資料庫）：業務角色與權限出現在使用者的 token 中、代碼驗證、內建保護、刪除規則、更新權限清單與 403。
+
+---
+## Step 47: Authorization Server——工作 21（寄信 SPI）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `AccountMailer` SPI 與三種實作：`SpringAccountMailer`（應用程式有 `JavaMailSender` 時，必須設定 `account.mail.from`）、`LoggingAccountMailer`（`account.mail.log-links=true`，僅限開發，建立時警告）、`UnavailableAccountMailer`（沒有寄信方式）。應用程式自己的 Bean 優先。
+  - `AccountMailContent`：信件主旨與內文取自 starter 的訊息檔（`mail.*`，英文與繁中），可覆寫。
+  - `ActionTokenService`：`EMAIL_VERIFY`、`PASSWORD_RESET` 的一次性 token（只存 SHA-256、新的取代舊的、60 秒內不重複發出、只能使用一次）。
+  - `AccountLinks`：以 `issuer` 產生信件中的連結（不依賴請求的 Host 標頭）。
+  - 屬性 `account.registration.enabled`、`account.email-verification-ttl`、`account.password-reset-ttl`、`account.mail.from`、`account.mail.log-links`；`spring-boot-starter-mail` 為選用依賴。
+- **Commands Run & Results**:
+  - 新增 `AccountMailTest`（5 個）、`AccountConfigurationIntegrationTest`（5 個，token 的部分在 SQLite 與 PostgreSQL 各執行一次）。
+
+---
+## Step 48: Authorization Server——工作 22（變更密碼、強制變更密碼）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `PasswordChangeService`：檢查目前的密碼（錯誤時計入帳號鎖定並稽核）、密碼政策、不可與目前相同；設定後清除強制變更與暫時鎖定、撤銷其他登入 Session（保留進行變更的那一個）、稽核 `PASSWORD_CHANGED`、寄出通知信（可寄信且 Email 已驗證時）。另提供重設密碼用的 `reset`（撤銷全部，稽核 `PASSWORD_RESET`）。
+  - `/jacky917/account/password`（`AccountPasswordController`、`account-password.html`，繁中與英文）；帳號頁有密碼的使用者顯示「變更密碼」。
+  - 強制變更（D29）：以密碼登入且 `password_change_required` 時在瀏覽器 Session 加上標記並導向變更頁；`PasswordChangeRequiredFilter` 加在兩條 filter chain，授權端點與其他頁面都導向變更頁；變更後繼續原本的授權請求。第一位管理員預設必須變更（`bootstrap-admin.password-change-required`）。
+  - 刷新時不再以 `password_changed_at` 判斷（見設計 §12.2）。
+- **Commands Run & Results**:
+  - 新增 `AccountSelfServiceIntegrationTest`（兩種資料庫各 3 個，T-ACCT-01、T-ACCT-02、T-REFRESH-05）；`UserAccountIntegrationTest` 加上第一位管理員的強制變更；`RefreshTokenReuseDetectorTest` 改為不在刷新時判斷密碼變更。
+- **Decision Log**:
+  - **DEC-114**: 密碼變更一律以明確撤銷登入 Session 處理，刷新時不再比對 `password_changed_at`，讓使用者自行變更時可以保留目前的裝置。
+
+---
+## Step 49: Authorization Server——工作 23（忘記密碼與重設密碼）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `PasswordResetController`：`GET/POST /jacky917/password/forgot`（只對可登入帳號的已驗證 Email 寄出連結，畫面一律相同）、`GET/POST /jacky917/password/reset`（開啟連結只顯示表單；送出時才使用 token；設定後撤銷所有登入 Session、清除暫時鎖定、稽核 `PASSWORD_RESET`、寄出通知）。只有可以寄信時才提供（否則 404）。
+  - 登入頁在可以寄信時顯示「忘記密碼？」。
+  - `LoginAttemptGuard` 的 IP 限流也涵蓋忘記密碼、重設密碼與註冊的 POST。
+  - `PasswordChangeService#validate`：設定前檢查新密碼。
+- **Commands Run & Results**:
+  - `AccountSelfServiceIntegrationTest` 新增 3 個（兩種資料庫）：只對已驗證的 Email 寄信且畫面相同（T-ACCT-03）、重設流程與 token 只能用一次（T-ACCT-04）、連結過期與 60 秒內只寄一封（T-ACCT-07）。
+
+## Step 50: Authorization Server——工作 24（註冊與 Email 驗證），群組 B 完成
+- **Status**: 🟢 Completed
+- **變更**:
+  - `RegistrationService`：新地址建立 `USER`、Email 未驗證的帳號並寄出驗證信（稽核 `USER_REGISTERED`）；未完成的註冊（未驗證、從未登入、沒有帳號名稱與外部帳號）被取代；既有帳號只寄「帳號已存在」通知與重設連結。無法寄信時建構失敗，因此開啟註冊卻沒有寄信方式會啟動失敗。
+  - `RegistrationController`：`GET/POST /jacky917/register`（三種情況畫面相同）、`POST /jacky917/verify-email/resend`、`GET/POST /jacky917/verify-email`（開啟連結只顯示表單；確認時必須輸入註冊時的密碼，稽核 `EMAIL_VERIFIED`）。只在 `account.registration.enabled=true` 時存在。
+  - 登入頁在開啟註冊時顯示「建立帳號」；`LoginAttemptGuard` 也涵蓋驗證與重新寄送的 POST。
+  - 使用指南：新增「帳號自助功能」、`account.*` 與 `bootstrap-admin.password-change-required` 設定、上線檢查清單；移除限制表中的「註冊、忘記密碼」。
+- **Decisions**:
+  - **DEC-115**: Email 驗證必須同時擁有連結與註冊時設定的密碼。註冊時就設定密碼的設計下，只靠連結驗證會讓以他人地址註冊的人在對方點開連結後擁有該帳號（設計 §12.2）。
+- **Commands Run & Results**:
+  - `AccountSelfServiceIntegrationTest` 新增 4 個（兩種資料庫）：註冊與驗證（T-ACCT-05）、既有 Email 不透露資訊（T-ACCT-06）、取代未完成的註冊與舊連結無法以舊密碼驗證、表單錯誤與重新寄送。
+  - `AccountConfigurationIntegrationTest`：開啟註冊但無法寄信時失敗（T-ACCT-08）。`AuthorizationFlowIntegrationTest`：預設設定下登入頁沒有註冊與忘記密碼連結，頁面 404。
+
+## Step 51: Authorization Server——工作 25（第三方 client、scope、API resource 管理）
+- **Status**: 🟢 Completed
+- **變更**:
+  - 設定檔支援 `trust-level: third-party`（D30）：必須有 `privacy-policy-url`、不可使用 `client_credentials`、不可要求 `as:` scope；`requireAuthorizationConsent=true`。新增 `description`、`logo-url`、`homepage-url`、`privacy-policy-url`、`terms-url`，儲存在 `client_profile`（`ClientDetails`）。網址檢查集中在 `ClientUris`。
+  - 管理 API：`/admin/api/clients`（列出、建立第三方 client 並回傳只顯示一次的 secret、部分更新、重新產生 secret、核准／停權／重新啟用、刪除）；設定中的 client 唯讀（`409`）。停權與刪除會刪除授權。
+  - 管理 API：`/admin/api/scopes`、`/admin/api/api-resources`（CRUD；scope 不能對應 `as:` 權限；仍在使用的不能刪除）。
+  - 使用指南 §5（第三方 client）、§9（新端點與規則）、§10。
+- **Commands Run & Results**:
+  - `AdminApiIntegrationTest` 新增 4 個（兩種資料庫）：第三方 client 的建立與 secret（T-ADMIN-07）、規則與設定中的 client 唯讀、狀態轉換、scope 與 API resource。
+  - `AuthorizationServerPropertiesTest`：第三方 client 規則；`ClientRegistrationIntegrationTest`：設定檔中的第三方 client 要求同意並儲存資訊。
+
+## Step 52: Authorization Server——修正：內容安全政策擋下登入後導回 client
+- **Status**: 🟢 Completed
+- **問題**: 頁面的內容安全政策含 `form-action 'self'`。Chrome 對表單送出後的每一次重導都套用 `form-action`，因此登入表單送出 → 授權端點 → 導向 client 的 redirect URI（其他網域、`localhost` 的其他埠號或 App 的 scheme）時被擋下，瀏覽器停在登入頁。MockMvc 不執行 CSP，整合測試沒有發現。
+- **驗證**: 以內建瀏覽器（Chromium）與兩個本機伺服器重現：`form-action 'self'` 的頁面送出表單，同源重導可以通過，重導到另一個來源時被擋下（主控台：violates the following Content Security Policy directive: "form-action 'self'"）。
+- **變更**: 移除 `form-action`，保留 `default-src 'self'`、`img-src 'self' https: data:`、`frame-ancestors 'none'`；`loginPageHeaders` 測試確認不含 `form-action`；詳細設計 §13.2 更新。
+- **Decision Log**:
+  - **DEC-116**: 頁面不使用 CSP `form-action`。允許的目的地取決於所有 client 的 redirect URI（含管理 API 建立的 client 與 App 的 scheme），無法以固定的政策表達；表單內容由 Thymeleaf 轉義，注入表單的風險另以 `default-src 'self'` 限制。
+
+## Step 53: Authorization Server——工作 26（同意畫面、撤回授權）
+- **Status**: 🟢 Completed
+- **變更**:
+  - `ConsentController`（`/oauth2/consent`，`consent.html`，繁中與英文）：應用程式的名稱、Logo、說明、首頁、隱私權政策、服務條款；要同意的 scope（名稱與說明取自 `app_scope`，可取消勾選）、先前已同意的 scope；不需要同意的 scope 隨「允許」送出。「拒絕」讓 client 收到 `access_denied`。Spring Authorization Server 以 `consentPage` 指向此頁。
+  - `AuditingAuthorizationConsentService`：儲存同意時稽核 `CONSENT_GRANTED`，刪除時 `CONSENT_REVOKED`。
+  - 帳號頁「已授權的應用程式」（`AuthorizedApplicationService`）：列出同意過的應用程式與 scope；「移除存取權」刪除同意紀錄與該 client 對此使用者的授權（Refresh Token 立即失效），稽核 `CONSENT_REVOKED`。
+  - 測試設定加入第三方 client `partner`；`PageSupport.CONTENT_SECURITY_POLICY` 集中頁面的內容安全政策。
+- **Commands Run & Results**:
+  - 新增 `ConsentIntegrationTest`（兩種資料庫各 3 個）：只同意勾選的 scope、之後不再詢問、新增 scope 只詢問新的（T-CONSENT-01）；拒絕；帳號頁撤回後 Refresh Token 失效並再次詢問（T-CONSENT-02）。
+
+## Step 54: Authorization Server——工作 27（`aud` 依 scope 決定），群組 C 完成
+- **Status**: 🟢 Completed
+- **變更**:
+  - `token.audience-strategy`：`shared`（預設，現行行為）或 `per-scope`。`ScopeAudienceResolver` 以授予的 scope 的 `app_scope.api_resource_code`（去除重複、排序）作為 `aud`；沒有任何 scope 屬於 API resource 時使用 `token.audience`。應用程式自己的 `AudienceResolver` Bean 仍然優先。
+  - 使用指南 §3（設定）、§7（`aud` 的決定方式與管理 API 的注意事項）。
+- **Commands Run & Results**:
+  - 新增 `ScopeAudienceResolverIntegrationTest`（兩種資料庫）：多個 API resource 去除重複並排序、只有一個、沒有任何 scope 屬於 API resource、`app_scope` 中沒有的 scope、沒有 scope。
+
+## Step 55: Authorization Server——工作 28（兩步驟驗證），群組 D 完成
+- **Status**: 🟢 Completed
+- **變更**:
+  - Migration V1_1_1（兩種資料庫）：`user_mfa_totp`（以主金鑰加密的密鑰、最後使用的時間步）、`user_recovery_code`（SHA-256）。
+  - `Totp`（RFC 6238：HMAC-SHA1、30 秒、6 位數、前後各一個時間步、同一時間步只接受一次）、`QrCodes`（ZXing core → SVG `data:` 網址）、`MfaService`（啟用、驗證、復原碼、停用、`mfa.required-roles`）。
+  - `MfaLoginFlow` 與 `PendingLogin`：密碼登入、第三方登入、以密碼確認帳號連結通過第一步後，若已啟用（或角色要求）則清除登入狀態、保存待驗證的登入（5 分鐘）並導向 `/jacky917/mfa`（或 `/jacky917/mfa/setup`）；通過後更換 Session ID、建立 `amr` 含 `otp` 的登入 Session，再執行原入口的後續（強制變更密碼、等待中的帳號連結）。
+  - `MfaChallengeController`：驗證碼或復原碼；錯誤稽核 `LOGIN`（`MFA_FAILED`）、計入帳號鎖定，5 次後回到登入頁。`AccountMfaController`：帳號頁啟用、重新產生復原碼、停用（角色要求時不可停用），稽核 `MFA_ENABLED`／`MFA_DISABLED`。`MfaAdminController`：`GET`／`DELETE /admin/api/users/{id}/mfa`。
+  - `mfa.issuer-name`、`mfa.required-roles`；IP 限流涵蓋第二步的 POST；帳號頁顯示狀態。使用指南新增「兩步驟驗證」與設定、管理 API、稽核、上線檢查清單。
+- **Commands Run & Results**:
+  - `TotpTest`：RFC 6238 附錄 B 的測試向量、Base32、時間步容許範圍與重複使用、QR code。
+  - 新增 `MfaIntegrationTest`（兩種資料庫各 5 個）：啟用後要求驗證碼、第二步之前未登入、`amr`（T-MFA-01、06）；驗證碼與復原碼只能用一次、停用（T-MFA-02）；錯誤 5 次（T-MFA-03）；角色要求時登入中啟用（T-MFA-05）；管理員重設。`FederatedLoginSuccessHandlerTest`：第三方登入交給兩步驟驗證（T-MFA-04）。
+
+## Step 56: Authorization Server——工作 29（發佈準備，不發佈），群組 E
+- **Status**: 🟢 Completed（尚未發佈）
+- **變更**:
+  - `jacky917-security-authorization-server-autoconfigure`、`-starter` 移除 `maven.deploy.skip`，加入 `jacky917-security-bom`（已確認 flatten 後的 BOM 含兩個模組）。
+  - 使用指南移除「預覽版」，依賴改為以 BOM 引用；README 模組表、CHANGELOG（Unreleased）列出第 3、4 階段的功能；GitHub Packages 指南與專案結構文件更新。
+  - 範例登入服務：`mfa.required-roles: AS_ADMIN`、開啟註冊並以 `account.mail.log-links` 示範寄信；E2E 指南說明如何試用帳號頁、忘記密碼、註冊與兩步驟驗證。
+- **未做**: 實際發佈（版本號仍為 `2.1.0-SNAPSHOT`）。
+
+## Step 57: Authorization Server——多面向審查後的修正
+- **Status**: 🟢 Completed
+- **審查**: code-reviewer、silent-failure-hunter、pr-test-analyzer、comment-analyzer（兩輪）、type-design-analyzer，範圍為 `main...claude/as-phase-3`。
+- **Critical**:
+  - 密碼政策改為最多 72 bytes（UTF-8）：Spring Security 7.1 拒絕雜湊更長的密碼，原本會 500，並用掉重設連結、讓註冊頁可用來判斷帳號是否存在。
+  - 重設密碼的 token 與設定密碼在同一個交易中使用，並檢查結果（`PasswordChangeService.reset` 接受在交易中使用的證明，`Outcome.PROOF_USED`）。
+- **Important（安全）**:
+  - 註冊屬於未驗證地址或不能登入之帳號的 Email 時不寄任何信；重設連結使用時也要求 Email 已驗證、帳號啟用中。
+  - 登入時強制啟用兩步驟驗證的密鑰改存在待驗證的登入中（隨取消、逾時一起消失）；帳號頁的密鑰綁定使用者。
+  - 以密碼確認帳號連結時，擁有者需要第二步則在第二步通過後才建立連結。
+  - 同意畫面：已同意過時按鈕改為「不允許新的權限」並說明先前的同意仍有效（Spring Authorization Server 的行為，已以測試確認）。
+- **Important（其他）**:
+  - 帳號信件改由 `AccountMailDispatcher` 在背景寄出（虛擬執行緒），失敗原因分類記錄並發布 `AccountMailFailedEvent`，metric `jacky917.as.mail.failures`；`AccountMail` 建立時要求連結與有效期；沒有寄信方式時啟動記錄 INFO。
+  - 兩步驟驗證：密鑰無法解密時顯示說明、不計入錯誤，復原碼仍可用；以長度區分驗證碼與復原碼；同時啟用兩次不再 500；逾時回到登入頁並說明。
+  - 管理 API：型別錯誤與缺少參數指出欄位、本文不是 JSON 的說明、資料庫約束衝突回 409、顯示名稱長度檢查；第三方以外的舊 client 更新時保留信任等級；管理員重設兩步驟驗證也寫入使用者的 `MFA_DISABLED` 稽核。
+  - IP 限流也涵蓋變更密碼表單。
+- **測試**: 新增 72 bytes 密碼、未驗證地址的註冊、重設連結的有效條件、寄信失敗、第三方登入與帳號連結的兩步驟驗證、待驗證期間停用、強制變更密碼與兩步驟驗證、停用的伺服器端檢查、密鑰不沿用、逾時、密鑰無法解密、重新產生復原碼、撤回授權的隔離、第三方 token 不能呼叫管理 API、稽核操作者、錯誤回應、權限矩陣、SQLite 從 1.0.6 升級保留稽核資料、`AccountMailDispatcher`；稽核值測試改為走訪所有 enum。
+- **重新審查**: 修正後再由 code-reviewer 審查一次：背景寄信的 executor 原本註冊成 Bean，會讓 Spring Boot 不建立應用程式的 `applicationTaskExecutor`，改由 `AccountMailDispatcher` 自己持有並在關閉時停止（新增測試）；`AuthorizationServerMetrics` 錯位的 Javadoc 已修正。
+- **文件**: 註解與行為不符之處修正（CSP、`countsTowardsLock`、內建角色、IP 限流、同意畫面、連結等），變更的 Javadoc 行寬不超過 80 欄；使用指南 §9.1 補上 client／scope／API resource 的權限，帳號自助、兩步驟驗證、metrics 更新。Migration 的註解不修改（Flyway 的 checksum 包含註解）。

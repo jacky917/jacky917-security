@@ -61,7 +61,7 @@ class LoginControllerTest {
     private static List<String> buttons(AuthorizationServerProperties properties, ClientRegistrationRepository repository) {
         ExtendedModelMap model = new ExtendedModelMap();
         IdentityProviders providers = new IdentityProviders(properties.getLogin().getProviders(), repository);
-        new LoginController(properties, providers).login(null, null, new MockHttpServletRequest(), model);
+        new LoginController(properties, providers, new jacky917.security.authorizationserver.account.UnavailableAccountMailer()).login(null, null, new MockHttpServletRequest(), model);
         return ((List<Map<String, String>>) model.get("providers")).stream().map(button -> button.get("url")).toList();
     }
 

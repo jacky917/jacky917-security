@@ -58,5 +58,55 @@ public enum LoginAuditEventType {
      * <p>
      * 使用者變更密碼。
      */
-    PASSWORD_CHANGED
+    PASSWORD_CHANGED,
+
+    /**
+     * A user registered an account.
+     * <p>
+     * 使用者註冊帳號。
+     */
+    USER_REGISTERED,
+
+    /**
+     * A user verified their email address.
+     * <p>
+     * 使用者驗證 Email。
+     */
+    EMAIL_VERIFIED,
+
+    /**
+     * A user set a new password through a reset link.
+     * <p>
+     * 使用者透過重設連結設定新密碼。
+     */
+    PASSWORD_RESET,
+
+    /**
+     * A user turned on two-step verification.
+     * <p>
+     * 使用者啟用兩步驟驗證。
+     */
+    MFA_ENABLED,
+
+    /**
+     * Two-step verification was turned off, by the user or an
+     * administrator.
+     * <p>
+     * 兩步驟驗證被停用（由使用者或管理員）。
+     */
+    MFA_DISABLED,
+
+    /**
+     * A user allowed a third-party application to use some scopes.
+     * <p>
+     * 使用者允許第三方應用使用某些 scope。
+     */
+    CONSENT_GRANTED,
+
+    /**
+     * A user withdrew the access of a third-party application.
+     * <p>
+     * 使用者撤回第三方應用的授權。
+     */
+    CONSENT_REVOKED
 }

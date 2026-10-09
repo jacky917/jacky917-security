@@ -62,7 +62,7 @@ PAT 至少需包含：
 
 ## 4. 範例模組不發佈
 
-`examples/*`、`e2e-tests`，以及**預覽中的 Authorization Server 模組**（`authorization-server/*`，2.1.0 起才發佈）已設定：
+`examples/*` 與 `e2e-tests` 已設定（Authorization Server 模組自 2.1.0 起發佈，不再設定）：
 
 ```xml
 <properties>
