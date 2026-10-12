@@ -42,6 +42,15 @@ mvn -pl e2e-tests -am verify
 
 CI 每次都會執行，不需要 Docker 或資料庫（登入服務使用暫存的 SQLite，Resource Server 使用 H2）。
 
+e2e 測試以參數提供所有設定，不讀範例的 `application.yml`。範例登入服務自己的測試（`examples/example-authorization-server`）則使用範例的設定檔，走完 demo 的其他流程：
+
+| 測試 | 驗證內容 |
+|---|---|
+| admin 首次登入 | 強制啟用兩步驟驗證（`mfa.required-roles: AS_ADMIN`）→ 顯示復原碼 → 強制變更密碼 → 回到授權請求 |
+| 註冊與 Email 驗證 | 信件寫在日誌中（`account.mail.log-links`），以日誌的連結與註冊時的密碼驗證後登入 |
+| 忘記密碼 | 以日誌的重設連結設定新密碼，舊密碼失效 |
+| 示範 client | `partner-demo` 要求同意、`bb.read` 對應權限 `bb`；`admin-demo` 可以呼叫管理 API |
+
 ## 2. 手動執行
 
 ### 前置需求

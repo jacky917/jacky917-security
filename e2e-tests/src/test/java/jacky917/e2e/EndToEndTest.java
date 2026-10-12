@@ -132,7 +132,7 @@ class EndToEndTest {
                         Map.entry("scope", "email"), Map.entry("scope", "bb.read")), Map.of());
         URI callback = Browser.location(allowed);
         assertThat(callback.toString()).startsWith(bff("/login/oauth2/code/partner?code=").toString());
-        assertThat(browser.get(callback).statusCode()).isEqualTo(302);
+        assertThat(Browser.location(browser.get(callback))).as("登入後回到 BFF 首頁").isEqualTo(bff("/"));
 
         assertThat(JSON.readTree(browser.get(bff("/me")).body()).get("app").asString()).isEqualTo("partner");
         assertThat(browser.get(bff("/api/secure/perm-bb")).statusCode()).as("bb.read 對應權限 bb").isEqualTo(200);
@@ -222,6 +222,7 @@ class EndToEndTest {
 
         HttpResponse<String> done = browser.get(callback);
         assertThat(done.statusCode()).as("BFF 以授權碼換 Token 後重導").isEqualTo(302);
+        assertThat(Browser.location(done)).as("登入後回到 BFF 首頁").isEqualTo(bff("/"));
     }
 
     /**

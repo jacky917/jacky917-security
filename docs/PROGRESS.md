@@ -1145,3 +1145,9 @@
 - **Commands Run & Results**:
   - `EndToEndTest` 新增 2 個：第三方應用程式的同意畫面與權限、以 `client_credentials` 呼叫管理 API。
   - 以內建瀏覽器（Chromium）實際操作：BFF →「以第三方應用程式登入」→ 登入 → 同意畫面 → 允許 → 回到 BFF 首頁（確認 CSP 修正後跨網域的重導正常）→ 帳號頁列出應用程式 → 登出；管理 API 的 curl 指令照文件執行成功。
+
+## Step 59: 範例設定檔的 demo 流程測試
+- **Status**: 🟢 Completed
+- **原因**: e2e 測試以參數提供設定，不讀範例的 `application.yml`；demo 預設的流程（admin 首次登入同時強制啟用兩步驟驗證與變更密碼、信件寫在日誌的註冊與忘記密碼、示範 client）沒有以範例的設定實際執行過。其中「強制啟用兩步驟驗證＋強制變更密碼」的組合在任何測試中都沒有涵蓋。
+- **變更**: `examples/example-authorization-server` 新增 `DemoFlowsIntegrationTest`（4 個，使用範例的設定檔，以 `CapturedOutput` 從日誌讀出信件連結）；e2e 測試確認登入後回到 BFF 首頁。E2E 指南列出這些測試。
+
