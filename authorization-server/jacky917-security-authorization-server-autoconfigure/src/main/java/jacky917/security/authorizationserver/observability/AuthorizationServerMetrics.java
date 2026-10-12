@@ -2,6 +2,7 @@ package jacky917.security.authorizationserver.observability;
 
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import jacky917.security.authorizationserver.account.AccountMailFailedEvent;
 import jacky917.security.authorizationserver.audit.LoginAuditEvent;
 import jacky917.security.authorizationserver.audit.LoginAuditEventType;
 import jacky917.security.authorizationserver.audit.LoginAuditWriteFailedEvent;
@@ -200,6 +201,20 @@ public class AuthorizationServerMetrics {
     public void onAuditWriteFailed(LoginAuditWriteFailedEvent event) {
         record("jacky917.as.audit.write_failures", () -> registry.counter("jacky917.as.audit.write_failures",
                 "type", event.type().name().toLowerCase(Locale.ROOT)).increment());
+    }
+
+    /**
+     * Counts an account mail that could not be sent.
+     * <p>
+     * 計入無法寄出的帳號信件。
+     *
+     * @param event  the failure
+     *               <br>失敗事件
+     */
+    @EventListener
+    public void onMailFailed(AccountMailFailedEvent event) {
+        record("jacky917.as.mail.failures", () -> registry.counter("jacky917.as.mail.failures",
+                "type", event.type().name().toLowerCase(Locale.ROOT), "reason", event.reason()).increment());
     }
 
     /**

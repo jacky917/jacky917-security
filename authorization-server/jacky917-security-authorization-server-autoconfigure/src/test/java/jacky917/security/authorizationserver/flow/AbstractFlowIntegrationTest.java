@@ -53,6 +53,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "jacky917.security.authorization-server.keys.encryption-key=" + TestDatabases.TEST_ENCRYPTION_KEY,
         "jacky917.security.authorization-server.bootstrap-admin.username=admin",
         "jacky917.security.authorization-server.bootstrap-admin.password=" + AbstractFlowIntegrationTest.PASSWORD,
+        // 測試直接以第一位管理員登入；強制變更密碼另有測試
+        "jacky917.security.authorization-server.bootstrap-admin.password-change-required=false",
         "jacky917.security.authorization-server.clients.web-bff.secret=bff-secret",
         "jacky917.security.authorization-server.clients.web-bff.redirect-uris=" + AbstractFlowIntegrationTest.REDIRECT_URI,
         "jacky917.security.authorization-server.clients.web-bff.scopes=openid,profile",
@@ -62,7 +64,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "jacky917.security.authorization-server.clients.report-batch.scopes=report.generate",
         "jacky917.security.authorization-server.clients.suspended.secret=suspended-secret",
         "jacky917.security.authorization-server.clients.suspended.grant-types=client_credentials",
-        "jacky917.security.authorization-server.clients.suspended.scopes=report.generate"
+        "jacky917.security.authorization-server.clients.suspended.scopes=report.generate",
+        "jacky917.security.authorization-server.clients.admin-sync.secret=sync-secret",
+        "jacky917.security.authorization-server.clients.admin-sync.grant-types=client_credentials",
+        "jacky917.security.authorization-server.clients.admin-sync.scopes=as:audit:read,as:user:read",
+        "jacky917.security.authorization-server.clients.partner.trust-level=third-party",
+        "jacky917.security.authorization-server.clients.partner.display-name=Partner App",
+        "jacky917.security.authorization-server.clients.partner.secret=partner-secret",
+        "jacky917.security.authorization-server.clients.partner.redirect-uris=" + AbstractFlowIntegrationTest.PARTNER_REDIRECT_URI,
+        "jacky917.security.authorization-server.clients.partner.scopes=openid,profile,email",
+        "jacky917.security.authorization-server.clients.partner.privacy-policy-url=https://partner.example.com/privacy"
 })
 @AutoConfigureMockMvc
 abstract class AbstractFlowIntegrationTest {
@@ -72,6 +83,8 @@ abstract class AbstractFlowIntegrationTest {
     static final String REDIRECT_URI = "https://app.example.com/login/oauth2/code/jacky917";
 
     static final String LOGGED_OUT_URI = "https://app.example.com/logged-out";
+
+    static final String PARTNER_REDIRECT_URI = "https://partner.example.com/callback";
 
     /**
      * 不為零時，刷新在持有授權列鎖的交易中等待這麼久才記錄舊 token，讓併發的刷新穩定地與它重疊。
@@ -156,6 +169,17 @@ abstract class AbstractFlowIntegrationTest {
      * 以指定的瀏覽器 Session 登入（可模擬同一個瀏覽器再次登入）。
      */
     LoggedIn logInAndExchangeCode(String username, MockHttpSession browser) throws Exception {
+        return logInAndExchangeCode(username, browser, PASSWORD);
+    }
+
+    /**
+     * 以指定的密碼登入。
+     */
+    LoggedIn logInAndExchangeCode(String username, String password) throws Exception {
+        return logInAndExchangeCode(username, new MockHttpSession(), password);
+    }
+
+    LoggedIn logInAndExchangeCode(String username, MockHttpSession browser, String password) throws Exception {
         String verifier = randomVerifier();
         MockHttpSession session = browser;
 
@@ -169,7 +193,7 @@ abstract class AbstractFlowIntegrationTest {
         // 2. 登入頁有表單與 CSRF token；3. 送出帳密 → 回到原本的授權請求
         String csrf = csrfToken(session);
         MvcResult login = mockMvc.perform(post("/login").session(session)
-                        .param("username", username).param("password", PASSWORD).param("_csrf", csrf))
+                        .param("username", username).param("password", password).param("_csrf", csrf))
                 .andExpect(status().is3xxRedirection()).andReturn();
         String savedRequest = login.getResponse().getRedirectedUrl();
         assertThat(savedRequest).startsWith("http://localhost/oauth2/authorize");

@@ -83,7 +83,7 @@ mvn -pl examples/example-bff spring-boot:run
 |---|---|---|
 | `alice` | `USER`、`A` | `bb`、`clip:read` |
 | `bob` | `USER` | — |
-| `admin` | `USER`、`AS_ADMIN` | `as:*`（密碼 `admin-password-123`） |
+| `admin` | `USER`、`AS_ADMIN` | `as:*`（密碼 `admin-password-123`；第一次登入時先變更密碼，再以驗證器 App 啟用兩步驟驗證） |
 
 ### Step 2：瀏覽器
 
@@ -92,6 +92,12 @@ mvn -pl examples/example-bff spring-boot:run
 3. 按「登出」：同時登出 BFF 與登入服務，回到首頁。
 
 瀏覽器只會看到 BFF 的 Session Cookie；Access Token 與 Refresh Token 保存在 BFF 的 Session 中。
+
+登入服務本身的頁面（<http://localhost:9000/jacky917/account>）也可以試：
+
+- 帳號頁：登入中的裝置、變更密碼、兩步驟驗證（以 Google Authenticator 等 App 掃描 QR code）。
+- 登入頁的「忘記密碼？」與「建立帳號」：範例沒有 SMTP，信件內容（含連結）寫在登入服務的日誌（`Account mail to …`）中，複製到瀏覽器開啟。
+- 以 `admin` 登入：先變更密碼，再啟用兩步驟驗證（`mfa.required-roles: AS_ADMIN`）。
 
 ### Step 3：服務對服務（client_credentials）
 

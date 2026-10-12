@@ -75,6 +75,10 @@ public class BootstrapAdminInitializer {
                     String email = StringUtils.hasText(settings.getEmail()) ? settings.getEmail() : null;
                     UserAccount admin = users.createUser(new NewUser(settings.getUsername(), email, email != null,
                             settings.getPassword(), settings.getUsername(), Set.of("AS_ADMIN")));
+                    if (settings.isPasswordChangeRequired()) {
+                        jdbc.sql("UPDATE app_user SET password_change_required = :required WHERE id = :id")
+                                .param("required", true).param("id", admin.id()).update();
+                    }
                     log.info("Created the bootstrap administrator {}", admin.id());
                 }
             });

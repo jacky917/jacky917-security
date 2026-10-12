@@ -1,6 +1,7 @@
 package jacky917.security.authorizationserver.properties;
 
 import jacky917.security.authorizationserver.user.LockoutPolicy;
+import jacky917.security.authorizationserver.client.ClientUris;
 import jacky917.security.core.TrustLevel;
 import lombok.Getter;
 import lombok.Setter;
@@ -157,6 +158,28 @@ public class AuthorizationServerProperties implements Validator {
      */
     private Cleanup cleanup = new Cleanup();
 
+    /**
+     * The administration API under {@code /admin/api}.
+     * <p>
+     * {@code /admin/api} 之下的管理 API。
+     */
+    private AdminApi adminApi = new AdminApi();
+
+    /**
+     * Account self-service: registration, email verification and password
+     * reset.
+     * <p>
+     * 帳號自助功能：註冊、Email 驗證與重設密碼。
+     */
+    private Account account = new Account();
+
+    /**
+     * Two-step verification with an authenticator app.
+     * <p>
+     * 以驗證器 App 進行的兩步驟驗證。
+     */
+    private Mfa mfa = new Mfa();
+
     @Override
     public boolean supports(Class<?> clazz) {
         return AuthorizationServerProperties.class.isAssignableFrom(clazz);
@@ -175,29 +198,15 @@ public class AuthorizationServerProperties implements Validator {
         properties.getPassword().validate(errors);
         properties.getLoginProtection().validate(errors);
         properties.getCleanup().validate(errors);
+        properties.getAdminApi().validate(properties.getToken(), errors);
+        properties.getAccount().validate(errors);
         properties.getBootstrapAdmin().validate(errors);
         properties.getBranding().validate(errors);
         properties.getClients().forEach((clientId, client) -> client.validate(clientId, errors));
     }
 
     static boolean isAllowedRedirect(String uri) {
-        try {
-            URI parsed = URI.create(uri);
-            if (!parsed.isAbsolute() || parsed.getFragment() != null) {
-                return false;
-            }
-            String scheme = parsed.getScheme();
-            // RFC 8252 §7.1：原生 App 的私有 scheme 必須是反向網域名稱（含 "."），例如 com.example.app:/callback
-            if (!"http".equals(scheme) && !"https".equals(scheme)) {
-                return scheme.contains(".");
-            }
-            if (parsed.getHost() == null) {
-                return false;
-            }
-            return "https".equals(scheme) || LOCAL_HOSTS.contains(parsed.getHost());
-        } catch (IllegalArgumentException ex) {
-            return false;
-        }
+        return ClientUris.isAllowedRedirect(uri);
     }
 
     private static void validateIssuer(URI issuer, Errors errors) {
@@ -222,6 +231,154 @@ public class AuthorizationServerProperties implements Validator {
     private static void rejectOutOfRange(Errors errors, String field, Duration value, Duration min, Duration max) {
         if (value == null || value.compareTo(min) < 0 || value.compareTo(max) > 0) {
             errors.rejectValue(field, "range", field + " must be between " + min + " and " + max);
+        }
+    }
+
+    /**
+     * Account self-service, bound from {@code .account.*} (phase 3 and 4
+     * design §5).
+     * <p>
+     * 帳號自助功能，綁定自 {@code .account.*}（第 3、4 階段設計 §5）。
+     */
+    @Getter
+    @Setter
+    public static class Account {
+
+        /**
+         * Registration.
+         * <p>
+         * 註冊。
+         */
+        private Registration registration = new Registration();
+
+        /**
+         * How long an email verification link works, between 1 hour and 7
+         * days.
+         * <p>
+         * Email 驗證連結的有效期，1 小時～7 天。
+         */
+        private Duration emailVerificationTtl = Duration.ofHours(24);
+
+        /**
+         * How long a password reset link works, between 10 minutes and 24
+         * hours.
+         * <p>
+         * 重設密碼連結的有效期，10 分鐘～24 小時。
+         */
+        private Duration passwordResetTtl = Duration.ofHours(1);
+
+        /**
+         * Sending the account mails.
+         * <p>
+         * 寄出帳號信件。
+         */
+        private Mail mail = new Mail();
+
+        void validate(Errors errors) {
+            rejectOutOfRange(errors, "account.emailVerificationTtl", emailVerificationTtl, Duration.ofHours(1),
+                    Duration.ofDays(7));
+            rejectOutOfRange(errors, "account.passwordResetTtl", passwordResetTtl, Duration.ofMinutes(10),
+                    Duration.ofHours(24));
+        }
+
+        /**
+         * Registration, bound from {@code .account.registration.*}.
+         * <p>
+         * 註冊，綁定自 {@code .account.registration.*}。
+         */
+        @Getter
+        @Setter
+        public static class Registration {
+
+            /**
+             * Whether anyone can create an account with an email address.
+             * It needs a way to send mails; the application fails to start
+             * without one.
+             * <p>
+             * 是否開放任何人以 Email 建立帳號。需要寄信方式；沒有時應用程式
+             * 啟動失敗。
+             */
+            private boolean enabled = false;
+        }
+
+        /**
+         * Sending account mails, bound from {@code .account.mail.*}.
+         * <p>
+         * 寄出帳號信件，綁定自 {@code .account.mail.*}。
+         */
+        @Getter
+        @Setter
+        public static class Mail {
+
+            /**
+             * The sender address; required when the application has a
+             * {@code JavaMailSender}.
+             * <p>
+             * 寄件者地址；應用程式有 {@code JavaMailSender} 時必填。
+             */
+            private String from;
+
+            /**
+             * Writes the mails, with their links, to the log when there is
+             * no {@code JavaMailSender}. For development only.
+             * <p>
+             * 沒有 {@code JavaMailSender} 時，把信件（包含連結）寫入日誌。
+             * 僅限開發使用。
+             */
+            private boolean logLinks = false;
+        }
+    }
+
+    /**
+     * The administration API, bound from {@code .admin-api.*} (phase 3 and
+     * 4 design §4).
+     * <p>
+     * 管理 API，綁定自 {@code .admin-api.*}（第 3、4 階段詳細設計 §4）。
+     */
+    @Getter
+    @Setter
+    public static class AdminApi {
+
+        /**
+         * Whether the administration API is available.
+         * <p>
+         * 是否提供管理 API。
+         */
+        private boolean enabled = true;
+
+        /**
+         * The {@code aud} value an access token must contain to call the
+         * API; defaults to the first {@code token.audience}.
+         * <p>
+         * 呼叫此 API 的 Access Token 必須包含的 {@code aud} 值；預設為
+         * {@code token.audience} 的第一個值。
+         */
+        private String audience;
+
+        /**
+         * Returns the audience the API accepts.
+         * <p>
+         * 回傳此 API 接受的 audience。
+         *
+         * @param token  the token settings, for the default
+         *               <br>Token 設定，用於預設值
+         * @return {@code audience}, or the first {@code token.audience}
+         *         <br>{@code audience}；未設定時為 {@code token.audience} 的
+         *         第一個值
+         */
+        public String effectiveAudience(Token token) {
+            if (audience != null && !audience.isBlank()) {
+                return audience;
+            }
+            return token.getAudience().get(0);
+        }
+
+        void validate(Token token, Errors errors) {
+            if (enabled && (audience == null || audience.isBlank())
+                    && (token.getAudience() == null || token.getAudience().isEmpty())) {
+                errors.rejectValue("adminApi.audience", "required",
+                        "admin-api.audience is required when token.audience is empty");
+            }
         }
     }
 
@@ -627,6 +784,34 @@ public class AuthorizationServerProperties implements Validator {
     }
 
     /**
+     * Two-step verification, bound from {@code .mfa.*} (D31).
+     * <p>
+     * 兩步驟驗證，綁定自 {@code .mfa.*}（D31）。
+     */
+    @Getter
+    @Setter
+    public static class Mfa {
+
+        /**
+         * Name that authenticator apps show for the account; defaults to
+         * {@code branding.product-name}.
+         * <p>
+         * 驗證器 App 中顯示的名稱，預設為 {@code branding.product-name}。
+         */
+        private String issuerName;
+
+        /**
+         * Roles that must use two-step verification, for example
+         * {@code AS_ADMIN}. Users with such a role who have not turned it on
+         * must do so before their login completes, and cannot turn it off.
+         * <p>
+         * 必須使用兩步驟驗證的角色，例如 {@code AS_ADMIN}。擁有這些角色但尚未
+         * 啟用的使用者，必須在登入完成前啟用，且不能停用。
+         */
+        private Set<String> requiredRoles = new LinkedHashSet<>();
+    }
+
+    /**
      * Login page appearance, bound from {@code .branding.*}.
      * <p>
      * 登入頁外觀，綁定自 {@code .branding.*}。
@@ -702,6 +887,14 @@ public class AuthorizationServerProperties implements Validator {
          */
         private String email;
 
+        /**
+         * Whether the administrator must change the initial password at the
+         * first login.
+         * <p>
+         * 管理員是否必須在第一次登入時變更初始密碼。
+         */
+        private boolean passwordChangeRequired = true;
+
         void validate(Errors errors) {
             if (username != null && !username.isBlank() && (password == null || password.isBlank())) {
                 errors.rejectValue("bootstrapAdmin.password", "required",
@@ -711,9 +904,11 @@ public class AuthorizationServerProperties implements Validator {
     }
 
     /**
-     * A first-party client, bound from {@code .clients.<client-id>.*}.
+     * A client, bound from {@code .clients.<client-id>.*}. Clients in the
+     * configuration cannot be changed through the administration API.
      * <p>
-     * 第一方 client，綁定自 {@code .clients.<client-id>.*}。
+     * Client，綁定自 {@code .clients.<client-id>.*}。設定檔中的 client 無法透過
+     * 管理 API 修改。
      * <p>
      * Every client must use PKCE, and refresh tokens are rotated on each
      * use; neither can be turned off. Token lifetimes come from
@@ -734,12 +929,52 @@ public class AuthorizationServerProperties implements Validator {
         private String displayName;
 
         /**
-         * Trust level. Only {@code first-party} is supported until the
-         * consent screen is available.
+         * Trust level. A {@code third-party} client always asks users to
+         * consent, must have {@code privacy-policy-url}, cannot use
+         * {@code client_credentials} and cannot ask for scopes starting
+         * with {@code as:}; its tokens carry no roles (D30).
          * <p>
-         * 信任等級。同意畫面完成前只支援 {@code first-party}。
+         * 信任等級。{@code third-party} 的 client 一律要求使用者同意、必須有
+         * {@code privacy-policy-url}、不可使用 {@code client_credentials}，
+         * 也不可要求以 {@code as:} 開頭的 scope；它的 token 不含角色（D30）。
          */
         private TrustLevel trustLevel = TrustLevel.FIRST_PARTY;
+
+        /**
+         * Description shown on the consent page.
+         * <p>
+         * 顯示在同意畫面上的說明。
+         */
+        private String description;
+
+        /**
+         * Logo shown on the consent page; an {@code https} URL.
+         * <p>
+         * 顯示在同意畫面上的 Logo，{@code https} 網址。
+         */
+        private String logoUrl;
+
+        /**
+         * Home page of the application; an {@code https} URL.
+         * <p>
+         * 應用程式的首頁，{@code https} 網址。
+         */
+        private String homepageUrl;
+
+        /**
+         * Privacy policy of the application; an {@code https} URL, required
+         * for third-party clients.
+         * <p>
+         * 應用程式的隱私權政策，{@code https} 網址；第三方 client 必填。
+         */
+        private String privacyPolicyUrl;
+
+        /**
+         * Terms of service of the application; an {@code https} URL.
+         * <p>
+         * 應用程式的服務條款，{@code https} 網址。
+         */
+        private String termsUrl;
 
         /**
          * How the client authenticates at the token endpoint.
@@ -802,8 +1037,28 @@ public class AuthorizationServerProperties implements Validator {
                 errors.rejectValue("clients", "invalid", path + ": client id must be 2-100 lowercase letters, digits, "
                         + "'.', '_' or '-'");
             }
-            if (trustLevel != TrustLevel.FIRST_PARTY) {
-                errors.rejectValue("clients", "unsupported", path + ": only first-party clients are supported");
+            Map<String, String> urls = new LinkedHashMap<>();
+            urls.put("logo-url", logoUrl);
+            urls.put("homepage-url", homepageUrl);
+            urls.put("privacy-policy-url", privacyPolicyUrl);
+            urls.put("terms-url", termsUrl);
+            urls.forEach((name, url) -> {
+                if (url != null && !url.isBlank() && !ClientUris.isWebUrl(url)) {
+                    errors.rejectValue("clients", "invalid", path + ": " + name + " must be an absolute https URL");
+                }
+            });
+            if (trustLevel == TrustLevel.THIRD_PARTY) {
+                if (privacyPolicyUrl == null || privacyPolicyUrl.isBlank()) {
+                    errors.rejectValue("clients", "required", path + ": a third-party client requires "
+                            + "privacy-policy-url");
+                }
+                if (grantTypes != null && grantTypes.contains(GrantType.CLIENT_CREDENTIALS)) {
+                    errors.rejectValue("clients", "invalid", path + ": a third-party client cannot use "
+                            + "client_credentials, because no user can consent");
+                }
+                scopes.stream().filter(scope -> scope.startsWith("as:")).forEach(scope -> errors.rejectValue(
+                        "clients", "invalid", path + ": a third-party client cannot ask for " + scope
+                                + "; scopes starting with as: give administration permissions"));
             }
             if (grantTypes == null || grantTypes.isEmpty()) {
                 errors.rejectValue("clients", "required", path + ": grant-types must not be empty");
@@ -840,6 +1095,26 @@ public class AuthorizationServerProperties implements Validator {
                 errors.rejectValue("clients", "invalid", path + ": a public client must not have a secret");
             }
         }
+    }
+
+    /**
+     * How the audience of access tokens is chosen (D07).
+     * <p>
+     * Access Token 的 audience 如何決定（D07）。
+     */
+    public enum AudienceStrategy {
+        /**
+         * Every token gets {@code token.audience}.
+         * <p>
+         * 所有 token 使用 {@code token.audience}。
+         */
+        SHARED,
+        /**
+         * The API resources of the granted scopes.
+         * <p>
+         * 授予的 scope 所屬的 API resource。
+         */
+        PER_SCOPE
     }
 
     /**
@@ -989,6 +1264,19 @@ public class AuthorizationServerProperties implements Validator {
          * Access Token 的 audience（{@code aud}）。
          */
         private List<String> audience = new ArrayList<>(List.of("jacky917-api"));
+
+        /**
+         * How the audience of an access token is chosen: {@code shared}
+         * gives every token {@code audience}; {@code per-scope} gives the API
+         * resources of the granted scopes, and {@code audience} only when no
+         * scope belongs to one.
+         * <p>
+         * Access Token 的 audience 如何決定：{@code shared} 一律使用
+         * {@code audience}；{@code per-scope} 使用授予的 scope 所屬的 API
+         * resource，沒有任何 scope 屬於 API resource 時才使用
+         * {@code audience}。
+         */
+        private AudienceStrategy audienceStrategy = AudienceStrategy.SHARED;
 
         void validate(Errors errors) {
             rejectOutOfRange(errors, "token.accessTokenTtl", accessTokenTtl, Duration.ofMinutes(1), Duration.ofHours(1));

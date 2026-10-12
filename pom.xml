@@ -58,6 +58,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <flatten-maven-plugin.version>1.8.0</flatten-maven-plugin.version>
+        <!-- 兩步驟驗證的 QR code（Spring Boot 不管理此版本） -->
+        <zxing.version>3.5.3</zxing.version>
         <!-- 依賴方向規則（見 docs/design/repo-structure-design.md §3）：預設關閉，由各模組開啟 -->
         <jacky917.enforce.resource-server-boundary.skip>true</jacky917.enforce.resource-server-boundary.skip>
         <jacky917.enforce.no-dependencies.skip>true</jacky917.enforce.no-dependencies.skip>
@@ -110,6 +112,13 @@
                 <groupId>io.github.jacky917</groupId>
                 <artifactId>jacky917-security-authorization-server-starter</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+
+            <!-- Third Party -->
+            <dependency>
+                <groupId>com.google.zxing</groupId>
+                <artifactId>core</artifactId>
+                <version>${zxing.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

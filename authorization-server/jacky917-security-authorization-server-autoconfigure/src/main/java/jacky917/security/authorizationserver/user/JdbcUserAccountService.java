@@ -33,7 +33,8 @@ public class JdbcUserAccountService implements UserAccountService {
     private static final int MAX_FAILURE_ATTEMPTS = 10;
 
     private static final String COLUMNS = "id, username, email, email_verified, password_hash, display_name, "
-            + "avatar_url, locale, status, locked_until, password_changed_at, last_login_at, created_at";
+            + "avatar_url, locale, status, locked_until, password_changed_at, last_login_at, created_at, "
+            + "password_change_required";
 
     private static final RowMapper<UserAccount> ROW_MAPPER = (rs, rowNum) -> new UserAccount(
             rs.getString("id"),
@@ -48,7 +49,8 @@ public class JdbcUserAccountService implements UserAccountService {
             toInstant(rs.getTimestamp("locked_until")),
             toInstant(rs.getTimestamp("password_changed_at")),
             toInstant(rs.getTimestamp("last_login_at")),
-            toInstant(rs.getTimestamp("created_at")));
+            toInstant(rs.getTimestamp("created_at")),
+            rs.getBoolean("password_change_required"));
 
     private final JdbcClient jdbc;
     private final PasswordEncoder passwordEncoder;

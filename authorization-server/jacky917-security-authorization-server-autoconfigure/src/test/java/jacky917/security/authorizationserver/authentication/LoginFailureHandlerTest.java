@@ -150,7 +150,7 @@ class LoginFailureHandlerTest {
     }
 
     private static UserAccount user(String id, String passwordHash, UserStatus status) {
-        return new UserAccount(id, "alice", null, false, passwordHash, null, null, null, status, null, null, null, NOW);
+        return new UserAccount(id, "alice", null, false, passwordHash, null, null, null, status, null, null, null, NOW, false);
     }
 
     private String fail(String username, AuthenticationException exception) throws Exception {

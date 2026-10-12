@@ -9,6 +9,8 @@ import jacky917.security.authorizationserver.federation.FederatedIdentityService
 import jacky917.security.authorizationserver.federation.FederatedLoginRejectedException;
 import jacky917.security.authorizationserver.federation.FederatedLoginSuccessHandler;
 import jacky917.security.authorizationserver.federation.PendingLinkService;
+import jacky917.security.authorizationserver.mfa.MfaLoginFlow;
+import jacky917.security.authorizationserver.mfa.PendingLogin;
 import jacky917.security.authorizationserver.federation.PendingLinkService.PendingLink;
 import jacky917.security.authorizationserver.properties.AuthorizationServerProperties;
 import jacky917.security.authorizationserver.session.LoginMethod;
@@ -81,6 +83,7 @@ public class AccountLinkController {
     private final FederatedIdentityService identities;
     private final PasswordEncoder passwordEncoder;
     private final LoginCompletion completion;
+    private final MfaLoginFlow mfa;
     private final IdentityProviders providers;
     private final ApplicationEventPublisher events;
     private final AccountLockout lockout;
@@ -108,6 +111,9 @@ public class AccountLinkController {
      *                         <br>檢查密碼
      * @param completion       logs the browser in
      *                         <br>登入瀏覽器
+     * @param mfa              starts two-step verification when the owner
+     *                         needs it
+     *                         <br>帳號擁有者需要時開始兩步驟驗證
      * @param providers        the identity providers, for their names
      *                         <br>身分提供者，用於取得名稱
      * @param events           publishes the audit events
@@ -120,7 +126,7 @@ public class AccountLinkController {
      */
     public AccountLinkController(AuthorizationServerProperties properties, PendingLinkService pendingLinks,
                                  UserAccountService users, FederatedIdentityService identities,
-                                 PasswordEncoder passwordEncoder, LoginCompletion completion,
+                                 PasswordEncoder passwordEncoder, LoginCompletion completion, MfaLoginFlow mfa,
                                  IdentityProviders providers, ApplicationEventPublisher events,
                                  AccountLockout lockout, Clock clock) {
         this.pendingLinks = pendingLinks;
@@ -128,6 +134,7 @@ public class AccountLinkController {
         this.identities = identities;
         this.passwordEncoder = passwordEncoder;
         this.completion = completion;
+        this.mfa = mfa;
         this.providers = providers;
         this.events = events;
         this.lockout = lockout;
@@ -213,6 +220,14 @@ public class AccountLinkController {
             return;
         }
         String provider = pending.info().provider();
+        UsernamePasswordAuthenticationToken proof = UsernamePasswordAuthenticationToken.authenticated(owner.id(), null,
+                List.of(FactorGrantedAuthority.withAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY).issuedAt(now)
+                        .build()));
+        // 擁有者需要兩步驟驗證時，先通過第二步才建立連結：待確認的連結留在瀏覽器 Session，第二步完成後才連結
+        if (mfa.challenge(owner.id(), LoginMethod.FEDERATED, provider, "fed,pwd", proof,
+                PendingLogin.Continuation.LINK, request, response)) {
+            return;
+        }
         try {
             // 用掉待確認的連結與建立連結在同一個交易中：連結失敗時待確認的連結維持未使用
             if (!pendingLinks.confirm(pending, () -> identities.link(owner.id(), pending.info()))) {
@@ -232,9 +247,6 @@ public class AccountLinkController {
                 .userId(owner.id()).login(LoginMethod.FEDERATED, provider).request(request).build());
         // 登入前更換 Session ID（session fixation）
         request.changeSessionId();
-        UsernamePasswordAuthenticationToken proof = UsernamePasswordAuthenticationToken.authenticated(owner.id(), null,
-                List.of(FactorGrantedAuthority.withAuthority(FactorGrantedAuthority.PASSWORD_AUTHORITY).issuedAt(now)
-                        .build()));
         completion.logIn(owner.id(), LoginMethod.FEDERATED, provider, "fed,pwd", proof, request, response);
         continueAuthorization.onAuthenticationSuccess(request, response,
                 SecurityContextHolder.getContext().getAuthentication());

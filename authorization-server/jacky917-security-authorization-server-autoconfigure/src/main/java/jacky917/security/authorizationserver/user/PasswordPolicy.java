@@ -1,5 +1,7 @@
 package jacky917.security.authorizationserver.user;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * Password rules (D21, following NIST SP 800-63B): length matters, no
  * composition rules.
@@ -12,13 +14,16 @@ package jacky917.security.authorizationserver.user;
 public class PasswordPolicy {
 
     /**
-     * Longest accepted password; longer input is rejected so hashing
-     * cannot be abused.
+     * Longest accepted password, in UTF-8 bytes: about 72 letters or
+     * digits, or 24 Chinese characters. BCrypt uses at most 72 bytes, and
+     * Spring Security refuses to hash a longer password, so a longer one
+     * must be refused here, before a reset link or a registration is used.
      * <p>
-     * 可接受的最長密碼；更長的輸入一律拒絕，避免雜湊被濫用。BCrypt 只使用前
-     * 72 bytes，因此也不會讓過長的密碼產生誤導的安全感。
+     * 可接受的最長密碼，以 UTF-8 的 byte 計算：約 72 個英數字或 24 個中文字。
+     * BCrypt 最多只使用 72 bytes，Spring Security 也拒絕雜湊更長的密碼，因此
+     * 必須在這裡先拒絕，不能等到使用重設連結或註冊之後才失敗。
      */
-    public static final int MAX_LENGTH = 128;
+    public static final int MAX_BYTES = 72;
 
     private final int minLength;
 
@@ -32,6 +37,18 @@ public class PasswordPolicy {
      */
     public PasswordPolicy(int minLength) {
         this.minLength = minLength;
+    }
+
+    /**
+     * Returns the minimum number of characters.
+     * <p>
+     * 回傳最少字元數。
+     *
+     * @return the minimum length
+     *         <br>最少字元數
+     */
+    public int minLength() {
+        return minLength;
     }
 
     /**
@@ -49,8 +66,8 @@ public class PasswordPolicy {
         if (length < minLength) {
             throw new IllegalArgumentException("The password must have at least " + minLength + " characters");
         }
-        if (length > MAX_LENGTH) {
-            throw new IllegalArgumentException("The password must have at most " + MAX_LENGTH + " characters");
+        if (rawPassword.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) {
+            throw new IllegalArgumentException("The password must have at most " + MAX_BYTES + " bytes in UTF-8");
         }
         if (rawPassword.isBlank()) {
             throw new IllegalArgumentException("The password must not be blank");

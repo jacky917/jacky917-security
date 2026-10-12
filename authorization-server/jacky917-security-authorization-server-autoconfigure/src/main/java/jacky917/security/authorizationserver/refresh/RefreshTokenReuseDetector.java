@@ -280,10 +280,8 @@ public class RefreshTokenReuseDetector {
         if (found.isEmpty() || found.get().status() != UserStatus.ACTIVE) {
             return RevokeReason.USER_DISABLED;
         }
-        Instant passwordChangedAt = found.get().passwordChangedAt();
-        if (passwordChangedAt != null && passwordChangedAt.isAfter(session.createdAt())) {
-            return RevokeReason.PASSWORD_CHANGED;
-        }
+        // 變更密碼不在此檢查：每一種變更密碼的方式都會明確撤銷登入 Session（PASSWORD_CHANGED），
+        // 而使用者自己變更密碼時，必須保留進行變更的那一個 Session。
         // 暫時鎖定（locked_until）不在此檢查：它只阻擋密碼登入。否則任何人只要故意輸錯密碼，
         // 就能讓帳號持有人所有裝置的刷新失敗
         return null;

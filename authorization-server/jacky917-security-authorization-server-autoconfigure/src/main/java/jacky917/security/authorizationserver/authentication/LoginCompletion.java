@@ -22,10 +22,12 @@ import org.springframework.security.web.context.SecurityContextRepository;
 import java.time.Clock;
 
 /**
- * Completes a login that did not go through Spring's form login: an
- * external login, or the confirmation of an account link.
+ * Completes a login outside the success path of Spring's form login: an
+ * external login, the confirmation of an account link, or any login that
+ * two-step verification held back until the second step passed.
  * <p>
- * 完成不經過 Spring 表單登入的登入：第三方登入，或帳號連結的確認。
+ * 完成不經過 Spring 表單登入成功流程的登入：第三方登入、帳號連結的確認，或
+ * 任何被兩步驟驗證延後到第二步通過的登入。
  * <p>
  * It records the login, creates the login session, logs the browser in
  * with the standard principal (D16) and publishes a successful

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${lang}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${text['mfa.setup.title'] + ' · ' + productName}">Turn on two-step verification</title>
+    <link rel="stylesheet" th:href="@{/jacky917/authorization-server.css}">
+    <link rel="stylesheet" th:href="@{/jacky917/theme.css}">
+</head>
+<body>
+<main class="card">
+    <header>
+        <img th:if="${logoUrl}" th:src="${logoUrl}" alt="" class="logo">
+        <p class="product" th:text="${productName}">jacky917</p>
+        <h1 th:text="${text['mfa.setup.title']}">Turn on two-step verification</h1>
+    </header>
+    <p th:if="${required}" class="notice" role="status" th:text="${text['mfa.setup.required']}">
+        Your account must use two-step verification.</p>
+    <p th:text="${text['mfa.setup.scan']}">Scan this QR code with your authenticator app.</p>
+    <img class="qr" th:src="${qrCode}" alt="QR code" width="200" height="200">
+    <p class="meta"><span th:text="${text['mfa.setup.key']}">Or enter this key:</span>
+        <code th:text="${secret}">ABCD EFGH</code></p>
+    <p th:if="${error}" class="error" role="alert" th:text="${error}">The code is wrong.</p>
+    <!-- th:action 讓 Spring Security 自動加入 CSRF 欄位 -->
+    <form method="post" th:action="@{${action}}">
+        <label for="code" th:text="${text['mfa.setup.code']}">Code from the app</label>
+        <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8"
+               required autofocus>
+        <button type="submit" th:text="${text['mfa.setup.submit']}">Turn on</button>
+    </form>
+    <form th:if="${required}" method="post" th:action="@{/jacky917/mfa/cancel}">
+        <button type="submit" class="secondary" th:text="${text['mfa.cancel']}">Cancel</button>
+    </form>
+    <p th:unless="${required}"><a class="link" th:href="@{/jacky917/account}"
+                                    th:text="${text['password.change.back']}">Back to your account</a></p>
+</main>
+</body>
+</html>

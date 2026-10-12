@@ -4,6 +4,10 @@ import jacky917.security.authorizationserver.audit.LoginAuditEvent;
 import jacky917.security.authorizationserver.audit.LoginAuditEventType;
 import jacky917.security.authorizationserver.audit.LoginFailureReason;
 import jacky917.security.authorizationserver.authentication.LoginCompletion;
+import jacky917.security.authorizationserver.mfa.MfaLoginFlow;
+import jacky917.security.authorizationserver.mfa.PendingLogin;
+import jacky917.security.authorizationserver.session.LoginMethod;
+import jacky917.security.authorizationserver.user.UserAccount;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -43,6 +47,7 @@ class FederatedLoginSuccessHandlerTest {
     private PendingLinkService pendingLinks;
     private OAuth2AuthorizedClientRepository authorizedClients;
     private ApplicationEventPublisher events;
+    private MfaLoginFlow mfa;
     private final MockHttpServletRequest request = new MockHttpServletRequest();
     private final OAuth2AuthenticationToken authentication = new OAuth2AuthenticationToken(
             new DefaultOAuth2User(AuthorityUtils.createAuthorityList("OAUTH2_USER"), Map.of("id", "1"), "id"),
@@ -55,6 +60,7 @@ class FederatedLoginSuccessHandlerTest {
         pendingLinks = mock(PendingLinkService.class);
         authorizedClients = mock(OAuth2AuthorizedClientRepository.class);
         events = mock(ApplicationEventPublisher.class);
+        mfa = mock(MfaLoginFlow.class);
         SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 
@@ -101,6 +107,19 @@ class FederatedLoginSuccessHandlerTest {
         assertAudited(LoginFailureReason.LINK_REQUIRED);
     }
 
+    @Test
+    @DisplayName("使用者已啟用兩步驟驗證：交給兩步驟驗證，不建立登入 Session（T-MFA-04）")
+    void twoStepVerificationComesFirst() throws Exception {
+        UserAccount user = mock(UserAccount.class);
+        when(user.id()).thenReturn("user-1");
+        when(identities.login(any())).thenReturn(user);
+        when(mfa.challenge(eq("user-1"), eq(LoginMethod.FEDERATED), eq("github"), eq("fed"), eq(authentication),
+                eq(PendingLogin.Continuation.FEDERATED), any(), any())).thenReturn(true);
+        handle(List.of(new AcceptingMapper()));
+        verify(completion, never()).logIn(any(), any(), any(), any(), any(), any(), any());
+        verify(authorizedClients).removeAuthorizedClient(eq("github"), eq(authentication), any(), any());
+    }
+
     private void assertAudited(LoginFailureReason reason) {
         ArgumentCaptor<LoginAuditEvent> event = ArgumentCaptor.forClass(LoginAuditEvent.class);
         verify(events).publishEvent(event.capture());
@@ -112,7 +131,7 @@ class FederatedLoginSuccessHandlerTest {
 
     private MockHttpServletResponse handle(List<FederatedUserInfoMapper> mappers) throws Exception {
         FederatedLoginSuccessHandler handler = new FederatedLoginSuccessHandler(mappers, identities, pendingLinks,
-                completion, authorizedClients, events, Clock.systemUTC());
+                completion, mfa, authorizedClients, events, Clock.systemUTC());
         MockHttpServletResponse response = new MockHttpServletResponse();
         handler.onAuthenticationSuccess(request, response, authentication);
         return response;

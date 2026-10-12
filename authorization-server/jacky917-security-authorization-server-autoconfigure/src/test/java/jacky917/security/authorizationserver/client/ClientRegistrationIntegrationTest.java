@@ -72,6 +72,29 @@ class ClientRegistrationIntegrationTest {
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {TestDatabases.SQLITE, TestDatabases.POSTGRESQL})
+    @DisplayName("設定檔中的第三方 client：要求同意，並儲存同意畫面需要的資訊（D30）")
+    void registersThirdPartyClients(String vendor) {
+        TestDatabases.runner(vendor).withPropertyValues(
+                PREFIX + "partner.trust-level=third-party",
+                PREFIX + "partner.display-name=Partner App",
+                PREFIX + "partner.description=Imports your orders",
+                PREFIX + "partner.secret=partner-secret",
+                PREFIX + "partner.redirect-uris=https://partner.example.com/callback",
+                PREFIX + "partner.scopes=openid,profile",
+                PREFIX + "partner.privacy-policy-url=https://partner.example.com/privacy",
+                PREFIX + "partner.logo-url=https://partner.example.com/logo.png").run(context -> {
+            assertThat(context).hasNotFailed();
+            RegisteredClient partner = context.getBean(RegisteredClientRepository.class).findByClientId("partner");
+            assertThat(partner.getClientSettings().isRequireAuthorizationConsent()).isTrue();
+            ClientProfileRepository profiles = context.getBean(ClientProfileRepository.class);
+            assertThat(profiles.find(partner.getId()).orElseThrow().trustLevel()).isEqualTo(TrustLevel.THIRD_PARTY);
+            assertThat(profiles.details(partner.getId())).contains(new ClientDetails("Imports your orders",
+                    "https://partner.example.com/logo.png", null, "https://partner.example.com/privacy", null));
+        });
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {TestDatabases.SQLITE, TestDatabases.POSTGRESQL})
     @DisplayName("重新啟動：依設定更新；secret 相同時不重新雜湊，修改後換成新的雜湊")
     void restartUpdatesClients(String vendor) {
         String url = TestDatabases.newDatabaseUrl(vendor);
