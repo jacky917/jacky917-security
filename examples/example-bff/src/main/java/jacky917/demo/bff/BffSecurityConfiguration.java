@@ -44,7 +44,8 @@ class BffSecurityConfiguration {
         http.authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/", "/index.html", "/bff.js", "/privacy.html", "/error").permitAll()
                         .anyRequest().authenticated())
-                // 未登入時直接前往登入服務；登入後一律回到首頁（頁面在登入前呼叫 /me 收到的 401 不應被當成要回到的頁面）
+                // 未登入時直接前往登入服務；登入後一律回到首頁
+                // （頁面在登入前呼叫 /me 收到的 401 不應被當成要回到的頁面）
                 .oauth2Login(login -> login.loginPage("/oauth2/authorization/" + REGISTRATION_ID)
                         .defaultSuccessUrl("/", true))
                 // 頁面的指令碼以 X-XSRF-TOKEN 標頭送出 Cookie 中的 CSRF token
@@ -110,9 +111,9 @@ class BffSecurityConfiguration {
      * the user signed in with: the BFF itself ({@code jacky917}) or the
      * third-party demo ({@code partner}).
      * <p>
-     * 以已登入使用者的 Access Token 呼叫 Resource Server，過期時自動刷新。使用
-     * 使用者登入時所用的應用程式的 token：BFF 本身（{@code jacky917}）或第三方
-     * 示範（{@code partner}）。
+     * 以已登入使用者的 Access Token 呼叫 Resource Server，過期時自動刷新。
+     * token 屬於使用者登入時所用的應用程式：BFF 本身（{@code jacky917}）或
+     * 第三方示範（{@code partner}）。
      */
     @Bean
     RestClient resourceServerClient(OAuth2AuthorizedClientManager manager,

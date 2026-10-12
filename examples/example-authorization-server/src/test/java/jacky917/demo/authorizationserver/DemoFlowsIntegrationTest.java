@@ -36,9 +36,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 以範例的 {@code application.yml}（不是測試自己的設定）走完 demo 的流程：admin 首次登入時的強制變更密碼與強制
- * 啟用兩步驟驗證、註冊與 Email 驗證、忘記密碼（信件寫在日誌中，由 {@link CapturedOutput} 讀出連結）、
- * 第三方應用程式與管理 API 的示範 client。
+ * 以範例的 {@code application.yml}（不是測試自己的設定）走完 demo 的流程：
+ * admin 首次登入時的強制變更密碼與強制啟用兩步驟驗證、註冊與 Email 驗證、
+ * 忘記密碼（信件寫在日誌中，由 {@link CapturedOutput} 讀出連結）、第三方應用
+ * 程式與管理 API 的示範 client。
  */
 @SpringBootTest
 @AutoConfigureMockMvc

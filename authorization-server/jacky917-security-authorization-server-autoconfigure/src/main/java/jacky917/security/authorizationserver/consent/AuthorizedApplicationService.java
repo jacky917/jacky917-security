@@ -93,7 +93,8 @@ public class AuthorizedApplicationService {
                 .param("user", userId)
                 .query((rs, rowNum) -> new AuthorizedApplication(rs.getString("client_id"), rs.getString("name"),
                         rs.getString("logo_url"), rs.getString("homepage_url"),
-                        // 不需要同意的 scope（例如 openid）不是使用者授予的權限，不列出
+                        // 不需要同意的 scope（例如 openid）不是使用者授予的
+                        // 權限，不列出
                         scopes.describe(scopeCodes(rs.getString("authorities"))).stream()
                                 .filter(ScopeDescriptions.Scope::consentRequired).toList()))
                 .list().stream()

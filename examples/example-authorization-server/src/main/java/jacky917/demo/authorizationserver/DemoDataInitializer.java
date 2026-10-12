@@ -15,10 +15,12 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Creates the demo role, permissions, and users used by
- * {@code example-resource-server}, once.
+ * Creates the demo data the examples use: the role, permissions and users
+ * of {@code example-resource-server} once, and the scope of the
+ * third-party demo whenever it is missing.
  * <p>
- * 建立 {@code example-resource-server} 使用的示範角色、權限與使用者（只建立一次）。
+ * 建立範例使用的示範資料：{@code example-resource-server} 的角色、權限與使用者
+ * 只建立一次；第三方示範的 scope 不存在時建立。
  * <ul>
  *   <li>Role {@code A} with permissions {@code bb} and {@code clip:read}.
  *       <br>角色 {@code A}，擁有權限 {@code bb} 與 {@code clip:read}。</li>
