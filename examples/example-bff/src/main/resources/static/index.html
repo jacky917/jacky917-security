@@ -10,7 +10,14 @@
 <p id="user">尚未登入</p>
 <p>
     <a href="/oauth2/authorization/jacky917">登入</a>
+    <a href="/oauth2/authorization/partner">以第三方應用程式登入</a>
     <button id="logout" type="button">登出</button>
+</p>
+<p>
+    「以第三方應用程式登入」使用第三方 client <code>partner-demo</code>：第一次登入時登入服務會顯示同意畫面。
+    第三方應用程式的 token 不含角色，權限只有「同意的 scope 對應的權限」中使用者也擁有的部分，
+    因此 alice 可以呼叫 <code>/secure/perm-bb</code>，但 <code>/secure/role-a</code> 為 403。
+    已授權的應用程式可以在<a href="http://localhost:9000/jacky917/account">登入服務的帳號頁</a>撤回。
 </p>
 <p>
     <button type="button" data-api="/api/secure/me">GET /secure/me</button>

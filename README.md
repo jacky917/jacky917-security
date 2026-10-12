@@ -266,12 +266,12 @@ mvn -pl examples/example-resource-server spring-boot:run
 mvn -pl examples/example-bff spring-boot:run
 ```
 
-4) 開啟 <http://localhost:8082>，以 `alice` 或 `bob`（密碼 `demo-password-123`）登入，再按頁面上的按鈕呼叫 API。alice 擁有角色 `A`，bob 沒有。
+4) 開啟 <http://localhost:8082>，以 `alice` 或 `bob`（密碼 `demo-password-123`）登入，再按頁面上的按鈕呼叫 API。alice 擁有角色 `A`，bob 沒有。按「以第三方應用程式登入」可以看到同意畫面與第三方應用程式的權限限制。
 
-不經過瀏覽器、以 `client_credentials` 取得 Token：
+不經過瀏覽器、以 `client_credentials` 取得 Token（`REPORT_BATCH_SECRET` 沒有自行設定時，使用範例 `application.yml` 中的示範值，只限本機）：
 
 ```bash
-TOKEN=$(curl -s -u report-batch:batch-secret-for-local-demo -d grant_type=client_credentials -d scope=report.generate http://localhost:9000/oauth2/token | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
+TOKEN=$(curl -s -u "report-batch:$REPORT_BATCH_SECRET" -d grant_type=client_credentials -d scope=report.generate http://localhost:9000/oauth2/token | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
 ```
 
 ```bash

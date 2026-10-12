@@ -111,6 +111,7 @@ abstract class AbstractConsentIntegrationTest extends AbstractFlowIntegrationTes
                 .header(HttpHeaders.ACCEPT_LANGUAGE, "zh-TW")).andExpect(status().isOk()).andReturn().getResponse()
                 .getContentAsString(StandardCharsets.UTF_8);
         assertThat(account).contains("已授權的應用程式").contains("Partner App").contains("基本資料")
+                .as("openid 不需要同意，不列出").doesNotContain("OpenID")
                 .contains("/jacky917/account/apps/partner/revoke");
 
         mockMvc.perform(post("/jacky917/account/apps/partner/revoke").session(browser).with(csrf()))

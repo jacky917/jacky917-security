@@ -12,6 +12,14 @@ spring:
             authorization-grant-type: authorization_code
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
             scope: openid,profile,email
+          # 以第三方應用程式登入的示範：同一個登入服務，但使用第三方 client（第一次登入時出現同意畫面）
+          partner:
+            provider: jacky917
+            client-id: partner-demo
+            client-secret: ${PARTNER_DEMO_SECRET:partner-secret-for-local-demo}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: openid,profile,email,bb.read
         provider:
           # 逐一指定端點：BFF 啟動時不需要連到登入服務（只設定 issuer-uri 時會在啟動時查詢 discovery）
           jacky917:

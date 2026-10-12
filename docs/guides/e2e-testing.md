@@ -37,6 +37,8 @@ mvn -pl e2e-tests -am verify
 | bob 沒有角色 A | Resource Server 回 403，BFF 原樣轉回 |
 | audience 檢查 | 同一個 Token：`aud=jacky917-api` 的服務 200，設定為 `other-api` 的服務 401（T-E2E-03） |
 | 登出 | BFF 結束 Session → 登入服務的 `/connect/logout` → 回到 BFF 首頁；之後兩邊都需要重新登入 |
+| 第三方應用程式 | 以第三方 client `partner-demo` 登入：同意畫面 → 允許 → token 不含角色，`/api/secure/perm-bb` 200（scope `bb.read` 對應權限 `bb`）、`/api/secure/role-a` 403 |
+| 管理 API | 以 `client_credentials` 取得 `as:user:read` 的 token：`/admin/api/users` 200，沒有權限的 `/admin/api/roles` 403 |
 
 CI 每次都會執行，不需要 Docker 或資料庫（登入服務使用暫存的 SQLite，Resource Server 使用 H2）。
 
@@ -77,6 +79,17 @@ mvn -pl examples/example-bff spring-boot:run
 | API | <http://localhost:8080> | 以登入服務的 JWKS 驗證 Token，並檢查 `iss` 與 `aud` |
 | BFF | <http://localhost:8082> | 網頁與 API 代理 |
 
+範例登入服務的 client：
+
+| client | 用途 |
+|---|---|
+| `web-bff` | BFF 本身（第一方） |
+| `partner-demo` | 第三方應用程式的示範：BFF 首頁的「以第三方應用程式登入」使用它，第一次登入時出現同意畫面 |
+| `report-batch` | 服務對服務（`client_credentials`，Step 3） |
+| `admin-demo` | 管理 API 的示範（`client_credentials`，只能讀取使用者與稽核紀錄，Step 4） |
+
+各 client 的 secret 可以用環境變數設定（`WEB_BFF_SECRET`、`PARTNER_DEMO_SECRET`、`REPORT_BATCH_SECRET`、`ADMIN_DEMO_SECRET`）；沒有設定時使用 `application.yml` 中 `${…:預設值}` 冒號後面的示範值，**只限本機**。下面的 curl 指令從同名環境變數讀取 secret：沒有自行設定時，請把示範值設定到執行 curl 的終端機。
+
 示範帳號（密碼皆為 `demo-password-123`，可用環境變數 `DEMO_USER_PASSWORD` 修改）：
 
 | 帳號 | 角色 | 權限 |
@@ -93,6 +106,13 @@ mvn -pl examples/example-bff spring-boot:run
 
 瀏覽器只會看到 BFF 的 Session Cookie；Access Token 與 Refresh Token 保存在 BFF 的 Session 中。
 
+第三方應用程式（同意畫面）：
+
+1. 按「以第三方應用程式登入」，以 `alice` 登入。第一次會出現同意畫面：應用程式名稱、說明、隱私權政策，以及要求的權限（基本資料、Email、使用權限 bb），可以取消勾選。
+2. 按「允許」後回到 BFF 首頁，顯示「透過 第三方應用程式 partner-demo」。
+3. 「GET /secure/perm-bb」為 200：scope `bb.read` 對應權限 `bb`，alice 也擁有它。「GET /secure/role-a」為 403：第三方應用程式的 token 不含角色。以 `bob` 試時 perm-bb 也是 403（bob 沒有權限 bb）。
+4. 在帳號頁的「已授權的應用程式」按「移除存取權」：第三方應用程式的 Refresh Token 立即失效，下一次登入會再次出現同意畫面。
+
 登入服務本身的頁面（<http://localhost:9000/jacky917/account>）也可以試：
 
 - 帳號頁：登入中的裝置、變更密碼、兩步驟驗證（以 Google Authenticator 等 App 掃描 QR code）。
@@ -102,7 +122,7 @@ mvn -pl examples/example-bff spring-boot:run
 ### Step 3：服務對服務（client_credentials）
 
 ```bash
-TOKEN=$(curl -s -u report-batch:batch-secret-for-local-demo -d grant_type=client_credentials -d scope=report.generate http://localhost:9000/oauth2/token | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
+TOKEN=$(curl -s -u "report-batch:$REPORT_BATCH_SECRET" -d grant_type=client_credentials -d scope=report.generate http://localhost:9000/oauth2/token | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
 ```
 
 ```bash
@@ -111,7 +131,29 @@ curl -i -H "Authorization: Bearer $TOKEN" http://localhost:8080/secure/me
 
 預期 200；`sub` 為 `report-batch`，Token 中只有 `scope`，沒有角色與權限。
 
-### Step 4：錯誤情境
+### Step 4：管理 API
+
+`admin-demo` 只有 `as:user:read` 與 `as:audit:read`：
+
+```bash
+ADMIN_TOKEN=$(curl -s -u "admin-demo:$ADMIN_DEMO_SECRET" -d grant_type=client_credentials -d "scope=as:user:read as:audit:read" http://localhost:9000/oauth2/token | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
+```
+
+```bash
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "http://localhost:9000/admin/api/users?query=alice"
+```
+
+```bash
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "http://localhost:9000/admin/api/audit/logins?size=5"
+```
+
+預期回傳 `{"items": [...], "page": 0, "size": …, "total": …}`。沒有權限的端點（例如 `/admin/api/roles`）回 403。管理員以 `admin` 登入的方式取得 token、所有端點與權限見 [使用指南 §9](../authorization-server/getting-started.md#9-管理-api)。
+
+### 選擇性：依 scope 決定 `aud`
+
+在範例登入服務的 `application.yml` 加上 `jacky917.security.authorization-server.token.audience-strategy: per-scope`，並以管理 API 建立 API resource、把 scope 指到它（`POST /admin/api/api-resources`、`PUT /admin/api/scopes/{code}` 的 `apiResource`）。之後要求該 scope 的 token，`aud` 就是那個 API resource；Resource Server 的 `audiences` 設為同一個代碼即可只接受它（見 [使用指南 §7](../authorization-server/getting-started.md#7-token-內容)）。
+
+### Step 5：錯誤情境
 
 ```bash
 curl -i http://localhost:8080/secure/me

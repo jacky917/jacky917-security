@@ -10,6 +10,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -30,7 +31,15 @@ final class Browser {
 
     HttpResponse<String> postForm(URI uri, Map<String, String> form, Map<String, String> headers)
             throws IOException, InterruptedException {
-        String body = form.entrySet().stream()
+        return postForm(uri, List.copyOf(form.entrySet()), headers);
+    }
+
+    /**
+     * 送出可以重複欄位的表單，例如同意畫面勾選的多個 scope。
+     */
+    HttpResponse<String> postForm(URI uri, List<Map.Entry<String, String>> form, Map<String, String> headers)
+            throws IOException, InterruptedException {
+        String body = form.stream()
                 .map(e -> URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8) + "="
                         + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8))
                 .collect(Collectors.joining("&"));

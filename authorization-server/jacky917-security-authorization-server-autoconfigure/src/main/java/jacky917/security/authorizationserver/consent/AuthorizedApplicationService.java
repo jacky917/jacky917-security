@@ -93,7 +93,9 @@ public class AuthorizedApplicationService {
                 .param("user", userId)
                 .query((rs, rowNum) -> new AuthorizedApplication(rs.getString("client_id"), rs.getString("name"),
                         rs.getString("logo_url"), rs.getString("homepage_url"),
-                        scopes.describe(scopeCodes(rs.getString("authorities")))))
+                        // 不需要同意的 scope（例如 openid）不是使用者授予的權限，不列出
+                        scopes.describe(scopeCodes(rs.getString("authorities"))).stream()
+                                .filter(ScopeDescriptions.Scope::consentRequired).toList()))
                 .list().stream()
                 .sorted((a, b) -> a.name().compareToIgnoreCase(b.name()))
                 .toList();
@@ -162,8 +164,10 @@ public class AuthorizedApplicationService {
      *                     <br>Logo，或 {@code null}
      * @param homepageUrl  the home page, or {@code null}
      *                     <br>首頁，或 {@code null}
-     * @param scopes       the consented scopes
-     *                     <br>已同意的 scope
+     * @param scopes       the consented scopes that need consent; scopes
+     *                     such as {@code openid} are left out
+     *                     <br>已同意且需要同意的 scope；{@code openid} 等 scope
+     *                     不列出
      */
     public record AuthorizedApplication(String clientId, String name, @Nullable String logoUrl,
                                         @Nullable String homepageUrl, List<ScopeDescriptions.Scope> scopes) {

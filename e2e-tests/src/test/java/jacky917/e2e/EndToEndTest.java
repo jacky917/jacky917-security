@@ -10,12 +10,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.web.util.UriComponentsBuilder;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -113,6 +115,56 @@ class EndToEndTest {
     }
 
     @Test
+    @DisplayName("以第三方應用程式登入：第一次出現同意畫面；允許後 token 不含角色，權限只有 scope 對應且使用者擁有的部分")
+    void thirdPartyAppAsksForConsent() throws Exception {
+        Browser browser = new Browser();
+        URI authorize = Browser.location(browser.get(bff("/oauth2/authorization/partner")));
+        URI consent = Browser.location(browser.get(logInAt(browser, authorize, "alice")));
+        assertThat(consent.getPath()).isEqualTo("/oauth2/consent");
+        String page = browser.get(consent).body();
+        assertThat(page).contains("Partner Demo").contains("使用權限 bb").contains("/privacy.html");
+
+        Map<String, String> query = UriComponentsBuilder.fromUri(consent).build().getQueryParams().toSingleValueMap();
+        HttpResponse<String> allowed = browser.postForm(URI.create("http://localhost:" + asPort + "/oauth2/authorize"),
+                List.of(Map.entry("client_id", decode(query.get("client_id"))),
+                        Map.entry("state", decode(query.get("state"))),
+                        Map.entry("scope", "openid"), Map.entry("scope", "profile"),
+                        Map.entry("scope", "email"), Map.entry("scope", "bb.read")), Map.of());
+        URI callback = Browser.location(allowed);
+        assertThat(callback.toString()).startsWith(bff("/login/oauth2/code/partner?code=").toString());
+        assertThat(browser.get(callback).statusCode()).isEqualTo(302);
+
+        assertThat(JSON.readTree(browser.get(bff("/me")).body()).get("app").asString()).isEqualTo("partner");
+        assertThat(browser.get(bff("/api/secure/perm-bb")).statusCode()).as("bb.read 對應權限 bb").isEqualTo(200);
+        assertThat(browser.get(bff("/api/secure/role-a")).statusCode()).as("第三方 token 不含角色").isEqualTo(403);
+    }
+
+    @Test
+    @DisplayName("管理 API：以 client_credentials 取得 as:user:read 的 token，查詢使用者；沒有的權限回 403")
+    void administrationApiWithClientCredentials() throws Exception {
+        HttpClient client = HttpClient.newHttpClient();
+        String basic = Base64.getEncoder().encodeToString("admin-demo:admin-secret".getBytes(StandardCharsets.UTF_8));
+        HttpResponse<String> token = client.send(HttpRequest.newBuilder(
+                        URI.create("http://localhost:" + asPort + "/oauth2/token"))
+                .header("Authorization", "Basic " + basic)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials&scope=as:user:read"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(token.statusCode()).isEqualTo(200);
+        String accessToken = JSON.readTree(token.body()).get("access_token").asString();
+
+        HttpResponse<String> users = client.send(HttpRequest.newBuilder(
+                        URI.create("http://localhost:" + asPort + "/admin/api/users?query=alice"))
+                .header("Authorization", "Bearer " + accessToken).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(users.statusCode()).isEqualTo(200);
+        assertThat(JSON.readTree(users.body()).get("items").get(0).get("username").asString()).isEqualTo("alice");
+        HttpResponse<String> roles = client.send(HttpRequest.newBuilder(
+                        URI.create("http://localhost:" + asPort + "/admin/api/roles"))
+                .header("Authorization", "Bearer " + accessToken).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(roles.statusCode()).as("沒有 as:role:read").isEqualTo(403);
+    }
+
+    @Test
     @DisplayName("bob 沒有角色 A：Resource Server 回 403，BFF 原樣轉回")
     void bobIsForbidden() throws Exception {
         Browser browser = new Browser();
@@ -165,6 +217,17 @@ class EndToEndTest {
     private void logIn(Browser browser, String username) throws Exception {
         HttpResponse<String> toAuthorize = browser.get(bff("/oauth2/authorization/jacky917"));
         URI authorize = Browser.location(toAuthorize);
+        URI callback = Browser.location(browser.get(logInAt(browser, authorize, username)));
+        assertThat(callback.toString()).startsWith("http://localhost:" + bffPort + "/login/oauth2/code/jacky917?code=");
+
+        HttpResponse<String> done = browser.get(callback);
+        assertThat(done.statusCode()).as("BFF 以授權碼換 Token 後重導").isEqualTo(302);
+    }
+
+    /**
+     * 從授權請求經登入頁登入，回傳登入後要回到的授權請求。
+     */
+    private URI logInAt(Browser browser, URI authorize, String username) throws Exception {
         assertThat(authorize.toString()).startsWith("http://localhost:" + asPort + "/oauth2/authorize");
 
         URI loginPage = Browser.location(browser.get(authorize));
@@ -176,12 +239,11 @@ class EndToEndTest {
                 Map.of("username", username, "password", PASSWORD, "_csrf", csrf.group(1)), Map.of());
         URI savedRequest = Browser.location(login);
         assertThat(savedRequest.getPath()).isEqualTo("/oauth2/authorize");
+        return savedRequest;
+    }
 
-        URI callback = Browser.location(browser.get(savedRequest));
-        assertThat(callback.toString()).startsWith("http://localhost:" + bffPort + "/login/oauth2/code/jacky917?code=");
-
-        HttpResponse<String> done = browser.get(callback);
-        assertThat(done.statusCode()).as("BFF 以授權碼換 Token 後重導").isEqualTo(302);
+    private static String decode(String value) {
+        return URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 
     private static HttpResponse<String> callWithToken(HttpClient client, int port, String token) throws Exception {

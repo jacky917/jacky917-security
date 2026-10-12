@@ -8,8 +8,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
@@ -40,10 +42,11 @@ class BffSecurityConfiguration {
     SecurityFilterChain bffSecurityFilterChain(HttpSecurity http, LogoutSuccessHandler logoutSuccessHandler)
             throws Exception {
         http.authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/", "/index.html", "/bff.js", "/error").permitAll()
+                        .requestMatchers("/", "/index.html", "/bff.js", "/privacy.html", "/error").permitAll()
                         .anyRequest().authenticated())
-                // 未登入時直接前往登入服務
-                .oauth2Login(login -> login.loginPage("/oauth2/authorization/" + REGISTRATION_ID))
+                // 未登入時直接前往登入服務；登入後一律回到首頁（頁面在登入前呼叫 /me 收到的 401 不應被當成要回到的頁面）
+                .oauth2Login(login -> login.loginPage("/oauth2/authorization/" + REGISTRATION_ID)
+                        .defaultSuccessUrl("/", true))
                 // 頁面的指令碼以 X-XSRF-TOKEN 標頭送出 Cookie 中的 CSRF token
                 .csrf(CsrfConfigurer::spa)
                 .logout(logout -> logout.logoutSuccessHandler(logoutSuccessHandler))
@@ -103,15 +106,21 @@ class BffSecurityConfiguration {
 
     /**
      * Calls the resource server with the signed-in user's access token,
-     * refreshing it when it has expired.
+     * refreshing it when it has expired. The token is the one of the app
+     * the user signed in with: the BFF itself ({@code jacky917}) or the
+     * third-party demo ({@code partner}).
      * <p>
-     * 以已登入使用者的 Access Token 呼叫 Resource Server，過期時自動刷新。
+     * 以已登入使用者的 Access Token 呼叫 Resource Server，過期時自動刷新。使用
+     * 使用者登入時所用的應用程式的 token：BFF 本身（{@code jacky917}）或第三方
+     * 示範（{@code partner}）。
      */
     @Bean
     RestClient resourceServerClient(OAuth2AuthorizedClientManager manager,
                                     OAuth2AuthorizedClientRepository authorizedClients, BffProperties properties) {
         OAuth2ClientHttpRequestInterceptor interceptor = new OAuth2ClientHttpRequestInterceptor(manager);
-        interceptor.setClientRegistrationIdResolver(request -> REGISTRATION_ID);
+        interceptor.setClientRegistrationIdResolver(request ->
+                SecurityContextHolder.getContext().getAuthentication() instanceof OAuth2AuthenticationToken token
+                        ? token.getAuthorizedClientRegistrationId() : REGISTRATION_ID);
         // Resource Server 回 401（例如 token 已被撤銷）時移除已儲存的 token，下次重新登入
         interceptor.setAuthorizationFailureHandler(
                 OAuth2ClientHttpRequestInterceptor.authorizationFailureHandler(authorizedClients));

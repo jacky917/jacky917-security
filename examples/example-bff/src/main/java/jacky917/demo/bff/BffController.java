@@ -3,7 +3,7 @@ package jacky917.demo.bff;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,16 +32,19 @@ class BffController {
     }
 
     /**
-     * Returns the signed-in user from the ID token.
+     * Returns the signed-in user from the ID token, and the app the user
+     * signed in with.
      * <p>
-     * 從 ID Token 回傳目前登入的使用者。
+     * 從 ID Token 回傳目前登入的使用者，以及登入時所用的應用程式。
      */
     @GetMapping("/me")
-    Map<String, Object> me(@AuthenticationPrincipal OidcUser user) {
+    Map<String, Object> me(OAuth2AuthenticationToken authentication) {
+        OidcUser user = (OidcUser) authentication.getPrincipal();
         Map<String, Object> me = new LinkedHashMap<>();
         me.put("sub", user.getSubject());
         me.put("name", user.getFullName());
         me.put("email", user.getEmail());
+        me.put("app", authentication.getAuthorizedClientRegistrationId());
         return me;
     }
 

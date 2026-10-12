@@ -1134,3 +1134,14 @@
 - **測試**: 新增 72 bytes 密碼、未驗證地址的註冊、重設連結的有效條件、寄信失敗、第三方登入與帳號連結的兩步驟驗證、待驗證期間停用、強制變更密碼與兩步驟驗證、停用的伺服器端檢查、密鑰不沿用、逾時、密鑰無法解密、重新產生復原碼、撤回授權的隔離、第三方 token 不能呼叫管理 API、稽核操作者、錯誤回應、權限矩陣、SQLite 從 1.0.6 升級保留稽核資料、`AccountMailDispatcher`；稽核值測試改為走訪所有 enum。
 - **重新審查**: 修正後再由 code-reviewer 審查一次：背景寄信的 executor 原本註冊成 Bean，會讓 Spring Boot 不建立應用程式的 `applicationTaskExecutor`，改由 `AccountMailDispatcher` 自己持有並在關閉時停止（新增測試）；`AuthorizationServerMetrics` 錯位的 Javadoc 已修正。
 - **文件**: 註解與行為不符之處修正（CSP、`countsTowardsLock`、內建角色、IP 限流、同意畫面、連結等），變更的 Javadoc 行寬不超過 80 欄；使用指南 §9.1 補上 client／scope／API resource 的權限，帳號自助、兩步驟驗證、metrics 更新。Migration 的註解不修改（Flyway 的 checksum 包含註解）。
+
+## Step 58: Authorization Server——補齊 demo 與文件
+- **Status**: 🟢 Completed
+- **變更**:
+  - 範例登入服務新增第三方 client `partner-demo`（隱私權政策頁在 BFF）與管理 API 示範 client `admin-demo`（`as:user:read`、`as:audit:read`）；`DemoDataInitializer` 建立 scope `bb.read`（對應權限 `bb`，既有的示範資料庫也會補上）。
+  - BFF 新增 registration `partner`（「以第三方應用程式登入」）：依登入時所用的應用程式選擇 token；`/me` 回傳 `app`；登入後一律回到首頁（原本會回到頁面在登入前呼叫的 `/me`，停在 JSON）；新增 `privacy.html`。
+  - 帳號頁「已授權的應用程式」不列出不需要同意的 scope（例如 `openid`）。
+  - E2E 指南：client 一覽、第三方應用程式的操作步驟、管理 API（Step 4）、依 scope 決定 `aud` 的做法；README 的 demo 說明。curl 指令改從環境變數讀取 client secret，文件不再寫出示範 secret（GitGuardian 的通知來源）。
+- **Commands Run & Results**:
+  - `EndToEndTest` 新增 2 個：第三方應用程式的同意畫面與權限、以 `client_credentials` 呼叫管理 API。
+  - 以內建瀏覽器（Chromium）實際操作：BFF →「以第三方應用程式登入」→ 登入 → 同意畫面 → 允許 → 回到 BFF 首頁（確認 CSP 修正後跨網域的重導正常）→ 帳號頁列出應用程式 → 登出；管理 API 的 curl 指令照文件執行成功。

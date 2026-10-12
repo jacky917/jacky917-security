@@ -5,7 +5,9 @@ async function showUser() {
     const response = await fetch('/me');
     if (response.ok) {
         const me = await response.json();
-        document.getElementById('user').textContent = `已登入：${me.name ?? me.sub}（${me.email ?? '沒有 Email'}）`;
+        const app = me.app === 'partner' ? '第三方應用程式 partner-demo' : 'BFF（web-bff）';
+        document.getElementById('user').textContent =
+            `已登入：${me.name ?? me.sub}（${me.email ?? '沒有 Email'}），透過 ${app}`;
     }
 }
 
